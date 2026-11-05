@@ -23,6 +23,7 @@ export class GameScene extends Phaser.Scene {
   private speed = 1;
   private shopBtns: { id: UnitId; btn: Button }[] = [];
   private toast!: Phaser.GameObjects.Text;
+  private bossLabel!: Phaser.GameObjects.Text;
   private toastTimer = 0;
 
   /** 설치하려고 고른 유닛 */
@@ -60,6 +61,7 @@ export class GameScene extends Phaser.Scene {
     this.speedBtn = button(this, 910, 28, 120, 40, STR.speed(1), () => this.cycleSpeed(), 0x4a4f5e, 17);
     this.buildShop();
     this.buildInfo();
+    this.bossLabel = text(this, 520, 92, STR.bossName, 16, '#e0b0ff').setOrigin(0.5, 0).setDepth(6);
     this.toast = text(this, 520, 690, '', 18, '#ffd35a').setOrigin(0.5).setDepth(20);
 
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
@@ -218,9 +220,18 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(0xff5a5a).fillRect(e.x - w / 2, e.y - e.def.radius - 9, (w * Math.max(0, e.hp)) / e.maxHp, 4);
     }
 
-    // 설치 미리보기
+    // 보스 체력바
     const o = this.overlay;
     o.clear();
+    const boss = gm.enemies.find((e) => e.def.boss);
+    this.bossLabel.setVisible(!!boss);
+    if (boss) {
+      o.fillStyle(0x000000, 0.6).fillRect(320, 66, 400, 14);
+      o.fillStyle(0xb04ae0).fillRect(320, 66, (400 * Math.max(0, boss.hp)) / boss.maxHp, 14);
+      o.lineStyle(1, 0xffffff, 0.5).strokeRect(320, 66, 400, 14);
+    }
+
+    // 설치 미리보기
     if (this.placing && this.ghost) {
       const def = gm.cfg.units[this.placing];
       const err = gm.canPlace(this.placing, this.ghost.x, this.ghost.y);

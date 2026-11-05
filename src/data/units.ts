@@ -22,17 +22,17 @@ export const UNITS: Record<UnitId, UnitDef> = {
   microwave: {
     id: 'microwave', kind: 'splash', emoji: '📦', color: 0xc9c9d6, radius: 20,
     levels: [
-      { cost: 250, damage: 20, range: 140, cooldown: 1.8, splash: 55 },
-      { cost: 250, damage: 38, range: 150, cooldown: 1.6, splash: 65 },
-      { cost: 400, damage: 70, range: 165, cooldown: 1.4, splash: 75 },
+      { cost: 220, damage: 30, range: 140, cooldown: 1.4, splash: 60 },
+      { cost: 220, damage: 55, range: 150, cooldown: 1.25, splash: 68 },
+      { cost: 380, damage: 100, range: 165, cooldown: 1.1, splash: 78 },
     ],
   },
   vacuum: {
     id: 'vacuum', kind: 'single', emoji: '🤖', color: 0x6c6f7d, radius: 19,
     levels: [
-      { cost: 200, damage: 14, range: 75, cooldown: 0.3 },
-      { cost: 200, damage: 26, range: 80, cooldown: 0.27 },
-      { cost: 350, damage: 48, range: 90, cooldown: 0.24 },
+      { cost: 200, damage: 16, range: 85, cooldown: 0.3 },
+      { cost: 200, damage: 30, range: 90, cooldown: 0.27 },
+      { cost: 350, damage: 55, range: 100, cooldown: 0.24 },
     ],
   },
   wifi: {
@@ -46,9 +46,9 @@ export const UNITS: Record<UnitId, UnitDef> = {
   washer: {
     id: 'washer', kind: 'income', emoji: '🪙', color: 0xe8c547, radius: 20, maxCount: 3,
     levels: [
-      { cost: 150, damage: 0, range: 0, cooldown: 0, income: 30 },
-      { cost: 150, damage: 0, range: 0, cooldown: 0, income: 55 },
-      { cost: 250, damage: 0, range: 0, cooldown: 0, income: 90 },
+      { cost: 150, damage: 0, range: 0, cooldown: 0, income: 40 },
+      { cost: 150, damage: 0, range: 0, cooldown: 0, income: 75 },
+      { cost: 250, damage: 0, range: 0, cooldown: 0, income: 120 },
     ],
   },
 };

@@ -21,7 +21,7 @@ describe('적 이동과 기지 피해', () => {
     e.hp = 17;
     e.dist = g.path.length - 1;
     g.update(0.1);
-    expect(g.hp).toBe(100 - 17);
+    expect(g.hp).toBe(g.cfg.startHp - 17);
     expect(g.enemies.includes(e)).toBe(false);
   });
 
@@ -29,7 +29,7 @@ describe('적 이동과 기지 피해', () => {
     const g = new Game(defaultConfig());
     g.apply({ type: "startWave" });
     g.update(0.1);
-    g.enemies[0].hp = 500;
+    g.enemies[0].hp = g.cfg.startHp + 1;
     g.enemies[0].dist = g.path.length - 1;
     g.update(0.1);
     expect(g.phase).toBe('over');

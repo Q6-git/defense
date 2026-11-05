@@ -28,7 +28,7 @@ describe('경제', () => {
     const money = g.money;
     killAll(g);
     expect(g.phase).toBe('intermission');
-    expect(g.money).toBe(money + 25);
+    expect(g.money).toBe(money + 50);
     expect(g.timer).toBeCloseTo(15, 0);
   });
 
@@ -59,7 +59,7 @@ describe('경제', () => {
     g.apply({ type: 'startWave' });
     const money = g.money;
     killAll(g);
-    expect(g.money).toBe(money + 25 + 30);
+    expect(g.money).toBe(money + 50 + 40);
     expect(g.drainEvents().some((e) => e.type === 'income')).toBe(true);
   });
 
@@ -71,5 +71,24 @@ describe('경제', () => {
     killAll(g);
     expect(g.phase).toBe('won');
     expect(g.apply({ type: 'startWave' }).ok).toBe(false);
+  });
+});
+
+describe('웨이브 데이터', () => {
+  it('웨이브는 20개이고 마지막 웨이브에 보스가 있다', async () => {
+    const { WAVES } = await import('../src/data/waves');
+    expect(WAVES.length).toBe(20);
+    expect(WAVES[19].groups.some((g) => g.enemy === 'boss')).toBe(true);
+    // 체력 배율은 계속 늘어난다
+    for (let i = 1; i < WAVES.length; i++) expect(WAVES[i].hpMul).toBeGreaterThan(WAVES[i - 1].hpMul);
+  });
+
+  it('보스는 주기적으로 졸개를 소환한다', () => {
+    const g = new Game(cfg());
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    g.spawnEnemy('boss', 100);
+    g.update(6.1);
+    expect(g.enemies.filter((e) => e.def.id === 'goo').length).toBeGreaterThanOrEqual(3);
   });
 });

@@ -19,6 +19,7 @@ export const STR = {
   best: (n: number) => `최고 기록: 웨이브 ${n}`,
   newBest: '🎉 새 기록!',
   restart: '다시 하기',
+  bossName: '👹 막힌 배수구 대왕',
   shop: '가전 설치',
   cancel: '취소',
   upgrade: (cost: number) => `⬆ 업그레이드 💰${cost}`,
