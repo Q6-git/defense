@@ -25,9 +25,21 @@ export interface GameConfig {
   startMoney: number;
   /** 판매 시 투자금 환불 비율 */
   sellRate: number;
+  /** 웨이브 사이 대기 시간(초). 끝나면 다음 웨이브가 자동으로 시작된다. */
+  intermission: number;
+  /** 대기 시간을 남기고 일찍 시작하면 남은 1초당 받는 돈 */
+  earlyBonusPerSec: number;
+  /** n번째 웨이브를 클리어하면 받는 보너스 */
+  waveBonus: (wave: number) => number;
 }
 
-export type Phase = 'ready' | 'wave' | 'over';
+/**
+ * ready: 첫 웨이브 시작 전 (무제한 대기)
+ * wave: 웨이브 진행 중
+ * intermission: 웨이브 사이 카운트다운
+ * over / won: 패배 / 승리
+ */
+export type Phase = 'ready' | 'wave' | 'intermission' | 'over' | 'won';
 
 export type GameEvent =
   | { type: 'leak'; x: number; y: number; damage: number }
@@ -35,7 +47,11 @@ export type GameEvent =
   | { type: 'blast'; x: number; y: number; r: number; color: number }
   | { type: 'pulse'; x: number; y: number; r: number; color: number }
   | { type: 'kill'; x: number; y: number; reward: number }
-  | { type: 'gameOver' };
+  | { type: 'income'; x: number; y: number; amount: number }
+  | { type: 'waveCleared'; wave: number; bonus: number }
+  | { type: 'earlyBonus'; amount: number }
+  | { type: 'gameOver' }
+  | { type: 'victory' };
 
 /** 유저 조작. 멀티플레이를 붙일 때는 이 명령을 서버로 보내면 된다. */
 export type Command =
@@ -60,6 +76,8 @@ export class Game {
   /** 지금 진행 중이거나 마지막으로 시작한 웨이브 (1부터). 0이면 아직 시작 전. */
   wave = 0;
   phase: Phase = 'ready';
+  /** intermission 남은 시간 */
+  timer = 0;
   enemies: Enemy[] = [];
   units: Unit[] = [];
   events: GameEvent[] = [];
@@ -154,8 +172,22 @@ export class Game {
     return { ok: true };
   }
 
+  get finished(): boolean {
+    return this.phase === 'over' || this.phase === 'won';
+  }
+
+  /** 지금 다음 웨이브를 부르면 받는 조기 호출 보너스 */
+  get earlyBonus(): number {
+    return this.phase === 'intermission' ? Math.floor(this.timer * this.cfg.earlyBonusPerSec) : 0;
+  }
+
   private startWave(): boolean {
-    if (this.phase !== 'ready' || this.wave >= this.totalWaves) return false;
+    if ((this.phase !== 'ready' && this.phase !== 'intermission') || this.wave >= this.totalWaves) return false;
+    const bonus = this.earlyBonus;
+    if (bonus > 0) {
+      this.money += bonus;
+      this.events.push({ type: 'earlyBonus', amount: bonus });
+    }
     this.wave++;
     this.phase = 'wave';
     this.waveTime = 0;
@@ -169,7 +201,7 @@ export class Game {
   }
 
   update(dt: number): void {
-    while (dt > 0 && this.phase !== 'over') {
+    while (dt > 0 && !this.finished) {
       const step = Math.min(dt, MAX_STEP);
       this.step(step);
       dt -= step;
@@ -197,6 +229,13 @@ export class Game {
   }
 
   private step(dt: number): void {
+    if (this.phase === 'intermission') {
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.timer = 0;
+        this.startWave();
+      }
+    }
     if (this.phase === 'wave') {
       this.waveTime += dt;
       while (this.spawnQueue.length && this.spawnQueue[0].t <= this.waveTime) {
@@ -206,8 +245,25 @@ export class Game {
     this.summon(dt);
     this.moveEnemies(dt);
     this.unitsAct(dt);
-    if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) {
-      this.phase = 'ready';
+    if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) this.clearWave();
+  }
+
+  private clearWave(): void {
+    const bonus = this.cfg.waveBonus(this.wave);
+    this.money += bonus;
+    this.events.push({ type: 'waveCleared', wave: this.wave, bonus });
+    for (const u of this.units) {
+      const income = u.def.levels[u.level].income;
+      if (!income) continue;
+      this.money += income;
+      this.events.push({ type: 'income', x: u.x, y: u.y, amount: income });
+    }
+    if (this.wave >= this.totalWaves) {
+      this.phase = 'won';
+      this.events.push({ type: 'victory' });
+    } else {
+      this.phase = 'intermission';
+      this.timer = this.cfg.intermission;
     }
   }
 

@@ -3,11 +3,13 @@ import { defaultConfig } from '../config';
 import { Game, type GameEvent } from '../core/game';
 import { TARGET_MODES, type Unit, type UnitId } from '../core/types';
 import { UNIT_ORDER } from '../data/units';
+import { loadBest, saveBest } from '../storage';
 import { STR } from '../strings.ko';
 import { button, text, type Button } from './ui';
 
 const PANEL_X = 1040;
 const PANEL_W = 240;
+const SPEEDS = [1, 2, 3];
 
 export class GameScene extends Phaser.Scene {
   private sim!: Game;
@@ -17,6 +19,8 @@ export class GameScene extends Phaser.Scene {
   private unitEmojis = new Map<number, Phaser.GameObjects.Text>();
   private hud!: Phaser.GameObjects.Text;
   private waveBtn!: Button;
+  private speedBtn!: Button;
+  private speed = 1;
   private shopBtns: { id: UnitId; btn: Button }[] = [];
   private toast!: Phaser.GameObjects.Text;
   private toastTimer = 0;
@@ -41,6 +45,8 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.sim = new Game(defaultConfig());
+    // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
+    if (import.meta.env.DEV) (window as unknown as { sim: Game }).sim = this.sim;
     this.enemyEmojis.clear();
     this.unitEmojis.clear();
     this.placing = null;
@@ -49,7 +55,9 @@ export class GameScene extends Phaser.Scene {
     this.world = this.add.graphics();
     this.overlay = this.add.graphics().setDepth(5);
     this.hud = text(this, 16, 14, '', 22);
-    this.waveBtn = button(this, 1160, 28, 220, 40, STR.startWave, () => this.sim.apply({ type: 'startWave' }), 0x2e9e5b);
+    this.speed = 1;
+    this.waveBtn = button(this, 1130, 28, 280, 40, STR.startWave, () => this.sim.apply({ type: 'startWave' }), 0x2e9e5b, 17);
+    this.speedBtn = button(this, 910, 28, 120, 40, STR.speed(1), () => this.cycleSpeed(), 0x4a4f5e, 17);
     this.buildShop();
     this.buildInfo();
     this.toast = text(this, 520, 690, '', 18, '#ffd35a').setOrigin(0.5).setDepth(20);
@@ -62,7 +70,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_t: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.25);
-    this.sim.update(dt);
+    this.sim.update(dt * this.speed);
     for (const ev of this.sim.drainEvents()) this.playEvent(ev);
     if (this.toastTimer > 0) {
       this.toastTimer -= dt;
@@ -75,7 +83,7 @@ export class GameScene extends Phaser.Scene {
 
   private onMapTap(x: number, y: number): void {
     const { area } = this.sim.cfg.map;
-    if (x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
+    if (this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
     if (this.placing) {
       const id = this.placing;
       const res = this.sim.apply({ type: 'place', unit: id, x, y });
@@ -98,6 +106,11 @@ export class GameScene extends Phaser.Scene {
     this.placing = this.placing === id ? null : id;
     this.ghost = null;
     if (this.placing) this.showToast(STR.placeHint);
+  }
+
+  private cycleSpeed(): void {
+    this.speed = SPEEDS[(SPEEDS.indexOf(this.speed) + 1) % SPEEDS.length];
+    this.speedBtn.setText(STR.speed(this.speed));
   }
 
   private select(u: Unit | null): void {
@@ -219,8 +232,11 @@ export class GameScene extends Phaser.Scene {
 
     // HUD
     this.hud.setText(`${STR.hp} ${gm.hp}    ${STR.money} ${gm.money}    ${STR.wave(gm.wave, gm.totalWaves)}`);
-    this.waveBtn.setEnabled(gm.phase === 'ready' && gm.wave < gm.totalWaves);
-    this.waveBtn.setText(gm.phase === 'wave' ? STR.waveRunning : STR.startWave);
+    this.waveBtn.setEnabled(gm.phase === 'ready' || gm.phase === 'intermission');
+    this.waveBtn.setText(
+      gm.phase === 'intermission' ? STR.nextWave(Math.ceil(gm.timer), gm.earlyBonus)
+        : gm.phase === 'ready' ? STR.startWave : STR.waveRunning,
+    );
     for (const { id, btn } of this.shopBtns) {
       const def = gm.cfg.units[id];
       btn.setEnabled(gm.money >= def.levels[0].cost);
@@ -282,9 +298,36 @@ export class GameScene extends Phaser.Scene {
         this.floatText(ev.x, ev.y, `-${ev.damage}`, '#ff5a5a');
         this.cameras.main.shake(120, 0.004);
         break;
+      case 'income':
+        this.floatText(ev.x, ev.y, `+💰${ev.amount}`, '#ffd35a');
+        break;
+      case 'waveCleared':
+        this.showToast(STR.waveCleared(ev.wave, ev.bonus));
+        break;
+      case 'earlyBonus':
+        this.showToast(STR.earlyBonus(ev.amount));
+        break;
       case 'gameOver':
+      case 'victory':
+        this.showEndScreen(ev.type === 'victory');
         break;
     }
+  }
+
+  private showEndScreen(won: boolean): void {
+    this.placing = null;
+    this.selected = null;
+    const reached = this.sim.wave;
+    const isNew = saveBest(reached);
+    const { width, height } = this.sim.cfg.map;
+    const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.65).setOrigin(0).setInteractive();
+    const box = this.add.rectangle(width / 2, height / 2, 520, 300, 0x23262e).setStrokeStyle(2, won ? 0xffd35a : 0xff5a5a);
+    const title = text(this, width / 2, height / 2 - 100, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
+    const lines = [STR.reachedWave(reached), STR.best(loadBest())];
+    if (isNew) lines.push(STR.newBest);
+    const body = text(this, width / 2, height / 2 - 10, lines.join('\n'), 20, '#c9d2dc').setOrigin(0.5).setAlign('center').setLineSpacing(6);
+    const again = button(this, width / 2, height / 2 + 100, 220, 50, STR.restart, () => this.scene.restart(), 0x2e9e5b, 20);
+    for (const o of [dim, box, title, body, again.container]) o.setDepth(50);
   }
 
   private floatText(x: number, y: number, s: string, color: string): void {
