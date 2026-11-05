@@ -1,5 +1,5 @@
-import { Path } from './path';
-import type { Enemy, EnemyDef, EnemyId, MapDef } from './types';
+import { dist, Path } from './path';
+import type { Enemy, EnemyDef, EnemyId, MapDef, TargetMode, Unit, UnitDef, UnitId, Vec } from './types';
 
 export interface SpawnGroup {
   enemy: EnemyId;
@@ -19,16 +19,35 @@ export interface WaveDef {
 export interface GameConfig {
   map: MapDef;
   enemies: Record<EnemyId, EnemyDef>;
+  units: Record<UnitId, UnitDef>;
   waves: WaveDef[];
   startHp: number;
   startMoney: number;
+  /** 판매 시 투자금 환불 비율 */
+  sellRate: number;
 }
 
 export type Phase = 'ready' | 'wave' | 'over';
 
 export type GameEvent =
   | { type: 'leak'; x: number; y: number; damage: number }
+  | { type: 'shot'; from: Vec; to: Vec; color: number }
+  | { type: 'blast'; x: number; y: number; r: number; color: number }
+  | { type: 'pulse'; x: number; y: number; r: number; color: number }
+  | { type: 'kill'; x: number; y: number; reward: number }
   | { type: 'gameOver' };
+
+/** 유저 조작. 멀티플레이를 붙일 때는 이 명령을 서버로 보내면 된다. */
+export type Command =
+  | { type: 'place'; unit: UnitId; x: number; y: number }
+  | { type: 'upgrade'; uid: number }
+  | { type: 'sell'; uid: number }
+  | { type: 'setTarget'; uid: number; mode: TargetMode }
+  | { type: 'startWave' };
+
+export type PlaceError = 'money' | 'path' | 'overlap' | 'bounds' | 'limit';
+
+export type CommandResult = { ok: true } | { ok: false; reason: PlaceError | 'maxLevel' | 'notFound' | 'phase' };
 
 /** 시뮬레이션 1스텝의 최대 길이. 배속이 높아도 결과가 크게 달라지지 않게 쪼개서 돌린다. */
 const MAX_STEP = 1 / 60;
@@ -42,6 +61,7 @@ export class Game {
   wave = 0;
   phase: Phase = 'ready';
   enemies: Enemy[] = [];
+  units: Unit[] = [];
   events: GameEvent[] = [];
 
   private nextUid = 1;
@@ -59,7 +79,82 @@ export class Game {
     return this.cfg.waves.length;
   }
 
-  startWave(): boolean {
+  apply(cmd: Command): CommandResult {
+    switch (cmd.type) {
+      case 'place':
+        return this.place(cmd.unit, cmd.x, cmd.y);
+      case 'upgrade':
+        return this.upgrade(cmd.uid);
+      case 'sell':
+        return this.sell(cmd.uid);
+      case 'setTarget': {
+        const u = this.findUnit(cmd.uid);
+        if (!u) return { ok: false, reason: 'notFound' };
+        u.target = cmd.mode;
+        return { ok: true };
+      }
+      case 'startWave':
+        return this.startWave() ? { ok: true } : { ok: false, reason: 'phase' };
+    }
+  }
+
+  findUnit(uid: number): Unit | undefined {
+    return this.units.find((u) => u.uid === uid);
+  }
+
+  /** 설치 가능 여부 (돈 제외한 위치 검사도 포함) */
+  canPlace(id: UnitId, x: number, y: number): PlaceError | null {
+    const def = this.cfg.units[id];
+    const { area, pathHalfWidth } = this.cfg.map;
+    const r = def.radius;
+    if (x < area.x + r || x > area.x + area.w - r || y < area.y + r || y > area.y + area.h - r) return 'bounds';
+    if (this.path.distanceTo({ x, y }) < pathHalfWidth + r) return 'path';
+    if (this.units.some((u) => dist(u, { x, y }) < u.def.radius + r)) return 'overlap';
+    if (def.maxCount !== undefined && this.units.filter((u) => u.def.id === id).length >= def.maxCount) return 'limit';
+    if (this.money < def.levels[0].cost) return 'money';
+    return null;
+  }
+
+  upgradeCost(u: Unit): number | null {
+    const next = u.def.levels[u.level + 1];
+    return next ? next.cost : null;
+  }
+
+  sellValue(u: Unit): number {
+    return Math.floor(u.invested * this.cfg.sellRate);
+  }
+
+  private place(id: UnitId, x: number, y: number): CommandResult {
+    const err = this.canPlace(id, x, y);
+    if (err) return { ok: false, reason: err };
+    const def = this.cfg.units[id];
+    const cost = def.levels[0].cost;
+    this.money -= cost;
+    this.units.push({ uid: this.nextUid++, def, level: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1 });
+    return { ok: true };
+  }
+
+  private upgrade(uid: number): CommandResult {
+    const u = this.findUnit(uid);
+    if (!u) return { ok: false, reason: 'notFound' };
+    const cost = this.upgradeCost(u);
+    if (cost === null) return { ok: false, reason: 'maxLevel' };
+    if (this.money < cost) return { ok: false, reason: 'money' };
+    this.money -= cost;
+    u.invested += cost;
+    u.level++;
+    return { ok: true };
+  }
+
+  private sell(uid: number): CommandResult {
+    const u = this.findUnit(uid);
+    if (!u) return { ok: false, reason: 'notFound' };
+    this.money += this.sellValue(u);
+    this.units = this.units.filter((x) => x !== u);
+    return { ok: true };
+  }
+
+  private startWave(): boolean {
     if (this.phase !== 'ready' || this.wave >= this.totalWaves) return false;
     this.wave++;
     this.phase = 'wave';
@@ -108,9 +203,84 @@ export class Game {
         this.spawnEnemy(this.spawnQueue.shift()!.id);
       }
     }
+    this.summon(dt);
     this.moveEnemies(dt);
+    this.unitsAct(dt);
     if (this.phase === 'wave' && this.spawnQueue.length === 0 && this.enemies.length === 0) {
       this.phase = 'ready';
+    }
+  }
+
+  private summon(dt: number): void {
+    for (const e of [...this.enemies]) {
+      const s = e.def.summon;
+      if (!s) continue;
+      e.summonTimer -= dt;
+      if (e.summonTimer <= 0) {
+        e.summonTimer = s.interval;
+        for (let i = 0; i < s.count; i++) this.spawnEnemy(s.id, Math.max(0, e.dist - 20 - i * 18));
+      }
+    }
+  }
+
+  private unitsAct(dt: number): void {
+    // 1) 와이파이 버프 계산 (겹치면 가장 센 것 하나만)
+    for (const u of this.units) u.buffMul = 1;
+    for (const b of this.units) {
+      if (b.def.kind !== 'buff') continue;
+      const lv = b.def.levels[b.level];
+      for (const u of this.units) {
+        if (u !== b && dist(u, b) <= lv.range) u.buffMul = Math.max(u.buffMul, 1 + (lv.buff ?? 0));
+      }
+    }
+    // 2) 공격
+    for (const u of this.units) {
+      const lv = u.def.levels[u.level];
+      if (u.def.kind === 'buff' || u.def.kind === 'income') continue;
+      u.cooldown -= dt * u.buffMul;
+      if (u.cooldown > 0) continue;
+      const inRange = this.enemies.filter((e) => e.hp > 0 && dist(u, e) <= lv.range + e.def.radius);
+      if (inRange.length === 0) {
+        u.cooldown = 0;
+        continue;
+      }
+      u.cooldown = lv.cooldown;
+      if (u.def.kind === 'slow') {
+        this.events.push({ type: 'pulse', x: u.x, y: u.y, r: lv.range, color: u.def.color });
+        for (const e of inRange) {
+          e.slowMul = Math.min(e.slowMul, lv.slow ?? 1);
+          e.slowTime = Math.max(e.slowTime, lv.slowDuration ?? 0);
+          this.damage(e, lv.damage);
+        }
+      } else {
+        const t = pickTarget(inRange, u.target, u);
+        this.events.push({ type: 'shot', from: { x: u.x, y: u.y }, to: { x: t.x, y: t.y }, color: u.def.color });
+        if (u.def.kind === 'splash') {
+          const r = lv.splash ?? 0;
+          this.events.push({ type: 'blast', x: t.x, y: t.y, r, color: u.def.color });
+          for (const e of this.enemies) if (e.hp > 0 && dist(e, t) <= r + e.def.radius) this.damage(e, lv.damage);
+        } else {
+          this.damage(t, lv.damage);
+        }
+      }
+    }
+    this.removeDead();
+  }
+
+  private damage(e: Enemy, amount: number): void {
+    if (e.hp <= 0) return;
+    e.hp -= Math.max(amount * 0.25, amount - e.def.armor);
+  }
+
+  private removeDead(): void {
+    const dead = this.enemies.filter((e) => e.hp <= 0);
+    if (!dead.length) return;
+    this.enemies = this.enemies.filter((e) => e.hp > 0);
+    for (const e of dead) {
+      this.money += e.def.reward;
+      this.events.push({ type: 'kill', x: e.x, y: e.y, reward: e.def.reward });
+      const sp = e.def.splitInto;
+      if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14));
     }
   }
 
@@ -140,4 +310,25 @@ export class Game {
       this.events.push({ type: 'gameOver' });
     }
   }
+}
+
+export function pickTarget(list: Enemy[], mode: TargetMode, from: Vec): Enemy {
+  let best = list[0];
+  for (const e of list) {
+    switch (mode) {
+      case 'first':
+        if (e.dist > best.dist) best = e;
+        break;
+      case 'last':
+        if (e.dist < best.dist) best = e;
+        break;
+      case 'strong':
+        if (e.hp > best.hp) best = e;
+        break;
+      case 'close':
+        if (dist(e, from) < dist(best, from)) best = e;
+        break;
+    }
+  }
+  return best;
 }
