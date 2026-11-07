@@ -6,7 +6,7 @@ import type { Enemy } from '../src/core/types';
 const FREE = { x: 500, y: 240 }; // 경로 사이 빈 공간
 
 function game(money = 5000) {
-  const g = new Game({ ...defaultConfig(), startMoney: money });
+  const g = new Game({ ...defaultConfig(), startMoney: money, critChance: 0, seed: 1 });
   return g;
 }
 

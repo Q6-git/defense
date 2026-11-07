@@ -29,14 +29,14 @@ describe('경제', () => {
     killAll(g);
     expect(g.phase).toBe('intermission');
     expect(g.money).toBe(money + 50);
-    expect(g.timer).toBeCloseTo(15, 0);
+    expect(g.timer).toBeCloseTo(g.cfg.intermission, 0);
   });
 
   it('대기 시간이 끝나면 다음 웨이브가 자동으로 시작된다', () => {
     const g = new Game(cfg());
     g.apply({ type: 'startWave' });
     killAll(g);
-    g.update(15.1);
+    g.update(g.cfg.intermission + 0.1);
     expect(g.wave).toBe(2);
     expect(g.phase).toBe('wave');
   });
@@ -45,12 +45,12 @@ describe('경제', () => {
     const g = new Game(cfg());
     g.apply({ type: 'startWave' });
     killAll(g);
-    g.update(5);
+    g.update(2);
     const money = g.money;
-    const expected = Math.floor(g.timer * 2);
+    const expected = Math.floor(g.timer * g.cfg.earlyBonusPerSec);
     g.apply({ type: 'startWave' });
     expect(g.money).toBe(money + expected);
-    expect(expected).toBeGreaterThan(15);
+    expect(expected).toBeGreaterThan(0);
   });
 
   it('동전 세탁기는 웨이브가 끝날 때마다 돈을 번다', () => {

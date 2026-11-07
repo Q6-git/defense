@@ -46,7 +46,26 @@ export interface Enemy {
   y: number;
   slowMul: number;
   slowTime: number;
+  /** 기절 남은 시간 (0보다 크면 멈춤) */
+  stunTime: number;
   summonTimer: number;
+}
+
+export type AbilityId = 'plunger' | 'overload';
+
+/** 플레이어가 웨이브 중에 직접 쓰는 스킬 */
+export interface AbilityDef {
+  id: AbilityId;
+  emoji: string;
+  cooldown: number;
+  /** 대상 지점이 필요한 스킬의 범위 */
+  radius?: number;
+  damage?: number;
+  /** 웨이브마다 늘어나는 피해량 */
+  damagePerWave?: number;
+  stun?: number;
+  duration?: number;
+  speedMul?: number;
 }
 
 export type UnitId = 'toaster' | 'fan' | 'microwave' | 'vacuum' | 'wifi' | 'washer';

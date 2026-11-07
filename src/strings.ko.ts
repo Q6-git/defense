@@ -1,5 +1,5 @@
 import type { PlaceError } from './core/game';
-import type { TargetMode, UnitId } from './core/types';
+import type { AbilityId, TargetMode, UnitId } from './core/types';
 
 // 게임 안에 표시되는 모든 텍스트. 다른 언어를 추가할 때는 같은 키로 파일을 하나 더 만든다.
 export const STR = {
@@ -9,7 +9,19 @@ export const STR = {
   wave: (n: number, total: number) => `🌊 ${n}/${total}`,
   startWave: '▶ 웨이브 시작',
   waveRunning: '진행 중…',
-  nextWave: (sec: number, bonus: number) => `▶ 다음 웨이브 ${sec}초  +💰${bonus}`,
+  nextWave: (sec: number, bonus: number) => `▶ 지금 부르기 ${sec}초  +💰${bonus}`,
+  preview: '다음',
+  waveBanner: (n: number) => `🌊 웨이브 ${n}`,
+  bossBanner: '⚠ 보스 등장! ⚠',
+  clearBanner: (bonus: number) => `클리어!  +💰${bonus}`,
+  crit: (n: number) => `${n}!`,
+  levelUp: 'LV UP!',
+  abilities: {
+    plunger: { name: '뚫어뻥', desc: '누른 곳을 내려쳐 피해 + 기절' },
+    overload: { name: '과부하', desc: '6초간 모든 가전 공속 2배' },
+  } satisfies Record<AbilityId, { name: string; desc: string }>,
+  aimHint: '뚫어뻥을 내려칠 곳을 누르세요',
+  abilityNotYet: '첫 웨이브를 시작한 뒤에 쓸 수 있어요',
   speed: (x: number) => `⏩ ${x}배속`,
   waveCleared: (n: number, bonus: number) => `웨이브 ${n} 클리어!  +💰${bonus}`,
   earlyBonus: (n: number) => `조기 호출 보너스 +💰${n}`,

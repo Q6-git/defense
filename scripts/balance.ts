@@ -24,11 +24,12 @@ const smart: Step[] = [
   { unit: 'microwave', x: 600, y: 430 },
   { unit: 'washer', x: 60, y: 420 },
   { unit: 'vacuum', x: 250, y: 430 },
-  { unit: 'washer', x: 60, y: 620 },
-  { upgradeAll: 'washer' },
   { unit: 'microwave', x: 360, y: 240 },
+  { upgradeAll: 'toaster' },
+  { unit: 'washer', x: 60, y: 620 },
   { unit: 'wifi', x: 440, y: 430 },
   { upgradeAll: 'microwave' },
+  { upgradeAll: 'washer' },
   { unit: 'vacuum', x: 920, y: 240 },
   { upgradeAll: 'washer' },
   { upgradeAll: 'toaster' },
@@ -70,8 +71,8 @@ function spendGreedy(g: Game): void {
 
 const VERBOSE = process.argv.includes('-v');
 
-function run(plan: Step[], callEarly: boolean, spendRest = false): { wave: number; hp: number; won: boolean } {
-  const g = new Game(defaultConfig());
+function run(plan: Step[], callEarly: boolean, spendRest = false, useSkills = false): { wave: number; hp: number; won: boolean } {
+  const g = new Game({ ...defaultConfig(), seed: 42 });
   let lastWave = 0;
   let i = 0;
   const tryBuild = () => {
@@ -99,6 +100,12 @@ function run(plan: Step[], callEarly: boolean, spendRest = false): { wave: numbe
   g.apply({ type: 'startWave' });
   for (let t = 0; t < 3600 && !g.finished; t += 0.1) {
     tryBuild();
+    if (useSkills && g.phase === 'wave' && g.enemies.length) {
+      // 가장 앞선 적을 뚫어뻥으로 내려치고, 적이 많으면 과부하
+      const lead = g.enemies.reduce((a, b) => (b.dist > a.dist ? b : a));
+      if (g.cooldowns.plunger <= 0 && lead.dist > g.path.length * 0.6) g.apply({ type: 'ability', id: 'plunger', x: lead.x, y: lead.y });
+      if (g.cooldowns.overload <= 0 && (g.enemies.length > 8 || g.enemies.some((e) => e.def.boss))) g.apply({ type: 'ability', id: 'overload' });
+    }
     if (callEarly && g.phase === 'intermission' && g.timer < 12) g.apply({ type: 'startWave' });
     g.update(0.1);
     if (VERBOSE && g.wave !== lastWave) {
@@ -111,13 +118,15 @@ function run(plan: Step[], callEarly: boolean, spendRest = false): { wave: numbe
 }
 
 const cases = [
-  ['naive', naive, false],
-  ['smart', smart, false],
-  ['smart+', smart, true],
+  ['naive', naive, false, false],
+  ['naive+스킬', naive, false, true],
+  ['smart', smart, false, false],
+  ['smart+', smart, true, false],
+  ['smart+스킬', smart, true, true],
 ] as const;
-for (const [name, plan, rest] of cases) {
+for (const [name, plan, rest, skills] of cases) {
   for (const early of [false, true]) {
-    const r = run(plan, early, rest);
-    console.log(`${name.padEnd(7)} 조기호출=${early ? 'O' : 'X'}  → 웨이브 ${r.wave}  HP ${r.hp}  ${r.won ? '승리' : '패배'}`);
+    const r = run(plan, early, rest, skills);
+    console.log(`${name.padEnd(10)} 조기호출=${early ? 'O' : 'X'}  → 웨이브 ${r.wave}  HP ${r.hp}  ${r.won ? '승리' : '패배'}`);
   }
 }
