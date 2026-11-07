@@ -77,7 +77,7 @@ describe('전투', () => {
     e.hp = 12;
     g.update(1 / 60);
     expect(g.enemies.includes(e)).toBe(false);
-    expect(g.money).toBe(money + e.def.reward);
+    expect(g.money).toBe(money + Math.round(e.def.reward * g.cfg.rewardMul));
   });
 
   it('방어력은 피해를 줄이지만 최소 25%는 들어간다', () => {

@@ -1,5 +1,5 @@
 import type { PlaceError } from './core/game';
-import type { AbilityId, TargetMode, UnitId } from './core/types';
+import type { AbilityId, DifficultyId, TargetMode, UnitId } from './core/types';
 
 // 게임 안에 표시되는 모든 텍스트. 다른 언어를 추가할 때는 같은 키로 파일을 하나 더 만든다.
 export const STR = {
@@ -31,6 +31,15 @@ export const STR = {
   best: (n: number) => `최고 기록: 웨이브 ${n}`,
   newBest: '🎉 새 기록!',
   restart: '다시 하기',
+  changeDifficulty: '난이도 바꾸기',
+  chooseDifficulty: '난이도를 고르세요',
+  bestShort: (n: number) => (n > 0 ? `최고 ${n}웨이브` : '기록 없음'),
+  difficulties: {
+    easy: { name: '😊 쉬움', desc: '처음 해 보는 사람용' },
+    normal: { name: '😤 보통', desc: '스킬까지 잘 써야 겨우 클리어' },
+    hard: { name: '🔥 어려움', desc: '배치 하나하나가 중요하다' },
+    hell: { name: '💀 지옥', desc: '기지 HP 150. 실수 한 번이 끝' },
+  } satisfies Record<DifficultyId, { name: string; desc: string }>,
   bossName: '👹 막힌 배수구 대왕',
   shop: '가전 설치',
   cancel: '취소',

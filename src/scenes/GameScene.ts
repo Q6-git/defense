@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
 import { Game, type GameEvent } from '../core/game';
-import { TARGET_MODES, type AbilityId, type Enemy, type Unit, type UnitId } from '../core/types';
+import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type Unit, type UnitId } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
+import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { UNIT_ORDER } from '../data/units';
 import { sfx } from '../sfx';
-import { loadBest, saveBest } from '../storage';
+import { loadBest, loadDifficulty, saveBest, saveDifficulty } from '../storage';
 import { STR } from '../strings.ko';
 import { button, text, type Button } from './ui';
 
@@ -25,6 +26,7 @@ interface AbilityButton {
 
 export class GameScene extends Phaser.Scene {
   private sim!: Game;
+  private difficulty: DifficultyId = 'normal';
   private world!: Phaser.GameObjects.Graphics;
   private overlay!: Phaser.GameObjects.Graphics;
   private enemyEmojis = new Map<number, Phaser.GameObjects.Text>();
@@ -32,6 +34,7 @@ export class GameScene extends Phaser.Scene {
   /** 맞은 적을 잠깐 하얗게 깜빡이게 하는 남은 시간 */
   private flashes = new Map<number, number>();
   private hud!: Phaser.GameObjects.Text;
+  private diffLabel!: Phaser.GameObjects.Text;
   private preview!: Phaser.GameObjects.Text;
   private waveBtn!: Button;
   private speedBtn!: Button;
@@ -64,8 +67,11 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  create(): void {
-    this.sim = new Game(defaultConfig());
+  /** data.difficulty가 없으면(처음 열었을 때) 난이도 선택 화면을 띄운다 */
+  create(data: { difficulty?: DifficultyId }): void {
+    this.difficulty = data.difficulty ?? loadDifficulty() ?? 'normal';
+    if (data.difficulty) saveDifficulty(data.difficulty);
+    this.sim = new Game(defaultConfig(this.difficulty));
     // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
     if (import.meta.env.DEV) (window as unknown as { sim: Game }).sim = this.sim;
     this.enemyEmojis.clear();
@@ -81,6 +87,7 @@ export class GameScene extends Phaser.Scene {
     this.overlay = this.add.graphics().setDepth(5);
     this.hud = text(this, 16, 14, '', 22);
     this.preview = text(this, 330, 18, '', 17, '#9fb3c8');
+    this.diffLabel = text(this, 720, 18, '', 17, '#ffd35a').setOrigin(1, 0);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), 0x4a4f5e, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), 0x4a4f5e, 17);
     this.waveBtn = button(this, 1124, 28, 300, 40, STR.startWave, () => this.sim.apply({ type: 'startWave' }), 0x2e9e5b, 17);
@@ -95,6 +102,28 @@ export class GameScene extends Phaser.Scene {
       if (this.placing || this.aiming) this.ghost = { x: p.worldX, y: p.worldY };
     });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onMapTap(p.worldX, p.worldY));
+    if (!data.difficulty) this.showDifficultyPicker();
+  }
+
+  private showDifficultyPicker(): void {
+    const { width, height } = this.sim.cfg.map;
+    const layer = this.add.container(0, 0).setDepth(60);
+    const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setOrigin(0).setInteractive();
+    const title = text(this, width / 2, 120, `🔌 ${STR.title}`, 36).setOrigin(0.5);
+    const sub = text(this, width / 2, 175, STR.chooseDifficulty, 20, '#9fb3c8').setOrigin(0.5);
+    layer.add([dim, title, sub]);
+    DIFFICULTY_ORDER.forEach((id, i) => {
+      const d = DIFFICULTIES[id];
+      const y = 260 + i * 100;
+      const colors: Record<DifficultyId, number> = { easy: 0x2e9e5b, normal: 0x2f6fd6, hard: 0xc0612b, hell: 0x8a1f2a };
+      const b = button(this, width / 2, y, 520, 84, '', () => this.scene.restart({ difficulty: id }), colors[id], 18);
+      const name = STR.difficulties[id];
+      b.label.setText(`${name.name}\n${name.desc}`).setAlign('center').setLineSpacing(4);
+      const info = text(this, 190, 0, `${STR.bestShort(loadBest(id))}\n❤️${d.startHp}`, 14, '#e8eef5').setOrigin(0.5).setAlign('center');
+      b.container.add(info);
+      if (id === this.difficulty) b.bg.setStrokeStyle(4, 0xffd35a);
+      layer.add(b.container);
+    });
   }
 
   update(_t: number, deltaMs: number): void {
@@ -385,6 +414,7 @@ export class GameScene extends Phaser.Scene {
 
     // HUD
     this.hud.setText(`${STR.hp} ${gm.hp}   ${STR.money} ${gm.money}   ${STR.wave(gm.wave, gm.totalWaves)}`);
+    this.diffLabel.setText(STR.difficulties[this.difficulty].name);
     const next = gm.wavePreview(gm.wave + 1);
     this.preview.setText(next.length ? `${STR.preview} ${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
     this.waveBtn.setEnabled(gm.phase === 'ready' || gm.phase === 'intermission');
@@ -605,16 +635,17 @@ export class GameScene extends Phaser.Scene {
     this.aiming = null;
     this.selected = null;
     const reached = this.sim.wave;
-    const isNew = saveBest(reached);
+    const isNew = saveBest(this.difficulty, reached);
     const { width, height } = this.sim.cfg.map;
     const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.65).setOrigin(0).setInteractive();
-    const box = this.add.rectangle(width / 2, height / 2, 520, 300, 0x23262e).setStrokeStyle(2, won ? 0xffd35a : 0xff5a5a);
+    const box = this.add.rectangle(width / 2, height / 2, 540, 320, 0x23262e).setStrokeStyle(2, won ? 0xffd35a : 0xff5a5a);
     const title = text(this, width / 2, height / 2 - 100, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
-    const lines = [STR.reachedWave(reached), STR.best(loadBest())];
+    const lines = [STR.difficulties[this.difficulty].name, STR.reachedWave(reached), STR.best(loadBest(this.difficulty))];
     if (isNew) lines.push(STR.newBest);
-    const body = text(this, width / 2, height / 2 - 10, lines.join('\n'), 20, '#c9d2dc').setOrigin(0.5).setAlign('center').setLineSpacing(6);
-    const again = button(this, width / 2, height / 2 + 100, 220, 50, STR.restart, () => this.scene.restart(), 0x2e9e5b, 20);
-    for (const ob of [dim, box, title, body, again.container]) ob.setDepth(50);
+    const body = text(this, width / 2, height / 2 - 5, lines.join('\n'), 20, '#c9d2dc').setOrigin(0.5).setAlign('center').setLineSpacing(6);
+    const again = button(this, width / 2 - 120, height / 2 + 105, 220, 50, STR.restart, () => this.scene.restart({ difficulty: this.difficulty }), 0x2e9e5b, 20);
+    const change = button(this, width / 2 + 120, height / 2 + 105, 220, 50, STR.changeDifficulty, () => this.scene.restart({}), 0x4a4f5e, 20);
+    for (const ob of [dim, box, title, body, again.container, change.container]) ob.setDepth(50);
     box.setScale(0.6);
     this.tweens.add({ targets: box, scale: 1, duration: 300, ease: 'Back.easeOut' });
   }

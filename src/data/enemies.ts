@@ -11,7 +11,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
   },
   splitling: { id: 'splitling', hp: 35, speed: 122, armor: 0, reward: 4, radius: 10, emoji: '💧', color: 0x7fd8e6 },
   boss: {
-    id: 'boss', hp: 5000, speed: 35, armor: 12, reward: 800, radius: 34, emoji: '👹', color: 0x4b2a5e, boss: true,
+    id: 'boss', hp: 1700, speed: 35, armor: 12, reward: 800, radius: 34, emoji: '👹', color: 0x4b2a5e, boss: true,
     summon: { id: 'goo', count: 3, interval: 6 },
   },
 };

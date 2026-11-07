@@ -119,3 +119,5 @@ export interface Unit {
   /** 이번 스텝에 받은 버프 배율 (렌더링용) */
   buffMul: number;
 }
+
+export type DifficultyId = 'easy' | 'normal' | 'hard' | 'hell';
