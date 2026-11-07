@@ -28,7 +28,7 @@ describe('경제', () => {
     const money = g.money;
     killAll(g);
     expect(g.phase).toBe('intermission');
-    expect(g.money).toBe(money + 50);
+    expect(g.money).toBe(money + g.cfg.waveBonus(1));
     expect(g.timer).toBeCloseTo(g.cfg.intermission, 0);
   });
 
@@ -59,7 +59,7 @@ describe('경제', () => {
     g.apply({ type: 'startWave' });
     const money = g.money;
     killAll(g);
-    expect(g.money).toBe(money + 50 + 40);
+    expect(g.money).toBe(money + g.cfg.waveBonus(1) + 40);
     expect(g.drainEvents().some((e) => e.type === 'income')).toBe(true);
   });
 
@@ -90,5 +90,15 @@ describe('웨이브 데이터', () => {
     g.spawnEnemy('boss', 100);
     g.update(6.1);
     expect(g.enemies.filter((e) => e.def.id === 'goo').length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('난이도', () => {
+  it('어려울수록 적 체력이 높고 시작 자원이 적다', () => {
+    const easy = new Game({ ...defaultConfig('easy'), seed: 1 });
+    const hell = new Game({ ...defaultConfig('hell'), seed: 1 });
+    expect(hell.spawnEnemy('goo').hp).toBeGreaterThan(easy.spawnEnemy('goo').hp);
+    expect(hell.hp).toBeLessThan(easy.hp);
+    expect(hell.money).toBeLessThanOrEqual(easy.money);
   });
 });

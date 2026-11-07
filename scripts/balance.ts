@@ -4,7 +4,8 @@
 //  - smart: 세탁기 + 감속 + 범위 + 버프를 섞어 쓰는 사람
 import { defaultConfig } from '../src/config';
 import { Game } from '../src/core/game';
-import type { UnitId } from '../src/core/types';
+import type { DifficultyId, UnitId } from '../src/core/types';
+import { DIFFICULTY_ORDER } from '../src/data/difficulty';
 
 type Step = { unit: UnitId; x: number; y: number } | { upgradeAll: UnitId };
 
@@ -19,13 +20,14 @@ for (let i = 0; i < 3; i++) naive.push({ upgradeAll: 'toaster' });
 const smart: Step[] = [
   { unit: 'toaster', x: 520, y: 240 },
   { unit: 'toaster', x: 780, y: 240 },
-  { unit: 'washer', x: 60, y: 240 },
-  { unit: 'fan', x: 780, y: 590 },
+  { unit: 'toaster', x: 680, y: 240 },
   { unit: 'microwave', x: 600, y: 430 },
-  { unit: 'washer', x: 60, y: 420 },
   { unit: 'vacuum', x: 250, y: 430 },
-  { unit: 'microwave', x: 360, y: 240 },
+  { unit: 'washer', x: 60, y: 240 },
   { upgradeAll: 'toaster' },
+  { unit: 'fan', x: 780, y: 590 },
+  { unit: 'washer', x: 60, y: 420 },
+  { unit: 'microwave', x: 360, y: 240 },
   { unit: 'washer', x: 60, y: 620 },
   { unit: 'wifi', x: 440, y: 430 },
   { upgradeAll: 'microwave' },
@@ -45,7 +47,6 @@ const smart: Step[] = [
   { unit: 'microwave', x: 900, y: 450 },
   { upgradeAll: 'microwave' },
   { upgradeAll: 'microwave' },
-  { unit: 'toaster', x: 680, y: 240 },
   { upgradeAll: 'toaster' },
   { upgradeAll: 'toaster' },
 ];
@@ -71,8 +72,8 @@ function spendGreedy(g: Game): void {
 
 const VERBOSE = process.argv.includes('-v');
 
-function run(plan: Step[], callEarly: boolean, spendRest = false, useSkills = false): { wave: number; hp: number; won: boolean } {
-  const g = new Game({ ...defaultConfig(), seed: 42 });
+function run(diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = false, useSkills = false): { wave: number; hp: number; won: boolean } {
+  const g = new Game({ ...defaultConfig(diff), seed: 42 });
   let lastWave = 0;
   let i = 0;
   const tryBuild = () => {
@@ -124,9 +125,11 @@ const cases = [
   ['smart+', smart, true, false],
   ['smart+스킬', smart, true, true],
 ] as const;
-for (const [name, plan, rest, skills] of cases) {
-  for (const early of [false, true]) {
-    const r = run(plan, early, rest, skills);
-    console.log(`${name.padEnd(10)} 조기호출=${early ? 'O' : 'X'}  → 웨이브 ${r.wave}  HP ${r.hp}  ${r.won ? '승리' : '패배'}`);
+const only = process.argv.find((a) => (DIFFICULTY_ORDER as string[]).includes(a)) as DifficultyId | undefined;
+for (const diff of only ? [only] : DIFFICULTY_ORDER) {
+  console.log(`[${diff}]`);
+  for (const [name, plan, rest, skills] of cases) {
+    const r = run(diff, plan, true, rest, skills);
+    console.log(`  ${name.padEnd(10)} → 웨이브 ${String(r.wave).padStart(2)}  HP ${String(r.hp).padStart(4)}  ${r.won ? '승리' : '패배'}`);
   }
 }

@@ -38,6 +38,10 @@ export interface GameConfig {
   /** 공격이 크리티컬로 터질 확률과 배율 */
   critChance: number;
   critMul: number;
+  /** 난이도 배율 (적 체력, 적 속도, 처치 보상) */
+  enemyHpMul: number;
+  enemySpeedMul: number;
+  rewardMul: number;
   seed?: number;
 }
 
@@ -270,7 +274,7 @@ export class Game {
   spawnEnemy(id: EnemyId, dist = 0): Enemy {
     const def = this.cfg.enemies[id];
     const hpMul = this.wave > 0 ? this.cfg.waves[this.wave - 1].hpMul : 1;
-    const hp = Math.round(def.hp * hpMul);
+    const hp = Math.round(def.hp * hpMul * this.cfg.enemyHpMul);
     const p = this.path.pointAt(dist);
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, x: p.x, y: p.y,
@@ -392,8 +396,9 @@ export class Game {
     if (!dead.length) return;
     this.enemies = this.enemies.filter((e) => e.hp > 0);
     for (const e of dead) {
-      this.money += e.def.reward;
-      this.events.push({ type: 'kill', x: e.x, y: e.y, reward: e.def.reward });
+      const reward = Math.max(1, Math.round(e.def.reward * this.cfg.rewardMul));
+      this.money += reward;
+      this.events.push({ type: 'kill', x: e.x, y: e.y, reward });
       const sp = e.def.splitInto;
       if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14));
     }
@@ -411,7 +416,7 @@ export class Game {
         survivors.push(e);
         continue;
       }
-      e.dist += e.def.speed * e.slowMul * dt;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * e.slowMul * dt;
       if (e.dist >= this.path.length) {
         // 기지에 도착한 적은 남은 체력만큼 피해를 준다.
         const damage = Math.ceil(e.hp);
