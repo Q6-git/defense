@@ -9,14 +9,19 @@ import { UNIT_ORDER } from '../data/units';
 import { sfx, type SoundId } from '../sfx';
 import { loadBest, loadSetup, saveBest, saveSetup, type RunSetup } from '../storage';
 import { STR } from '../strings.ko';
-import { button, text, type Button } from './ui';
+import { spriteUrls } from '../spriteLoader';
+import { OBSTACLE_SPRITE } from '../sprites';
+import { baseScale, button, icon, text, type Button, type Icon } from './ui';
 
 const PANEL_X = 1040;
 const PANEL_W = 240;
 const SPEEDS = [1, 2, 3];
 /** 투사체가 날아가는 속도(px/초). 피해는 즉시 들어가므로 너무 느리면 어색하다. */
 const PROJECTILE_SPEED = 1400;
-const PROJECTILE_EMOJI: Partial<Record<UnitId, string>> = { toaster: '🍞', microwave: '🔥' };
+const PROJECTILE: Partial<Record<UnitId, { key: string; emoji: string }>> = {
+  toaster: { key: 'proj_toast', emoji: '🍞' },
+  microwave: { key: 'proj_fire', emoji: '🔥' },
+};
 /** 갈래별 공격 모양: 빠른 공격은 투사체 대신 선으로 그린다 */
 const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; sound: SoundId }> = {
   rapid: { color: 0xffd35a, width: 2, fade: 60, sound: 'shoot' },
@@ -41,10 +46,10 @@ export class GameScene extends Phaser.Scene {
   }
   private world!: Phaser.GameObjects.Graphics;
   private overlay!: Phaser.GameObjects.Graphics;
-  private enemyEmojis = new Map<number, Phaser.GameObjects.Text>();
-  private unitEmojis = new Map<number, Phaser.GameObjects.Text>();
+  private enemyEmojis = new Map<number, Icon>();
+  private unitEmojis = new Map<number, Icon>();
   /** 갈림길을 고른 가전 위의 작은 배지 */
-  private badges = new Map<number, Phaser.GameObjects.Text>();
+  private badges = new Map<number, Icon>();
   /** 맞은 적을 잠깐 하얗게 깜빡이게 하는 남은 시간 */
   private flashes = new Map<number, number>();
   private hud!: Phaser.GameObjects.Text;
@@ -81,6 +86,13 @@ export class GameScene extends Phaser.Scene {
 
   constructor() {
     super('game');
+  }
+
+  preload(): void {
+    // 검사를 통과한 그림만 불러온다. 못 불러온 그림은 이모지로 그려진다
+    for (const [key, url] of Object.entries(spriteUrls)) {
+      if (!this.textures.exists(key)) this.load.image(key, url);
+    }
   }
 
   /** data.start가 없으면(처음 열었거나 설정을 바꿀 때) 시작 화면을 띄운다 */
@@ -278,9 +290,9 @@ export class GameScene extends Phaser.Scene {
       const x = PANEL_X + 64 + (i % 2) * 112;
       const y = 122 + Math.floor(i / 2) * 76;
       const btn = button(this, x, y, 104, 68, '', () => this.choosePlacing(id), 0x2a2e39, 13);
-      const icon = text(this, -32, 0, def.emoji, 24).setOrigin(0.5);
-      btn.label.setPosition(16, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center');
-      btn.container.add(icon);
+      const ic = icon(this, -33, 0, id, def.emoji, 36);
+      btn.label.setPosition(18, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center');
+      btn.container.add(ic);
       return { id, btn };
     });
   }
@@ -291,11 +303,11 @@ export class GameScene extends Phaser.Scene {
       const x = PANEL_X + 64 + i * 112;
       const y = 352;
       const btn = button(this, x, y, 104, 56, '', () => this.useAbility(id), 0x5a3d8a, 15);
-      const icon = text(this, -30, 0, def.emoji, 26).setOrigin(0.5);
+      const ic = icon(this, -30, 0, `ab_${id}`, def.emoji, 40);
       btn.label.setPosition(16, 0).setText(STR.abilities[id].name);
       const shade = this.add.rectangle(-52, 28, 104, 56, 0x000000, 0.6).setOrigin(0, 1);
       const timer = text(this, 0, 0, '', 20).setOrigin(0.5);
-      btn.container.add([icon, shade, timer]);
+      btn.container.add([ic, shade, timer]);
       return { id, btn, shade, timer };
     });
   }
@@ -336,7 +348,7 @@ export class GameScene extends Phaser.Scene {
     this.floatText(u.x, u.y - 10, label, branch !== undefined ? '#e0c0ff' : '#ffd35a', 18);
     if (branch !== undefined) this.burst(u.x, u.y, color, 12, 60);
     const em = this.unitEmojis.get(u.uid);
-    if (em) this.tweens.add({ targets: em, scale: 1.5, duration: 120, yoyo: true });
+    if (em) this.tweens.add({ targets: em, scale: baseScale(em) * 1.5, duration: 120, yoyo: true });
   }
 
   private cycleTarget(): void {
@@ -370,13 +382,14 @@ export class GameScene extends Phaser.Scene {
     for (let y = map.area.y; y <= map.height; y += 40) g.lineBetween(map.area.x, y, map.area.x + map.area.w, y);
     // 장애물
     for (const b of map.blocked ?? []) {
-      g.fillStyle(0x000000, 0.25).fillRoundedRect(b.x, b.y, b.w, b.h, 10);
-      g.lineStyle(2, 0xffffff, 0.12).strokeRoundedRect(b.x, b.y, b.w, b.h, 10);
+      // 그림의 진한 외곽선이 보이도록 바닥보다 밝게
+      g.fillStyle(0xffffff, 0.09).fillRoundedRect(b.x, b.y, b.w, b.h, 10);
+      g.lineStyle(2, 0xffffff, 0.18).strokeRoundedRect(b.x, b.y, b.w, b.h, 10);
       // 상자 안에 이모지를 고르게 채운다
       const size = Math.min(b.w, b.h) * 0.62;
       const n = Math.max(1, Math.floor(b.w / (size * 1.25)));
       for (let i = 0; i < n; i++) {
-        text(this, b.x + (b.w * (i + 0.5)) / n, b.y + b.h / 2, b.emoji, size).setOrigin(0.5).setAlpha(0.85);
+        icon(this, b.x + (b.w * (i + 0.5)) / n, b.y + b.h / 2, OBSTACLE_SPRITE[b.emoji], b.emoji, size * 1.3);
       }
     }
     // 배수관: 테두리를 먼저 모두 그리고 안쪽을 그려야 합류 지점이 깔끔하다
@@ -400,9 +413,12 @@ export class GameScene extends Phaser.Scene {
         g.fillTriangle(tri[0].x, tri[0].y, tri[1].x, tri[1].y, tri[2].x, tri[2].y);
       }
     }
-    for (const pts of lines) text(this, 24, pts[0].y - 52, '🕳️ 배수구', 18, '#9fb3c8');
+    for (const pts of lines) {
+      icon(this, 26, pts[0].y, 'drain', '🕳️', 50).setDepth(1);
+      text(this, 56, pts[0].y - 48, STR.drain, 16, '#9fb3c8');
+    }
     const end = lines[0][lines[0].length - 1];
-    text(this, end.x + 10, end.y, '🔌', 46).setOrigin(0.5);
+    icon(this, end.x + 6, end.y, 'outlet', '🔌', 60).setDepth(1);
     g.fillStyle(0x1b1d24).fillRect(0, 0, map.width, map.area.y);
     g.fillStyle(0x1b1d24).fillRect(PANEL_X, map.area.y, PANEL_W, map.area.h);
   }
@@ -424,15 +440,16 @@ export class GameScene extends Phaser.Scene {
     const overload = gm.overloadTime > 0;
     this.syncUnits();
     syncEmojis(this, this.badges, gm.units.filter((u) => u.branch !== null).map((u) => ({
-      uid: u.uid, x: u.x + u.def.radius * 0.8, y: u.y - u.def.radius * 0.8, emoji: u.def.branches![u.branch!].emoji, size: 14,
+      uid: u.uid, x: u.x + u.def.radius * 0.9, y: u.y - u.def.radius * 0.9, emoji: u.def.branches![u.branch!].emoji, size: 28,
     })), 3);
     // 불 장판
     for (const z of gm.zones) {
       g.fillStyle(0xff6a1a, 0.18 + 0.08 * Math.sin(t * 20 + z.x)).fillCircle(z.x, z.y, z.r);
     }
     for (const u of gm.units) {
-      g.fillStyle(u.def.color, 0.9).fillCircle(u.x, u.y, u.def.radius);
-      g.lineStyle(2, u === sel ? 0xffffff : 0x000000, u === sel ? 1 : 0.4).strokeCircle(u.x, u.y, u.def.radius);
+      g.fillStyle(0x000000, 0.25).fillEllipse(u.x, u.y + u.def.radius * 0.9, u.def.radius * 2, u.def.radius * 0.6);
+      if (!this.textures.exists(u.def.id)) g.fillStyle(u.def.color, 0.9).fillCircle(u.x, u.y, u.def.radius);
+      if (u === sel) g.lineStyle(3, 0xffffff, 1).strokeCircle(u.x, u.y, u.def.radius + 3);
       if (u.buffMul > 1) g.lineStyle(2, 0x3fbf8f, 0.9).strokeCircle(u.x, u.y, u.def.radius + 4);
       if (overload && u.def.kind !== 'income' && u.def.kind !== 'buff') {
         g.lineStyle(3, 0xffe14a, 0.5 + 0.4 * Math.sin(t * 20)).strokeCircle(u.x, u.y, u.def.radius + 7);
@@ -440,7 +457,7 @@ export class GameScene extends Phaser.Scene {
       for (let i = 0; i <= u.level; i++) {
         g.fillStyle(i === 3 ? 0xc58aff : 0xffd35a).fillCircle(u.x - 12 + i * 8, u.y + u.def.radius + 5, 3);
       }
-      if (u.branch !== null) g.lineStyle(2, 0xc58aff, 0.9).strokeCircle(u.x, u.y, u.def.radius + 2);
+      if (u.branch !== null) g.lineStyle(2, 0xc58aff, 0.9).strokeCircle(u.x, u.y, u.def.radius + 5);
     }
 
     // 적: 통통 튀며 움직이고, 맞으면 하얗게 깜빡인다
@@ -449,15 +466,16 @@ export class GameScene extends Phaser.Scene {
       const bob = moving ? Math.abs(Math.sin(t * 9 + e.uid)) * 4 : 0;
       return { x: e.x, y: e.y - bob };
     };
-    syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), emoji: e.def.emoji, size: e.def.radius * 1.4 })));
+    syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), key: e.def.id, emoji: e.def.emoji, size: e.def.radius * (e.def.radius < 13 ? 3.2 : 2.6) })));
     for (const e of gm.enemies) {
       const p = pos(e);
       const flash = this.flashes.has(e.uid);
       g.fillStyle(0x000000, 0.25).fillEllipse(e.x, e.y + e.def.radius * 0.8, e.def.radius * 1.8, e.def.radius * 0.6);
-      g.fillStyle(flash ? 0xffffff : e.def.color).fillCircle(p.x, p.y, e.def.radius);
+      if (!this.textures.exists(e.def.id)) g.fillStyle(flash ? 0xffffff : e.def.color).fillCircle(p.x, p.y, e.def.radius);
       const em = this.enemyEmojis.get(e.uid);
       if (em) {
-        if (flash) em.setTintFill(0xffffff);
+        // 계속 맞아도 모양이 보이도록 하얗게 덮지 않고 붉게 물들인다
+        if (flash) em.setTint(0xff7a7a);
         else em.clearTint();
       }
       if (e.slowMul < 1) g.lineStyle(3, 0x9fe3ff).strokeCircle(p.x, p.y, e.def.radius + 2);
@@ -594,15 +612,15 @@ export class GameScene extends Phaser.Scene {
       case 'shot': {
         this.recoil(ev.unit);
         const style = ev.branch ? BRANCH_SHOT[ev.branch] : undefined;
-        const emoji = ev.branch ? undefined : PROJECTILE_EMOJI[ev.kind];
+        const proj = ev.branch ? undefined : PROJECTILE[ev.kind];
         if (style) {
           const line = this.add.line(0, 0, ev.from.x, ev.from.y, ev.to.x, ev.to.y, style.color, 0.95).setOrigin(0).setLineWidth(style.width).setDepth(7);
           this.tweens.add({ targets: line, alpha: 0, duration: style.fade, onComplete: () => line.destroy() });
           sfx.play(style.sound);
           break;
-        } else if (emoji) {
+        } else if (proj) {
           const dur = (Phaser.Math.Distance.Between(ev.from.x, ev.from.y, ev.to.x, ev.to.y) / PROJECTILE_SPEED) * 1000;
-          const p = text(this, ev.from.x, ev.from.y, emoji, 18).setOrigin(0.5).setDepth(7);
+          const p = icon(this, ev.from.x, ev.from.y, proj.key, proj.emoji, 24).setDepth(7);
           this.tweens.add({ targets: p, x: ev.to.x, y: ev.to.y, angle: 360, duration: dur, onComplete: () => p.destroy() });
         } else {
           const line = this.add.line(0, 0, ev.from.x, ev.from.y, ev.to.x, ev.to.y, ev.color, 0.9).setOrigin(0).setLineWidth(3).setDepth(7);
@@ -688,11 +706,11 @@ export class GameScene extends Phaser.Scene {
   private recoil(uid: number): void {
     const em = this.unitEmojis.get(uid);
     if (!em || this.tweens.isTweening(em)) return;
-    this.tweens.add({ targets: em, scale: 1.3, duration: 50, yoyo: true });
+    this.tweens.add({ targets: em, scale: baseScale(em) * 1.25, duration: 50, yoyo: true });
   }
 
   private syncUnits(): void {
-    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, emoji: u.def.emoji, size: u.def.radius * 1.3 })));
+    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.6 })));
   }
 
   private popIn(u: Unit | undefined): void {
@@ -700,11 +718,11 @@ export class GameScene extends Phaser.Scene {
     this.burst(u.x, u.y, 0xffffff, 6);
     this.syncUnits();
     const em = this.unitEmojis.get(u.uid);
-    if (em) this.tweens.add({ targets: em, scale: { from: 0.2, to: 1 }, duration: 260, ease: 'Back.easeOut' });
+    if (em) this.tweens.add({ targets: em, scale: { from: baseScale(em) * 0.2, to: baseScale(em) }, duration: 260, ease: 'Back.easeOut' });
   }
 
   private plungerFx(x: number, y: number, r: number): void {
-    const p = text(this, x, y - 220, '🪠', 64).setOrigin(0.5, 1).setDepth(30);
+    const p = icon(this, x, y - 220, 'ab_plunger', '🪠', 96).setOrigin(0.5, 1).setDepth(30);
     this.tweens.add({
       targets: p, y, duration: 160, ease: 'Quad.easeIn',
       onComplete: () => {
@@ -790,8 +808,8 @@ export class GameScene extends Phaser.Scene {
 
 function syncEmojis(
   scene: Phaser.Scene,
-  pool: Map<number, Phaser.GameObjects.Text>,
-  items: { uid: number; x: number; y: number; emoji: string; size: number }[],
+  pool: Map<number, Icon>,
+  items: { uid: number; x: number; y: number; key?: string; emoji: string; size: number }[],
   depth = 2,
 ): void {
   const alive = new Set<number>();
@@ -799,7 +817,7 @@ function syncEmojis(
     alive.add(it.uid);
     let t = pool.get(it.uid);
     if (!t) {
-      t = text(scene, 0, 0, it.emoji, it.size).setOrigin(0.5).setDepth(depth);
+      t = icon(scene, 0, 0, it.key, it.emoji, it.size).setDepth(depth);
       pool.set(it.uid, t);
     }
     t.setPosition(it.x, it.y);
