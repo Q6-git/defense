@@ -8,7 +8,8 @@
 npm install
 npm run dev        # 개발 서버 (http://localhost:5173)
 npm test           # 로직 단위 테스트
-npm run balance    # 봇 플레이어로 밸런스 확인
+npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 조합 비교)
+npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
 npm run build      # dist/ 에 배포용 빌드
 ```
 
@@ -22,6 +23,17 @@ npm run build      # dist/ 에 배포용 빌드
 - 스킬 2개를 웨이브 중에 직접 사용
   - 🪠 뚫어뻥: 누른 곳을 내려쳐 범위 피해 + 기절 (재사용 20초)
   - ⚡ 과부하: 6초 동안 모든 가전 공격 속도 2배 (재사용 40초)
+- Lv3 다음은 **갈림길**: 두 갈래 중 하나를 골라 Lv4로 (되돌릴 수 없음)
+
+| 가전 | A (떼거리용) | B (강적용) |
+|---|---|---|
+| 🍞 토스터 | 🔫 연사 | 🎯 저격 (방어 무시) |
+| 🌀 선풍기 | 🌪️ 태풍 (밀어내기) | ❄️ 냉풍 (얼리기, 언 적 피해 +40%) |
+| 📦 전자레인지 | ☢️ 해동 폭탄 (불 장판) | 🍳 그릴 (지질수록 최대 4배) |
+| 🤖 로봇청소기 | 💨 흡입 (범위 전체) | 🦾 분쇄 (방어 무시) |
+| 📶 와이파이 | 📡 5G (버프 강화) | 🛰️ 해킹 (적 약화) |
+| 🪙 세탁기 | 🏦 이자 | ⛲ 동전 분수 |
+
 - 공격의 10%는 크리티컬(2.5배)
 - 상단에 다음 웨이브 구성 미리보기, 🔊 버튼으로 효과음 끄기
 
@@ -46,7 +58,7 @@ src/config.ts  시작 자금, 기지 HP, 보너스 등 규칙 수치
 src/strings.ko.ts  화면 텍스트 (다른 언어는 같은 키로 파일 추가)
 src/scenes/    Phaser 렌더링과 입력
 tests/         Vitest
-scripts/       balance.ts (밸런스 시뮬레이터), shot.cjs (Playwright 스크린샷)
+scripts/       balance.ts (밸런스 시뮬레이터), branches.ts (갈래 벤치마크), shot.cjs (Playwright 스크린샷)
 ```
 
 유저 조작은 모두 `game.apply(command)`를 거친다. 멀티플레이를 붙일 때는 이 명령을 서버로 보내고, 서버가 같은 `Game`을 돌리면 된다.

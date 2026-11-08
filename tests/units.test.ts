@@ -40,14 +40,17 @@ describe('유닛 배치', () => {
 });
 
 describe('업그레이드와 판매', () => {
-  it('업그레이드는 최대 레벨까지만 된다', () => {
+  it('업그레이드는 Lv3 → 갈림길 → 끝', () => {
     const g = game();
     g.apply({ type: 'place', unit: 'toaster', ...FREE });
     const u = g.units[0];
     expect(g.apply({ type: 'upgrade', uid: u.uid }).ok).toBe(true);
     expect(g.apply({ type: 'upgrade', uid: u.uid }).ok).toBe(true);
     expect(u.level).toBe(2);
-    expect(g.apply({ type: 'upgrade', uid: u.uid })).toEqual({ ok: false, reason: 'maxLevel' });
+    // Lv3 다음은 갈림길이라 갈래를 골라야 하고, 고른 뒤에는 더 올릴 수 없다
+    expect(g.apply({ type: 'upgrade', uid: u.uid })).toEqual({ ok: false, reason: 'branch' });
+    expect(g.apply({ type: 'upgrade', uid: u.uid, branch: 0 }).ok).toBe(true);
+    expect(g.apply({ type: 'upgrade', uid: u.uid, branch: 0 })).toEqual({ ok: false, reason: 'maxLevel' });
   });
 
   it('판매하면 투자금의 60%를 돌려받는다', () => {
