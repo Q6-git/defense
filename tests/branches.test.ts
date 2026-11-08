@@ -73,7 +73,7 @@ describe('갈림길 업그레이드', () => {
     const e = g.spawnEnemy('grease', 560);
     g.update(1 / 60);
     expect(e.dist).toBeLessThan(560);
-    // 한 번 밀린 적은 2초 동안 다시 밀리지 않는다 (태풍 여러 대로 무한히 붙잡기 방지)
+    // 한 번 밀린 적은 3초 동안 다시 밀리지 않는다 (태풍 여러 대로 무한히 붙잡기 방지)
     const after = e.dist;
     fan.cooldown = 0;
     g.update(1 / 60);
@@ -86,6 +86,12 @@ describe('갈림길 업그레이드', () => {
     g2.update(1 / 60);
     expect(e2.stunTime).toBeGreaterThan(0);
     expect(e2.frozenVuln).toBeCloseTo(1.4);
+    // 얼었다 풀린 뒤 2.5초 동안은 다시 얼지 않는다 (냉풍 여러 대로 영원히 묶기 방지)
+    g2.update(1.1);
+    expect(e2.stunTime).toBeLessThanOrEqual(0);
+    f2.cooldown = 0;
+    g2.update(1 / 60);
+    expect(e2.stunTime).toBeLessThanOrEqual(0);
   });
 
   it('해동 폭탄은 불 장판을 남기고, 그릴은 같은 적을 지질수록 세진다', () => {

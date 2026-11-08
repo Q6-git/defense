@@ -71,6 +71,8 @@ export interface Enemy {
   hackMul: number;
   /** 밀려난 뒤 다시 밀리지 않는 남은 시간. 태풍 여러 대로 적을 영원히 붙잡지 못하게 한다 */
   knockImmune: number;
+  /** 얼었다 풀린 뒤 다시 얼지 않는 남은 시간 (얼어 있는 시간 포함). 냉풍 여러 대로 영원히 얼려 두지 못하게 한다 */
+  freezeImmune: number;
   summonTimer: number;
 }
 
@@ -123,9 +125,9 @@ export interface UnitLevel {
   pierceArmor?: boolean;
   /** 사거리 안 모든 적을 동시에 때린다 */
   hitAll?: boolean;
-  /** 선풍기 펄스가 적을 경로 뒤로 밀어내는 거리(px). 보스는 30%만, 한 번 밀리면 2초간 면역 */
+  /** 선풍기 펄스가 적을 경로 뒤로 밀어내는 거리(px). 보스는 30%만, 한 번 밀리면 3초간 면역 */
   knockback?: number;
-  /** 선풍기 펄스가 적을 얼리는 시간(초) */
+  /** 선풍기 펄스가 적을 얼리는 시간(초). 풀린 뒤 2.5초간은 다시 얼지 않는다 */
   freeze?: number;
   /** 얼어 있는 적이 받는 피해 배율 */
   frozenVuln?: number;

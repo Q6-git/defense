@@ -10,6 +10,7 @@ npm run dev        # 개발 서버 (http://localhost:5173)
 npm test           # 로직 단위 테스트
 npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 비교, --endless: 무한 모드, --maps: 맵 비교)
 npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
+npx vite-node scripts/cc-stack.ts   # 선풍기 여러 대로 적을 영원히 묶을 수 없는지 확인
 npm run build      # dist/ 에 배포용 빌드
 ```
 
