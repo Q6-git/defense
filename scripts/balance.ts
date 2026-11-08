@@ -6,6 +6,7 @@ import { defaultConfig } from '../src/config';
 import { Game } from '../src/core/game';
 import type { DifficultyId, UnitId } from '../src/core/types';
 import { DIFFICULTY_ORDER } from '../src/data/difficulty';
+import { MAP_ORDER, type MapId } from '../src/data/map';
 
 type Step = { unit: UnitId; x: number; y: number } | { upgradeAll: UnitId };
 
@@ -66,31 +67,62 @@ function spendGreedy(g: Game, pickBranch: BranchPick): void {
   }
   const pick: UnitId = g.units.filter((u) => u.def.id === 'microwave').length > g.units.filter((u) => u.def.id === 'toaster').length ? 'toaster' : 'microwave';
   if (g.money < g.cfg.units[pick].levels[0].cost * 2) return;
-  for (let y = 80; y < 720; y += 30) {
-    for (let x = 30; x < 1020; x += 30) {
-      const d = g.path.distanceTo({ x, y });
-      if (d < 70 && g.canPlace(pick, x, y) === null) {
-        g.apply({ type: 'place', unit: pick, x, y });
-        return;
+  const spot = bestSpot(g, pick);
+  if (spot) g.apply({ type: 'place', unit: pick, x: spot.x, y: spot.y });
+}
+
+/** 경로를 20px 간격으로 찍은 점들 (자리 평가용) */
+const samples = new WeakMap<Game, { x: number; y: number }[]>();
+function pathSamples(g: Game) {
+  let pts = samples.get(g);
+  if (!pts) {
+    pts = g.paths.flatMap((p) => Array.from({ length: Math.floor(p.length / 20) }, (_, i) => p.pointAt(i * 20)));
+    samples.set(g, pts);
+  }
+  return pts;
+}
+
+/** 아무 맵에서나 쓸 수 있는 자리 고르기: 공격형은 길을 가장 많이 덮는 곳, 와이파이는 가전이 많은 곳, 세탁기는 구석 */
+function bestSpot(g: Game, id: UnitId): { x: number; y: number } | null {
+  const def = g.cfg.units[id];
+  if (g.money < def.levels[0].cost) return null;
+  const range = def.levels[2].range || 120;
+  const { area } = g.cfg.map;
+  let best: { x: number; y: number } | null = null;
+  let bestScore = -Infinity;
+  for (let y = area.y + 20; y < area.y + area.h; y += 20) {
+    for (let x = area.x + 20; x < area.x + area.w; x += 20) {
+      if (g.canPlace(id, x, y) !== null) continue;
+      const cover = pathSamples(g).filter((p) => Math.hypot(p.x - x, p.y - y) <= range).length;
+      let score = cover;
+      if (def.kind === 'buff') score = g.units.filter((u) => u.def.kind !== 'income' && Math.hypot(u.x - x, u.y - y) <= range).length * 100 + cover;
+      if (def.kind === 'income') score = -cover;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, y };
       }
     }
   }
+  return best;
 }
 
 const VERBOSE = process.argv.includes('-v');
 
 function run(
   diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = false, useSkills = false, pickBranch: BranchPick = null,
-  endless = false,
+  endless = false, map: MapId = 'kitchen', auto = false,
 ): { wave: number; hp: number; won: boolean } {
-  const g = new Game({ ...defaultConfig(diff, endless), seed: 42 });
+  const g = new Game({ ...defaultConfig(diff, endless, map), seed: 42 });
   let lastWave = 0;
   let i = 0;
   const tryBuild = () => {
     while (i < plan.length) {
       const s = plan[i];
       if ('unit' in s) {
-        const r = g.apply({ type: 'place', unit: s.unit, x: s.x, y: s.y });
+        // auto면 계획의 좌표 대신 그 맵에서 가장 좋은 자리를 고른다
+        const spot = auto ? bestSpot(g, s.unit) : s;
+        if (!spot) return;
+        const r = g.apply({ type: 'place', unit: s.unit, x: spot.x, y: spot.y });
         if (!r.ok) {
           if (r.reason === 'money') return;
           throw new Error(`설치 실패 ${s.unit} ${s.x},${s.y}: ${r.reason}`);
@@ -136,7 +168,7 @@ const cases = [
   ['smart+스킬', smart, true, true],
 ] as const;
 const only = process.argv.find((a) => (DIFFICULTY_ORDER as string[]).includes(a)) as DifficultyId | undefined;
-const special = process.argv.includes('--branches') || process.argv.includes('--endless');
+const special = ['--branches', '--endless', '--maps'].some((f) => process.argv.includes(f));
 for (const diff of special ? [] : only ? [only] : DIFFICULTY_ORDER) {
   console.log(`[${diff}]`);
   for (const [name, plan, rest, skills] of cases) {
@@ -176,5 +208,19 @@ if (process.argv.includes('--endless')) {
     const a = run(diff, smart, true, true, true, () => 0, true);
     const b = run(diff, smart, true, true, true, () => 1, true);
     console.log(`[무한 ${diff}] 모두 A → 웨이브 ${a.wave}   모두 B → 웨이브 ${b.wave}`);
+  }
+}
+
+// 맵 비교: 자동 배치 봇으로 맵마다 같은 운영을 해서 난이도가 비슷한지 본다
+if (process.argv.includes('--maps')) {
+  const fmt = (r: { wave: number; hp: number; won: boolean }) => (r.won ? `승리 HP${r.hp}` : `웨이브 ${r.wave}`).padEnd(10);
+  for (const diff of (only ? [only] : ['normal', 'hard', 'hell']) as DifficultyId[]) {
+    for (const map of MAP_ORDER) {
+      const best = run(diff, smart, true, true, true, () => 0, false, map, true);
+      const noSkill = run(diff, smart, true, true, false, () => 0, false, map, true);
+      const plain = run(diff, smart, true, false, false, null, false, map, true);
+      const n = run(diff, naive, true, false, false, null, false, map, true);
+      console.log(`[${diff} ${map.padEnd(8)}] 최선 ${fmt(best)} 스킬없음 ${fmt(noSkill)} 계획만 ${fmt(plain)} 토스터만 ${fmt(n)}`);
+    }
   }
 }

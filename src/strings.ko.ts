@@ -37,6 +37,12 @@ export const STR = {
   continueEndless: '♾️ 계속 버티기',
   waveEndless: (n: number) => `🌊 ${n} ♾️`,
   start: '▶ 시작',
+  chooseMap: '맵을 고르세요',
+  maps: {
+    kitchen: { name: '🍳 주방', desc: '길게 굽이치는 배수관' },
+    bathroom: { name: '🛁 욕실', desc: '입구가 두 곳!' },
+    balcony: { name: '🪴 베란다', desc: '설치 자리가 귀하다' },
+  } as Record<string, { name: string; desc: string }>,
   chooseDifficulty: '난이도를 고르세요',
   bestShort: (n: number) => (n > 0 ? `최고 ${n}웨이브` : '기록 없음'),
   difficulties: {

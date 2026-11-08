@@ -8,7 +8,7 @@
 npm install
 npm run dev        # 개발 서버 (http://localhost:5173)
 npm test           # 로직 단위 테스트
-npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 조합 비교, --endless: 무한 모드)
+npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 비교, --endless: 무한 모드, --maps: 맵 비교)
 npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
 npm run build      # dist/ 에 배포용 빌드
 ```
@@ -35,6 +35,10 @@ npm run build      # dist/ 에 배포용 빌드
 | 🪙 세탁기 | 🏦 이자 | ⛲ 동전 분수 |
 
 - 공격의 10%는 크리티컬(2.5배)
+- **맵 3개** (시작 화면에서 선택, 기록은 맵별로 따로)
+  - 🍳 주방: 길게 굽이치는 배수관 하나
+  - 🛁 욕실: 위아래 배수구 두 곳에서 나와 가운데서 합류
+  - 🪴 베란다: 길은 길지만 화분·빨래 바구니 때문에 설치 자리가 귀함
 - **♾️ 무한 모드**: 시작 화면에서 켜거나, 20웨이브 승리 후 '계속 버티기'. 21웨이브부터 자동 생성, 10웨이브마다 보스가 늘어남. 기록은 따로 저장
 - 상단에 다음 웨이브 구성 미리보기, 🔊 버튼으로 효과음 끄기
 
@@ -54,7 +58,7 @@ src/core/      게임 로직 (Phaser 의존 없음, 테스트 대상, 멀티플�
   game.ts      상태, 명령(Command) 처리, 시뮬레이션 스텝
   path.ts      경로 계산
   types.ts
-src/data/      밸런스 데이터: units.ts, enemies.ts, waves.ts, map.ts
+src/data/      밸런스 데이터: units.ts, enemies.ts, waves.ts, map.ts(맵 3개), difficulty.ts, abilities.ts
 src/config.ts  시작 자금, 기지 HP, 보너스 등 규칙 수치
 src/strings.ko.ts  화면 텍스트 (다른 언어는 같은 키로 파일 추가)
 src/scenes/    Phaser 렌더링과 입력

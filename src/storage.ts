@@ -51,7 +51,7 @@ export function loadSetup(): RunSetup {
   return {
     difficulty: DIFFS.includes(d as DifficultyId) ? (d as DifficultyId) : 'normal',
     endless: get('endless') === '1',
-    map: get('map') ?? 'kitchen',
+    map: ['kitchen', 'bathroom', 'balcony'].includes(get('map') ?? '') ? get('map')! : 'kitchen',
   };
 }
 

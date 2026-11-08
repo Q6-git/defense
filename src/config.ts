@@ -3,14 +3,14 @@ import type { DifficultyId } from './core/types';
 import { ABILITIES } from './data/abilities';
 import { DIFFICULTIES } from './data/difficulty';
 import { ENEMIES } from './data/enemies';
-import { MAP_KITCHEN } from './data/map';
+import { MAPS, type MapId } from './data/map';
 import { UNITS } from './data/units';
 import { endlessWave, WAVES } from './data/waves';
 
-export function defaultConfig(difficulty: DifficultyId = 'normal', endless = false): GameConfig {
+export function defaultConfig(difficulty: DifficultyId = 'normal', endless = false, map: MapId = 'kitchen'): GameConfig {
   const d = DIFFICULTIES[difficulty];
   return {
-    map: MAP_KITCHEN,
+    map: MAPS[map] ?? MAPS.kitchen,
     enemies: ENEMIES,
     units: UNITS,
     abilities: ABILITIES,

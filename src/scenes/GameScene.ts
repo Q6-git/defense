@@ -4,6 +4,7 @@ import { Game, type GameEvent } from '../core/game';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type Unit, type UnitId } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
+import { MAP_ORDER, type MapId } from '../data/map';
 import { UNIT_ORDER } from '../data/units';
 import { sfx, type SoundId } from '../sfx';
 import { loadBest, loadSetup, saveBest, saveSetup, type RunSetup } from '../storage';
@@ -86,7 +87,7 @@ export class GameScene extends Phaser.Scene {
   create(data: { start?: boolean }): void {
     this.setup = loadSetup();
     this.endScreen = [];
-    this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless));
+    this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId));
     // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
     if (import.meta.env.DEV) (window as unknown as { sim: Game }).sim = this.sim;
     this.enemyEmojis.clear();
@@ -156,8 +157,19 @@ export class GameScene extends Phaser.Scene {
     layer.add(toggle.container);
   }
 
-  /** 맵 선택 줄. 맵이 하나뿐이면 비워 둔다 */
-  private buildMapRow(_layer: Phaser.GameObjects.Container): void {}
+  /** 맵 선택 줄 */
+  private buildMapRow(layer: Phaser.GameObjects.Container): void {
+    const { width } = this.sim.cfg.map;
+    layer.add(text(this, width / 2, 108, STR.chooseMap, 18, '#9fb3c8').setOrigin(0.5));
+    MAP_ORDER.forEach((id, i) => {
+      const x = width / 2 + (i - 1) * 176;
+      const b = button(this, x, 160, 166, 66, '', () => this.changeSetup({ map: id }), 0x3a3e4a, 16);
+      const m = STR.maps[id];
+      b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(15).setLineSpacing(2);
+      if (id === this.setup.map) b.bg.setStrokeStyle(4, 0xffd35a).setFillStyle(0x4a5470);
+      layer.add(b.container);
+    });
+  }
 
   update(_t: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.25);
@@ -350,26 +362,46 @@ export class GameScene extends Phaser.Scene {
   private drawMap(): void {
     const { map } = this.sim.cfg;
     const g = this.add.graphics();
-    g.fillStyle(0x23262e).fillRect(map.area.x, map.area.y, map.area.w, map.area.h);
+    // 맵마다 바닥색을 조금 다르게
+    const floor: Record<string, number> = { kitchen: 0x23262e, bathroom: 0x1f2a30, balcony: 0x262a22 };
+    g.fillStyle(floor[map.id] ?? 0x23262e).fillRect(map.area.x, map.area.y, map.area.w, map.area.h);
     g.lineStyle(1, 0xffffff, 0.04);
     for (let x = map.area.x; x <= map.area.x + map.area.w; x += 40) g.lineBetween(x, map.area.y, x, map.height);
     for (let y = map.area.y; y <= map.height; y += 40) g.lineBetween(map.area.x, y, map.area.x + map.area.w, y);
-    const pts = map.path.map((p) => new Phaser.Math.Vector2(p.x, p.y));
-    g.lineStyle(map.pathHalfWidth * 2 + 8, 0x3b3f4a).strokePoints(pts);
-    for (const p of pts) g.fillStyle(0x3b3f4a).fillCircle(p.x, p.y, map.pathHalfWidth + 4);
-    g.lineStyle(map.pathHalfWidth * 2, 0x4c5262).strokePoints(pts);
-    for (const p of pts) g.fillStyle(0x4c5262).fillCircle(p.x, p.y, map.pathHalfWidth);
+    // 장애물
+    for (const b of map.blocked ?? []) {
+      g.fillStyle(0x000000, 0.25).fillRoundedRect(b.x, b.y, b.w, b.h, 10);
+      g.lineStyle(2, 0xffffff, 0.12).strokeRoundedRect(b.x, b.y, b.w, b.h, 10);
+      // 상자 안에 이모지를 고르게 채운다
+      const size = Math.min(b.w, b.h) * 0.62;
+      const n = Math.max(1, Math.floor(b.w / (size * 1.25)));
+      for (let i = 0; i < n; i++) {
+        text(this, b.x + (b.w * (i + 0.5)) / n, b.y + b.h / 2, b.emoji, size).setOrigin(0.5).setAlpha(0.85);
+      }
+    }
+    // 배수관: 테두리를 먼저 모두 그리고 안쪽을 그려야 합류 지점이 깔끔하다
+    const lines = map.paths.map((path) => path.map((p) => new Phaser.Math.Vector2(p.x, p.y)));
+    for (const pts of lines) {
+      g.lineStyle(map.pathHalfWidth * 2 + 8, 0x3b3f4a).strokePoints(pts);
+      for (const p of pts) g.fillStyle(0x3b3f4a).fillCircle(p.x, p.y, map.pathHalfWidth + 4);
+    }
+    for (const pts of lines) {
+      g.lineStyle(map.pathHalfWidth * 2, 0x4c5262).strokePoints(pts);
+      for (const p of pts) g.fillStyle(0x4c5262).fillCircle(p.x, p.y, map.pathHalfWidth);
+    }
     // 진행 방향 표시
     g.fillStyle(0xffffff, 0.06);
-    for (let d = 40; d < this.sim.path.length; d += 80) {
-      const a = this.sim.path.pointAt(d);
-      const b = this.sim.path.pointAt(d + 1);
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      const tri = [0, 2.5, -2.5].map((o) => ({ x: a.x + Math.cos(ang + o) * 8, y: a.y + Math.sin(ang + o) * 8 }));
-      g.fillTriangle(tri[0].x, tri[0].y, tri[1].x, tri[1].y, tri[2].x, tri[2].y);
+    for (const path of this.sim.paths) {
+      for (let d = 40; d < path.length; d += 80) {
+        const a = path.pointAt(d);
+        const b = path.pointAt(d + 1);
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        const tri = [0, 2.5, -2.5].map((o) => ({ x: a.x + Math.cos(ang + o) * 8, y: a.y + Math.sin(ang + o) * 8 }));
+        g.fillTriangle(tri[0].x, tri[0].y, tri[1].x, tri[1].y, tri[2].x, tri[2].y);
+      }
     }
-    const end = pts[pts.length - 1];
-    text(this, 24, pts[0].y - 52, '🕳️ 배수구', 18, '#9fb3c8');
+    for (const pts of lines) text(this, 24, pts[0].y - 52, '🕳️ 배수구', 18, '#9fb3c8');
+    const end = lines[0][lines[0].length - 1];
     text(this, end.x + 10, end.y, '🔌', 46).setOrigin(0.5);
     g.fillStyle(0x1b1d24).fillRect(0, 0, map.width, map.area.y);
     g.fillStyle(0x1b1d24).fillRect(PANEL_X, map.area.y, PANEL_W, map.area.h);
@@ -470,7 +502,7 @@ export class GameScene extends Phaser.Scene {
     // HUD
     const waveText = gm.endless ? STR.waveEndless(gm.wave) : STR.wave(gm.wave, gm.totalWaves);
     this.hud.setText(`${STR.hp} ${gm.hp}   ${STR.money} ${gm.money}   ${waveText}`);
-    this.diffLabel.setText(`${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
+    this.diffLabel.setText(`${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
     const next = gm.wavePreview(gm.wave + 1);
     this.preview.setText(next.length ? `${STR.preview} ${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
     this.waveBtn.setEnabled(gm.phase === 'ready' || gm.phase === 'intermission');
@@ -737,7 +769,8 @@ export class GameScene extends Phaser.Scene {
     const box = this.add.rectangle(width / 2, height / 2, 540, boxH, 0x23262e).setStrokeStyle(2, won ? 0xffd35a : 0xff5a5a);
     const title = text(this, width / 2, top + 60, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
     const lines = [
-      `${STR.difficulties[this.difficulty].name}${run.endless ? ' ♾️' : ''}`, STR.reachedWave(reached), STR.best(loadBest(run)),
+      `${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${run.endless ? ' ♾️' : ''}`,
+      STR.reachedWave(reached), STR.best(loadBest(run)),
     ];
     if (isNew) lines.push(STR.newBest);
     const body = text(this, width / 2, top + 155, lines.join('\n'), 20, '#c9d2dc').setOrigin(0.5).setAlign('center').setLineSpacing(6);

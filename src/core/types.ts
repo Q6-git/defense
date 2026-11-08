@@ -26,13 +26,26 @@ export interface EnemyDef {
   summon?: { id: EnemyId; count: number; interval: number };
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface MapDef {
+  id: string;
   width: number;
   height: number;
   /** 배치 가능한 맵 영역 (상단 바·우측 패널 제외) */
-  area: { x: number; y: number; w: number; h: number };
-  path: Vec[];
+  area: Rect;
+  /** 적이 지나가는 길. 여러 개면 적이 번갈아 나눠 탄다 (끝은 모두 같은 기지) */
+  paths: Vec[][];
   pathHalfWidth: number;
+  /** 설치할 수 없는 장애물 */
+  blocked?: (Rect & { emoji: string })[];
+  /** 맵별 적 체력 배율 (길 길이와 설치 공간 차이를 보정) */
+  enemyHpMul?: number;
 }
 
 export interface Enemy {
@@ -42,6 +55,10 @@ export interface Enemy {
   maxHp: number;
   /** 경로 시작점부터 이동한 거리 */
   dist: number;
+  /** 타고 있는 길 번호 (MapDef.paths 인덱스) */
+  lane: number;
+  /** 기지까지 남은 거리. 길이 여러 개일 때 '맨 앞' 판단에 쓴다 */
+  left: number;
   x: number;
   y: number;
   slowMul: number;

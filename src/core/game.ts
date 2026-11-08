@@ -108,7 +108,8 @@ const KNOCK_IMMUNE = 2;
 
 export class Game {
   readonly cfg: GameConfig;
-  readonly path: Path;
+  /** 맵의 길들. 첫 번째 길은 path로도 쓸 수 있다 */
+  readonly paths: Path[];
   hp: number;
   money: number;
   /** 지금 진행 중이거나 마지막으로 시작한 웨이브 (1부터). 0이면 아직 시작 전. */
@@ -129,12 +130,13 @@ export class Game {
   private rng: () => number;
 
   private nextUid = 1;
+  private nextLane = 0;
   private waveTime = 0;
   private spawnQueue: { t: number; id: EnemyId }[] = [];
 
   constructor(cfg: GameConfig) {
     this.cfg = cfg;
-    this.path = new Path(cfg.map.path);
+    this.paths = cfg.map.paths.map((p) => new Path(p));
     this.hp = cfg.startHp;
     this.money = cfg.startMoney;
     this.rng = makeRng(cfg.seed ?? Date.now());
@@ -190,7 +192,8 @@ export class Game {
     const { area, pathHalfWidth } = this.cfg.map;
     const r = def.radius;
     if (x < area.x + r || x > area.x + area.w - r || y < area.y + r || y > area.y + area.h - r) return 'bounds';
-    if (this.path.distanceTo({ x, y }) < pathHalfWidth + r) return 'path';
+    if (this.distanceToPath({ x, y }) < pathHalfWidth + r) return 'path';
+    if (this.cfg.map.blocked?.some((b) => circleHitsRect(x, y, r, b))) return 'bounds';
     if (this.units.some((u) => dist(u, { x, y }) < u.def.radius + r)) return 'overlap';
     if (def.maxCount !== undefined && this.units.filter((u) => u.def.id === id).length >= def.maxCount) return 'limit';
     if (this.money < def.levels[0].cost) return 'money';
@@ -200,6 +203,15 @@ export class Game {
   /** 유닛의 현재 스탯. 갈림길을 골랐으면 그 갈래 스탯 */
   stats(u: Unit): UnitLevel {
     return u.branch !== null && u.def.branches ? u.def.branches[u.branch] : u.def.levels[u.level];
+  }
+
+  get path(): Path {
+    return this.paths[0];
+  }
+
+  /** 가장 가까운 길까지의 거리 */
+  distanceToPath(p: Vec): number {
+    return Math.min(...this.paths.map((path) => path.distanceTo(p)));
   }
 
   upgradeOptions(u: Unit): UpgradeOption[] {
@@ -328,13 +340,16 @@ export class Game {
     return e;
   }
 
-  spawnEnemy(id: EnemyId, dist = 0): Enemy {
+  /** lane을 안 주면 길을 번갈아 고른다 */
+  spawnEnemy(id: EnemyId, dist = 0, lane?: number): Enemy {
     const def = this.cfg.enemies[id];
+    if (lane === undefined) lane = this.nextLane++ % this.paths.length;
     const hpMul = this.waveDef(this.wave)?.hpMul ?? 1;
-    const hp = Math.round(def.hp * hpMul * this.cfg.enemyHpMul);
-    const p = this.path.pointAt(dist);
+    const hp = Math.round(def.hp * hpMul * this.cfg.enemyHpMul * (this.cfg.map.enemyHpMul ?? 1));
+    const path = this.paths[lane];
+    const p = path.pointAt(dist);
     const e: Enemy = {
-      uid: this.nextUid++, def, hp, maxHp: hp, dist, x: p.x, y: p.y,
+      uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
       slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, summonTimer: def.summon?.interval ?? 0,
     };
     this.enemies.push(e);
@@ -392,7 +407,7 @@ export class Game {
       e.summonTimer -= dt;
       if (e.summonTimer <= 0) {
         e.summonTimer = s.interval;
-        for (let i = 0; i < s.count; i++) this.spawnEnemy(s.id, Math.max(0, e.dist - 20 - i * 18));
+        for (let i = 0; i < s.count; i++) this.spawnEnemy(s.id, Math.max(0, e.dist - 20 - i * 18), e.lane);
       }
     }
   }
@@ -443,7 +458,8 @@ export class Game {
           if (lv.knockback && e.knockImmune <= 0) {
             e.knockImmune = KNOCK_IMMUNE;
             e.dist = Math.max(0, e.dist - lv.knockback * resist);
-            const p = this.path.pointAt(e.dist);
+            const p = this.paths[e.lane].pointAt(e.dist);
+            e.left = this.paths[e.lane].length - e.dist;
             e.x = p.x;
             e.y = p.y;
           }
@@ -515,7 +531,7 @@ export class Game {
       this.money += reward;
       this.events.push({ type: 'kill', x: e.x, y: e.y, reward });
       const sp = e.def.splitInto;
-      if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14));
+      if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14), e.lane);
     }
   }
 
@@ -534,14 +550,16 @@ export class Game {
         continue;
       }
       e.dist += e.def.speed * this.cfg.enemySpeedMul * e.slowMul * dt;
-      if (e.dist >= this.path.length) {
+      const path = this.paths[e.lane];
+      e.left = path.length - e.dist;
+      if (e.dist >= path.length) {
         // 기지에 도착한 적은 남은 체력만큼 피해를 준다.
         const damage = Math.ceil(e.hp);
         this.hp = Math.max(0, this.hp - damage);
         this.events.push({ type: 'leak', x: e.x, y: e.y, damage });
         continue;
       }
-      const p = this.path.pointAt(e.dist);
+      const p = path.pointAt(e.dist);
       e.x = p.x;
       e.y = p.y;
       survivors.push(e);
@@ -559,10 +577,10 @@ export function pickTarget(list: Enemy[], mode: TargetMode, from: Vec): Enemy {
   for (const e of list) {
     switch (mode) {
       case 'first':
-        if (e.dist > best.dist) best = e;
+        if (e.left < best.left) best = e;
         break;
       case 'last':
-        if (e.dist < best.dist) best = e;
+        if (e.left > best.left) best = e;
         break;
       case 'strong':
         if (e.hp > best.hp) best = e;
@@ -573,4 +591,10 @@ export function pickTarget(list: Enemy[], mode: TargetMode, from: Vec): Enemy {
     }
   }
   return best;
+}
+
+function circleHitsRect(x: number, y: number, r: number, b: { x: number; y: number; w: number; h: number }): boolean {
+  const cx = Math.max(b.x, Math.min(x, b.x + b.w));
+  const cy = Math.max(b.y, Math.min(y, b.y + b.h));
+  return Math.hypot(x - cx, y - cy) < r;
 }

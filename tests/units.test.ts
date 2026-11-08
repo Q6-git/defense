@@ -127,7 +127,7 @@ describe('전투', () => {
 
 describe('타겟팅 모드', () => {
   const mk = (uid: number, dist: number, hp: number, x: number): Enemy =>
-    ({ uid, dist, hp, x, y: 0 }) as Enemy;
+    ({ uid, dist, left: 1000 - dist, hp, x, y: 0 }) as Enemy;
   const list = [mk(1, 100, 50, 0), mk(2, 300, 20, 100), mk(3, 200, 90, 400)];
 
   it('first / last / strong / close', () => {
