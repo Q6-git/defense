@@ -58,6 +58,11 @@ export class GameScene extends Phaser.Scene {
   private waveBtn!: Button;
   private speedBtn!: Button;
   private muteBtn!: Button;
+  private pauseBtn!: Button;
+  /** 일시정지 중이면 일시정지 화면의 오브젝트들 */
+  private pauseLayer: Phaser.GameObjects.Container | null = null;
+  /** 시작 화면(맵·난이도 선택)이 떠 있는지 */
+  private picking = false;
   private speed = 1;
   private shopBtns: { id: UnitId; btn: Button }[] = [];
   private abilityBtns: AbilityButton[] = [];
@@ -117,6 +122,9 @@ export class GameScene extends Phaser.Scene {
     this.hud = text(this, 16, 14, '', 22);
     this.preview = text(this, 330, 18, '', 17, '#9fb3c8');
     this.diffLabel = text(this, 720, 18, '', 17, '#ffd35a').setOrigin(1, 0);
+    this.pauseLayer = null;
+    this.picking = false;
+    this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), 0x4a4f5e, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), 0x4a4f5e, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), 0x4a4f5e, 17);
     this.waveBtn = button(this, 1124, 28, 300, 40, STR.startWave, () => this.sim.apply({ type: 'startWave' }), 0x2e9e5b, 17);
@@ -127,6 +135,13 @@ export class GameScene extends Phaser.Scene {
     this.toast = text(this, 520, 690, '', 18, '#ffd35a').setOrigin(0.5).setDepth(20);
 
     this.input.on('pointerdown', () => sfx.unlock());
+    // Esc / P 로 일시정지, 탭을 벗어나거나 화면이 꺼지면 자동 일시정지
+    const onKey = () => this.setPaused(!this.pauseLayer);
+    this.input.keyboard?.on('keydown-ESC', onKey);
+    this.input.keyboard?.on('keydown-P', onKey);
+    const onHidden = () => this.setPaused(true);
+    this.game.events.on(Phaser.Core.Events.HIDDEN, onHidden);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off(Phaser.Core.Events.HIDDEN, onHidden));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (this.placing || this.aiming) this.ghost = { x: p.worldX, y: p.worldY };
     });
@@ -141,6 +156,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showDifficultyPicker(): void {
+    this.picking = true;
     const { width, height } = this.sim.cfg.map;
     const layer = this.add.container(0, 0).setDepth(60);
     const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setOrigin(0).setInteractive();
@@ -184,6 +200,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_t: number, deltaMs: number): void {
+    if (this.pauseLayer) return;
     const dt = Math.min(deltaMs / 1000, 0.25);
     this.clock += dt;
     this.sim.update(dt * this.speed);
@@ -203,7 +220,7 @@ export class GameScene extends Phaser.Scene {
 
   private onMapTap(x: number, y: number): void {
     const { area } = this.sim.cfg.map;
-    if (this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
+    if (this.pauseLayer || this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
     if (this.aiming) {
       const res = this.sim.apply({ type: 'ability', id: this.aiming, x, y });
       if (res.ok) {
@@ -523,6 +540,7 @@ export class GameScene extends Phaser.Scene {
     this.diffLabel.setText(`${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
     const next = gm.wavePreview(gm.wave + 1);
     this.preview.setText(next.length ? `${STR.preview} ${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
+    this.pauseBtn.setEnabled(!gm.finished && !this.picking);
     this.waveBtn.setEnabled(gm.phase === 'ready' || gm.phase === 'intermission');
     this.waveBtn.setText(
       gm.phase === 'intermission' ? STR.nextWave(Math.ceil(gm.timer), gm.earlyBonus)
@@ -762,6 +780,40 @@ export class GameScene extends Phaser.Scene {
   private floatText(x: number, y: number, s: string, color: string, size = 16): void {
     const t = text(this, x, y - 10, s, size, color).setOrigin(0.5).setDepth(10).setStroke('#000000', 3);
     this.tweens.add({ targets: t, y: y - 45, alpha: 0, duration: 750, onComplete: () => t.destroy() });
+  }
+
+  /** 일시정지 켜기/끄기. 시작 화면이나 결과 화면이 떠 있을 때는 무시한다 */
+  private setPaused(on: boolean): void {
+    if (on === !!this.pauseLayer) return;
+    if (on && (this.sim.finished || this.picking)) return;
+    if (!on) {
+      this.pauseLayer?.destroy();
+      this.pauseLayer = null;
+      this.tweens.resumeAll();
+      this.time.paused = false;
+      return;
+    }
+    this.tweens.pauseAll();
+    this.time.paused = true;
+    this.placing = null;
+    this.aiming = null;
+    const { width, height } = this.sim.cfg.map;
+    const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.6).setOrigin(0).setInteractive();
+    const box = this.add.rectangle(width / 2, height / 2, 420, 360, 0x23262e).setStrokeStyle(2, 0x9fb3c8);
+    const title = text(this, width / 2, height / 2 - 130, `⏸️ ${STR.paused}`, 34).setOrigin(0.5);
+    const resume = button(this, width / 2, height / 2 - 50, 320, 54, STR.resume, () => this.setPaused(false), 0x2e9e5b, 20);
+    const restart = button(this, width / 2, height / 2 + 20, 320, 50, STR.restartRun, () => this.leaveRun(true), 0x4a4f5e, 18);
+    const quit = button(this, width / 2, height / 2 + 84, 320, 50, STR.quit, () => this.leaveRun(false), 0xa8443d, 18);
+    const hint = text(this, width / 2, height / 2 + 145, STR.pauseHint, 14, '#9fb3c8').setOrigin(0.5);
+    this.pauseLayer = this.add.container(0, 0, [dim, box, title, resume.container, restart.container, quit.container, hint]).setDepth(70);
+  }
+
+  /** 판을 그만둔다. 도달한 웨이브는 기록으로 남긴다 */
+  private leaveRun(restart: boolean): void {
+    if (this.sim.wave > 0) saveBest({ ...this.setup, endless: this.sim.endless }, this.sim.wave);
+    this.tweens.resumeAll();
+    this.time.paused = false;
+    this.scene.restart(restart ? { start: true } : {});
   }
 
   private continueEndless(): void {
