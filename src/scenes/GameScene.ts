@@ -11,6 +11,7 @@ import { loadBest, loadSetup, saveBest, saveSetup, type RunSetup } from '../stor
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import { OBSTACLE_SPRITE } from '../sprites';
+import { drawRange, Fx } from './fx';
 import { baseScale, button, card, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
 
 const PANEL_X = 1040;
@@ -33,12 +34,11 @@ function easeOutBack(x: number): number {
   return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
 }
 
-/** 갈래별 공격 모양: 빠른 공격은 투사체 대신 선으로 그린다 */
-const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; sound: SoundId }> = {
-  rapid: { color: 0xffd35a, width: 2, fade: 60, sound: 'shoot' },
-  sniper: { color: 0xffffff, width: 5, fade: 250, sound: 'snipe' },
-  grill: { color: 0xff7a1a, width: 6, fade: 110, sound: 'beam' },
-  crusher: { color: 0xc0c4d0, width: 6, fade: 120, sound: 'blast' },
+/** 갈래별 공격 모양: 빠른 공격은 투사체 대신 빛나는 탄도로 그린다 */
+const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; sound: SoundId; big: boolean }> = {
+  rapid: { color: 0xffc94d, width: 2, fade: 70, sound: 'shoot', big: false },
+  sniper: { color: 0xffffff, width: 4, fade: 240, sound: 'snipe', big: true },
+  crusher: { color: 0x9aa0b4, width: 5, fade: 120, sound: 'blast', big: true },
 };
 
 interface AbilityButton {
@@ -61,6 +61,9 @@ export class GameScene extends Phaser.Scene {
   private unitEmojis = new Map<number, Icon>();
   /** 갈림길을 고른 가전 위의 작은 배지 */
   private badges = new Map<number, Icon>();
+  private fx!: Fx;
+  /** 설치 미리보기로 반투명하게 보여 주는 가전 그림 */
+  private ghostIcon: { id: UnitId; icon: Icon } | null = null;
   /** 순간 크기 변화(반동·피격·업그레이드). 1이 기본이고 매 프레임 1로 돌아간다. 유닛·적 uid는 겹치지 않는다 */
   private punch = new Map<number, number>();
   /** 가전이 설치된 시각 (튀어나오는 연출) */
@@ -143,6 +146,8 @@ export class GameScene extends Phaser.Scene {
     this.drawMap();
     this.world = this.add.graphics();
     this.overlay = this.add.graphics().setDepth(5);
+    this.fx = new Fx(this);
+    this.ghostIcon = null;
     this.chipG = this.add.graphics().setDepth(2.5);
     const chip = (x: number, w: number) => {
       new RoundBox(this, x, 10, w, 36, THEME.white, 18, 0, 'topleft').setStrokeStyle(2, THEME.cardLine);
@@ -492,7 +497,7 @@ export class GameScene extends Phaser.Scene {
     const sel = this.selected;
     if (sel) {
       const r = this.sim.stats(sel).range;
-      if (r > 0) g.fillStyle(0x5aa9e6, 0.12).fillCircle(sel.x, sel.y, r).lineStyle(3, 0x5aa9e6, 0.6).strokeCircle(sel.x, sel.y, r);
+      if (r > 0) drawRange(g, sel.x, sel.y, r, 0x3d8fd6, t);
     }
 
     // 유닛
@@ -595,14 +600,23 @@ export class GameScene extends Phaser.Scene {
     if (this.placing && this.ghost) {
       const def = gm.cfg.units[this.placing];
       const ok = gm.canPlace(this.placing, this.ghost.x, this.ghost.y) === null;
+      const color = ok ? 0x3fae55 : 0xe5484d;
       const r = def.levels[0].range;
-      if (r > 0) o.fillStyle(ok ? 0xffffff : 0xff4040, 0.08).fillCircle(this.ghost.x, this.ghost.y, r);
-      o.fillStyle(ok ? 0x6fe07a : 0xff4040, 0.6).fillCircle(this.ghost.x, this.ghost.y, def.radius);
+      if (r > 0) drawRange(o, this.ghost.x, this.ghost.y, r, color, t);
+      o.fillStyle(color, 0.35).fillCircle(this.ghost.x, this.ghost.y, def.radius + 4);
+      // 놓일 가전을 반투명하게 미리 보여 준다
+      if (this.ghostIcon?.id !== this.placing) {
+        this.ghostIcon?.icon.destroy();
+        this.ghostIcon = { id: this.placing, icon: icon(this, 0, 0, this.placing, def.emoji, def.radius * 2.9).setDepth(5.5).setAlpha(0.75) };
+      }
+      this.ghostIcon.icon.setPosition(this.ghost.x, this.ghost.y);
+    } else if (this.ghostIcon) {
+      this.ghostIcon.icon.destroy();
+      this.ghostIcon = null;
     }
     if (this.aiming && this.ghost) {
       const r = gm.cfg.abilities[this.aiming].radius ?? 0;
-      o.fillStyle(0xb04ae0, 0.15).fillCircle(this.ghost.x, this.ghost.y, r);
-      o.lineStyle(3, 0xe0b0ff, 0.6 + 0.3 * Math.sin(t * 10)).strokeCircle(this.ghost.x, this.ghost.y, r);
+      drawRange(o, this.ghost.x, this.ghost.y, r, 0xa57be0, t);
     }
 
     // HUD
@@ -702,36 +716,52 @@ export class GameScene extends Phaser.Scene {
     switch (ev.type) {
       case 'shot': {
         this.recoil(ev.unit);
+        const { from, to } = ev;
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+        const radius = this.sim.cfg.units[ev.kind].radius;
         const style = ev.branch ? BRANCH_SHOT[ev.branch] : undefined;
         const proj = ev.branch ? undefined : PROJECTILE[ev.kind];
+        if (ev.branch === 'grill') {
+          // 그릴: 지질수록 굵어지는 광선
+          this.fx.beam(from.x, from.y, to.x, to.y, this.sim.findUnit(ev.unit)?.rampMul ?? 1);
+          if (Math.random() < 0.3) this.fx.impact(to.x, to.y, 0xff8a2a);
+          sfx.play('beam');
+          break;
+        }
+        this.fx.muzzle(from.x, from.y, angle, radius);
         if (style) {
-          const line = this.add.line(0, 0, ev.from.x, ev.from.y, ev.to.x, ev.to.y, style.color, 0.95).setOrigin(0).setLineWidth(style.width).setDepth(7);
-          this.tweens.add({ targets: line, alpha: 0, duration: style.fade, onComplete: () => line.destroy() });
+          this.fx.tracer(from.x, from.y, to.x, to.y, style.color, style.width, style.fade);
+          this.fx.impact(to.x, to.y, style.color === 0xffffff ? 0xffd35a : style.color, style.big);
           sfx.play(style.sound);
           break;
         } else if (proj) {
-          const dur = (Phaser.Math.Distance.Between(ev.from.x, ev.from.y, ev.to.x, ev.to.y) / PROJECTILE_SPEED) * 1000;
-          const p = icon(this, ev.from.x, ev.from.y, proj.key, proj.emoji, 24).setDepth(7);
-          this.tweens.add({ targets: p, x: ev.to.x, y: ev.to.y, angle: 360, duration: dur, onComplete: () => p.destroy() });
+          const dur = (Phaser.Math.Distance.Between(from.x, from.y, to.x, to.y) / PROJECTILE_SPEED) * 1000;
+          const p = icon(this, from.x, from.y, proj.key, proj.emoji, 26).setDepth(7);
+          this.tweens.add({
+            targets: p, x: to.x, y: to.y, angle: 360, duration: dur,
+            onComplete: () => {
+              p.destroy();
+              if (ev.kind === 'toaster') this.fx.impact(to.x, to.y, 0xe9a94f);
+            },
+          });
         } else {
-          const line = this.add.line(0, 0, ev.from.x, ev.from.y, ev.to.x, ev.to.y, ev.color, 0.9).setOrigin(0).setLineWidth(3).setDepth(7);
-          this.tweens.add({ targets: line, alpha: 0, duration: 90, onComplete: () => line.destroy() });
+          // 로봇청소기: 짧은 탄도 + 먼지
+          this.fx.tracer(from.x, from.y, to.x, to.y, 0x9aa0b4, 3, 80);
+          this.fx.impact(to.x, to.y, 0x9aa0b4);
         }
         sfx.play(ev.kind === 'vacuum' ? 'vacuum' : 'shoot');
         break;
       }
       case 'blast': {
-        const c = this.add.circle(ev.x, ev.y, ev.r, 0xffa040, 0.55).setDepth(6);
-        this.tweens.add({ targets: c, alpha: 0, scale: 1.2, duration: 280, onComplete: () => c.destroy() });
+        this.fx.explosion(ev.x, ev.y, ev.r);
         sfx.play('blast');
         break;
       }
       case 'pulse': {
         this.recoil(ev.unit);
-        const color = ev.branch === 'frost' ? 0xdff8ff : ev.branch === 'typhoon' ? 0xb0e0ff : ev.color;
-        const c = this.add.circle(ev.x, ev.y, ev.r, color, ev.branch === 'frost' ? 0.15 : 0).setStrokeStyle(ev.branch ? 5 : 3, color, 0.7).setScale(0.3).setDepth(6);
-        this.tweens.add({ targets: c, alpha: 0, scale: 1, duration: 350, onComplete: () => c.destroy() });
-        sfx.play('pulse');
+        const kind = ev.branch === 'frost' ? 'frost' : ev.branch === 'typhoon' ? 'typhoon' : ev.branch === 'suction' ? 'suction' : 'plain';
+        this.fx.wind(ev.x, ev.y, ev.r, kind);
+        sfx.play(kind === 'suction' ? 'vacuum' : 'pulse');
         break;
       }
       case 'hit':
@@ -751,7 +781,7 @@ export class GameScene extends Phaser.Scene {
         const ghost = icon(this, ev.x, ev.y, def.id, def.emoji, def.radius * 2.6).setDepth(8);
         const s0 = baseScale(ghost);
         this.tweens.add({ targets: ghost, scaleX: s0 * 1.6, scaleY: s0 * 0.4, alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => ghost.destroy() });
-        this.burst(ev.x, ev.y, def.color, 8);
+        this.fx.pop(ev.x, ev.y, def.color);
         this.floatText(ev.x, ev.y, `+${ev.reward}`, THEME.gold);
         sfx.play('pop');
         break;
