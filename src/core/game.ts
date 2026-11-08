@@ -65,7 +65,7 @@ export type GameEvent =
   | { type: 'hit'; enemy: number; x: number; y: number; amount: number; crit: boolean }
   | { type: 'ability'; id: AbilityId; x: number; y: number; r: number }
   | { type: 'waveStart'; wave: number; boss: boolean }
-  | { type: 'kill'; x: number; y: number; reward: number }
+  | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
   | { type: 'income'; x: number; y: number; amount: number }
   | { type: 'waveCleared'; wave: number; bonus: number }
   | { type: 'earlyBonus'; amount: number }
@@ -533,7 +533,7 @@ export class Game {
     for (const e of dead) {
       const reward = Math.max(1, Math.round(e.def.reward * this.cfg.rewardMul * this.bountyMul(e)));
       this.money += reward;
-      this.events.push({ type: 'kill', x: e.x, y: e.y, reward });
+      this.events.push({ type: 'kill', enemy: e.def.id, x: e.x, y: e.y, reward });
       const sp = e.def.splitInto;
       if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14), e.lane);
     }

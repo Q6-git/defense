@@ -22,6 +22,17 @@ const PROJECTILE: Partial<Record<UnitId, { key: string; emoji: string }>> = {
   toaster: { key: 'proj_toast', emoji: '🍞' },
   microwave: { key: 'proj_fire', emoji: '🔥' },
 };
+/** 레벨별 가전 크기 배율 (Lv1~Lv4) */
+const LEVEL_SCALE = [1, 1.07, 1.14, 1.22];
+/** 그림이 왼쪽을 보고 있는 적 (오른쪽으로 갈 때 뒤집는다) */
+const FACES_LEFT = new Set(['rat']);
+
+function easeOutBack(x: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
 /** 갈래별 공격 모양: 빠른 공격은 투사체 대신 선으로 그린다 */
 const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; sound: SoundId }> = {
   rapid: { color: 0xffd35a, width: 2, fade: 60, sound: 'shoot' },
@@ -50,7 +61,15 @@ export class GameScene extends Phaser.Scene {
   private unitEmojis = new Map<number, Icon>();
   /** 갈림길을 고른 가전 위의 작은 배지 */
   private badges = new Map<number, Icon>();
-  /** 맞은 적을 잠깐 하얗게 깜빡이게 하는 남은 시간 */
+  /** 순간 크기 변화(반동·피격·업그레이드). 1이 기본이고 매 프레임 1로 돌아간다. 유닛·적 uid는 겹치지 않는다 */
+  private punch = new Map<number, number>();
+  /** 가전이 설치된 시각 (튀어나오는 연출) */
+  private born = new Map<number, number>();
+  /** 적이 바라보는 방향을 정하려고 지난 프레임 x를 기억한다 */
+  private lastX = new Map<number, number>();
+  /** 갈래 배지 바탕 원 */
+  private chipG!: Phaser.GameObjects.Graphics;
+  /** 맞은 적을 잠깐 물들이는 남은 시간 */
   private flashes = new Map<number, number>();
   private hpText!: Phaser.GameObjects.Text;
   private moneyText!: Phaser.GameObjects.Text;
@@ -113,6 +132,9 @@ export class GameScene extends Phaser.Scene {
     this.unitEmojis.clear();
     this.badges.clear();
     this.flashes.clear();
+    this.punch.clear();
+    this.born.clear();
+    this.lastX.clear();
     this.placing = null;
     this.aiming = null;
     this.selected = null;
@@ -121,6 +143,7 @@ export class GameScene extends Phaser.Scene {
     this.drawMap();
     this.world = this.add.graphics();
     this.overlay = this.add.graphics().setDepth(5);
+    this.chipG = this.add.graphics().setDepth(2.5);
     const chip = (x: number, w: number) => {
       new RoundBox(this, x, 10, w, 36, THEME.white, 18, 0, 'topleft').setStrokeStyle(2, THEME.cardLine);
       return text(this, x + w / 2, 28, '', 20).setOrigin(0.5);
@@ -214,6 +237,11 @@ export class GameScene extends Phaser.Scene {
     this.clock += dt;
     this.sim.update(dt * this.speed);
     for (const ev of this.sim.drainEvents()) this.playEvent(ev);
+    for (const [uid, v] of this.punch) {
+      const next = 1 + (v - 1) * Math.exp(-dt * 16);
+      if (Math.abs(next - 1) < 0.005) this.punch.delete(uid);
+      else this.punch.set(uid, next);
+    }
     for (const [uid, t] of this.flashes) {
       if (t - dt <= 0) this.flashes.delete(uid);
       else this.flashes.set(uid, t - dt);
@@ -373,8 +401,7 @@ export class GameScene extends Phaser.Scene {
     const label = branch !== undefined ? `${u.def.branches![branch].emoji} ${STR.branches[u.def.branches![branch].id].full}!` : STR.levelUp;
     this.floatText(u.x, u.y - 10, label, branch !== undefined ? THEME.pink : THEME.gold, 18);
     if (branch !== undefined) this.burst(u.x, u.y, color, 12, 60);
-    const em = this.unitEmojis.get(u.uid);
-    if (em) this.tweens.add({ targets: em, scale: baseScale(em) * 1.5, duration: 120, yoyo: true });
+    this.punch.set(u.uid, 1.5);
   }
 
   private cycleTarget(): void {
@@ -471,33 +498,56 @@ export class GameScene extends Phaser.Scene {
     // 유닛
     const overload = gm.overloadTime > 0;
     this.syncUnits();
+    const badgeAt = (u: Unit) => ({ x: u.x + u.def.radius * 1.05, y: u.y - u.def.radius * 1.05 });
     syncEmojis(this, this.badges, gm.units.filter((u) => u.branch !== null).map((u) => ({
-      uid: u.uid, x: u.x + u.def.radius * 0.9, y: u.y - u.def.radius * 0.9, emoji: u.def.branches![u.branch!].emoji, size: 28,
+      uid: u.uid, ...badgeAt(u), emoji: u.def.branches![u.branch!].emoji, size: 26,
     })), 3);
+    this.chipG.clear();
+    for (const u of gm.units) {
+      if (u.branch === null) continue;
+      const b = badgeAt(u);
+      this.chipG.fillStyle(0xffffff).fillCircle(b.x, b.y, 11).lineStyle(2, 0xa57be0).strokeCircle(b.x, b.y, 11);
+    }
     // 불 장판
     for (const z of gm.zones) {
       g.fillStyle(0xff6a1a, 0.18 + 0.08 * Math.sin(t * 20 + z.x)).fillCircle(z.x, z.y, z.r);
     }
     for (const u of gm.units) {
-      g.fillStyle(0x000000, 0.25).fillEllipse(u.x, u.y + u.def.radius * 0.9, u.def.radius * 2, u.def.radius * 0.6);
+      const lvl = LEVEL_SCALE[Math.min(u.level, LEVEL_SCALE.length - 1)];
+      const r = u.def.radius * lvl;
+      // Lv3은 금빛 후광, Lv4는 보라 후광
+      if (u.branch !== null) {
+        g.fillStyle(0xc58aff, 0.28 + 0.1 * Math.sin(t * 4 + u.uid)).fillCircle(u.x, u.y, r + 10);
+      } else if (u.level >= 2) {
+        g.fillStyle(0xffc020, 0.32 + 0.1 * Math.sin(t * 4 + u.uid)).fillCircle(u.x, u.y, r + 8);
+      }
+      g.fillStyle(0x7a5a3a, 0.22).fillEllipse(u.x, u.y + r * 0.95, r * 2.1, r * 0.6);
+      const em = this.unitEmojis.get(u.uid);
+      if (em) {
+        const age = this.clock - (this.born.get(u.uid) ?? -1);
+        const appear = age < 0.3 ? 0.2 + 0.8 * easeOutBack(age / 0.3) : 1;
+        const breathe = 0.03 * Math.sin(t * 3 + u.uid);
+        const k = baseScale(em) * lvl * appear * (this.punch.get(u.uid) ?? 1);
+        em.setScale(k * (1 + breathe), k * (1 - breathe));
+      }
       if (!this.textures.exists(u.def.id)) g.fillStyle(u.def.color, 0.9).fillCircle(u.x, u.y, u.def.radius);
       if (u === sel) g.lineStyle(4, THEME.selected, 1).strokeCircle(u.x, u.y, u.def.radius + 4);
       if (u.buffMul > 1) g.lineStyle(2, 0x3fbf8f, 0.9).strokeCircle(u.x, u.y, u.def.radius + 4);
       if (overload && u.def.kind !== 'income' && u.def.kind !== 'buff') {
         g.lineStyle(3, 0xffe14a, 0.5 + 0.4 * Math.sin(t * 20)).strokeCircle(u.x, u.y, u.def.radius + 7);
       }
+      // 레벨 점 (흰 테두리로 밝은 바닥에서도 보이게)
       for (let i = 0; i <= u.level; i++) {
-        g.fillStyle(i === 3 ? 0xc58aff : 0xffd35a).fillCircle(u.x - 12 + i * 8, u.y + u.def.radius + 5, 3);
+        const dx = u.x - u.level * 4.5 + i * 9;
+        const dy = u.y + r + 7;
+        g.fillStyle(0xffffff).fillCircle(dx, dy, 4.5);
+        g.fillStyle(i === 3 ? 0xa57be0 : 0xf5a623).fillCircle(dx, dy, 3.2);
       }
-      if (u.branch !== null) g.lineStyle(2, 0xc58aff, 0.9).strokeCircle(u.x, u.y, u.def.radius + 5);
     }
 
-    // 적: 통통 튀며 움직이고, 맞으면 하얗게 깜빡인다
-    const pos = (e: Enemy) => {
-      const moving = e.stunTime <= 0;
-      const bob = moving ? Math.abs(Math.sin(t * 9 + e.uid)) * 4 : 0;
-      return { x: e.x, y: e.y - bob };
-    };
+    // 적: 통통 튀며 움직이고(떠오르면 길쭉, 내려앉으면 납작), 가는 방향을 보고, 맞으면 붉게 움찔한다
+    const hop = (e: Enemy) => (e.stunTime <= 0 ? Math.abs(Math.sin(t * 9 + e.uid)) : 0);
+    const pos = (e: Enemy) => ({ x: e.x, y: e.y - hop(e) * 5 });
     syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), key: e.def.id, emoji: e.def.emoji, size: e.def.radius * (e.def.radius < 13 ? 3.2 : 2.6) })));
     for (const e of gm.enemies) {
       const p = pos(e);
@@ -509,6 +559,12 @@ export class GameScene extends Phaser.Scene {
         // 계속 맞아도 모양이 보이도록 하얗게 덮지 않고 붉게 물들인다
         if (flash) em.setTint(0xff7a7a);
         else em.clearTint();
+        const squash = e.stunTime > 0 ? 0 : (hop(e) - 0.5) * 0.16;
+        const k = baseScale(em) * (this.punch.get(e.uid) ?? 1);
+        em.setScale(k * (1 - squash), k * (1 + squash));
+        const prev = this.lastX.get(e.uid);
+        if (prev !== undefined && Math.abs(e.x - prev) > 0.2) em.setFlipX((e.x < prev) !== FACES_LEFT.has(e.def.id));
+        this.lastX.set(e.uid, e.x);
       }
       if (e.slowMul < 1) g.lineStyle(3, 0x4fb3e8, 0.9).strokeCircle(p.x, p.y, e.def.radius + 2);
       if (e.stunTime > 0 && e.frozenVuln > 1) g.fillStyle(0xbfefff, 0.45).fillCircle(p.x, p.y, e.def.radius + 3);
@@ -680,6 +736,7 @@ export class GameScene extends Phaser.Scene {
       }
       case 'hit':
         this.flashes.set(ev.enemy, 0.07);
+        this.punch.set(ev.enemy, Math.max(this.punch.get(ev.enemy) ?? 1, ev.crit ? 1.25 : 1.1));
         if (ev.crit) {
           const t = text(this, ev.x, ev.y - 16, STR.crit(ev.amount), 22, '#ffe14a').setOrigin(0.5).setDepth(12).setStroke('#7a2a00', 4).setScale(0.4);
           this.tweens.add({ targets: t, scale: 1.1, duration: 120, ease: 'Back.easeOut' });
@@ -689,11 +746,16 @@ export class GameScene extends Phaser.Scene {
           sfx.play('hit');
         }
         break;
-      case 'kill':
-        this.burst(ev.x, ev.y, 0x9fe36a, 7);
+      case 'kill': {
+        const def = this.sim.cfg.enemies[ev.enemy];
+        const ghost = icon(this, ev.x, ev.y, def.id, def.emoji, def.radius * 2.6).setDepth(8);
+        const s0 = baseScale(ghost);
+        this.tweens.add({ targets: ghost, scaleX: s0 * 1.6, scaleY: s0 * 0.4, alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => ghost.destroy() });
+        this.burst(ev.x, ev.y, def.color, 8);
         this.floatText(ev.x, ev.y, `+${ev.reward}`, THEME.gold);
         sfx.play('pop');
         break;
+      }
       case 'leak': {
         this.floatText(ev.x, ev.y, `-${ev.damage}`, THEME.danger, 24);
         this.cameras.main.shake(200, Math.min(0.02, 0.004 + ev.damage / 20000));
@@ -739,21 +801,17 @@ export class GameScene extends Phaser.Scene {
 
   /** 발사한 가전이 움찔하는 반동 */
   private recoil(uid: number): void {
-    const em = this.unitEmojis.get(uid);
-    if (!em || this.tweens.isTweening(em)) return;
-    this.tweens.add({ targets: em, scale: baseScale(em) * 1.25, duration: 50, yoyo: true });
+    this.punch.set(uid, Math.max(this.punch.get(uid) ?? 1, 1.18));
   }
 
   private syncUnits(): void {
-    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.6 })));
+    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.9 })));
   }
 
   private popIn(u: Unit | undefined): void {
     if (!u) return;
     this.burst(u.x, u.y, 0xffffff, 6);
-    this.syncUnits();
-    const em = this.unitEmojis.get(u.uid);
-    if (em) this.tweens.add({ targets: em, scale: { from: baseScale(em) * 0.2, to: baseScale(em) }, duration: 260, ease: 'Back.easeOut' });
+    this.born.set(u.uid, this.clock);
   }
 
   private plungerFx(x: number, y: number, r: number): void {
