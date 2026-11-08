@@ -73,6 +73,11 @@ describe('갈림길 업그레이드', () => {
     const e = g.spawnEnemy('grease', 560);
     g.update(1 / 60);
     expect(e.dist).toBeLessThan(560);
+    // 한 번 밀린 적은 2초 동안 다시 밀리지 않는다 (태풍 여러 대로 무한히 붙잡기 방지)
+    const after = e.dist;
+    fan.cooldown = 0;
+    g.update(1 / 60);
+    expect(e.dist).toBeGreaterThanOrEqual(after);
 
     const g2 = game();
     const f2 = lv3(g2, 'fan', 540, 220);

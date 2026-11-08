@@ -35,8 +35,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 380, damage: 100, range: 165, cooldown: 1.1, splash: 78 },
     ],
     branches: [
-      { id: 'nuke', emoji: '☢️', cost: 600, damage: 150, range: 175, cooldown: 1.2, splash: 125, burn: { dps: 60, duration: 3 } },
-      { id: 'grill', emoji: '🍳', cost: 600, damage: 30, range: 190, cooldown: 0.1, ramp: { step: 0.05, max: 4 }, defaultTarget: 'strong' },
+      { id: 'nuke', emoji: '☢️', cost: 600, damage: 150, range: 175, cooldown: 1.2, splash: 105, burn: { dps: 40, duration: 3 } },
+      { id: 'grill', emoji: '🍳', cost: 600, damage: 34, range: 190, cooldown: 0.1, ramp: { step: 0.05, max: 4 }, defaultTarget: 'strong' },
     ],
   },
   vacuum: {

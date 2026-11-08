@@ -5,9 +5,9 @@ import { DIFFICULTIES } from './data/difficulty';
 import { ENEMIES } from './data/enemies';
 import { MAP_KITCHEN } from './data/map';
 import { UNITS } from './data/units';
-import { WAVES } from './data/waves';
+import { endlessWave, WAVES } from './data/waves';
 
-export function defaultConfig(difficulty: DifficultyId = 'normal'): GameConfig {
+export function defaultConfig(difficulty: DifficultyId = 'normal', endless = false): GameConfig {
   const d = DIFFICULTIES[difficulty];
   return {
     map: MAP_KITCHEN,
@@ -26,5 +26,7 @@ export function defaultConfig(difficulty: DifficultyId = 'normal'): GameConfig {
     enemyHpMul: d.hpMul,
     enemySpeedMul: d.speedMul,
     rewardMul: d.rewardMul,
+    endless,
+    extraWave: endlessWave,
   };
 }

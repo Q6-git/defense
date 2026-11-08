@@ -43,6 +43,10 @@ export interface GameConfig {
   enemySpeedMul: number;
   rewardMul: number;
   seed?: number;
+  /** 무한 모드: 정해진 웨이브가 끝나도 extraWave로 계속 만든다 */
+  endless?: boolean;
+  /** 정해진 웨이브 이후의 웨이브를 만드는 함수 (무한 모드용) */
+  extraWave?: (n: number) => WaveDef;
 }
 
 /**
@@ -75,6 +79,7 @@ export type Command =
   | { type: 'sell'; uid: number }
   | { type: 'setTarget'; uid: number; mode: TargetMode }
   | { type: 'startWave' }
+  | { type: 'continueEndless' }
   | { type: 'ability'; id: AbilityId; x?: number; y?: number };
 
 export type PlaceError = 'money' | 'path' | 'overlap' | 'bounds' | 'limit';
@@ -98,6 +103,8 @@ export interface Zone {
 
 /** 시뮬레이션 1스텝의 최대 길이. 배속이 높아도 결과가 크게 달라지지 않게 쪼개서 돌린다. */
 const MAX_STEP = 1 / 60;
+/** 밀려난 적이 다시 밀리지 않는 시간(초) */
+const KNOCK_IMMUNE = 2;
 
 export class Game {
   readonly cfg: GameConfig;
@@ -116,6 +123,8 @@ export class Game {
   cooldowns: Record<AbilityId, number> = { plunger: 0, overload: 0 };
   /** 과부하 남은 시간 */
   overloadTime = 0;
+  /** 무한 모드 여부. 20웨이브 승리 후 '계속 버티기'로 켤 수도 있다 */
+  endless: boolean;
   zones: Zone[] = [];
   private rng: () => number;
 
@@ -129,10 +138,19 @@ export class Game {
     this.hp = cfg.startHp;
     this.money = cfg.startMoney;
     this.rng = makeRng(cfg.seed ?? Date.now());
+    this.endless = !!cfg.endless && !!cfg.extraWave;
   }
 
+  /** 정해진 웨이브 수 (무한 모드에서도 20) */
   get totalWaves(): number {
     return this.cfg.waves.length;
+  }
+
+  /** n번째 웨이브 정의. 무한 모드면 정해진 웨이브 이후도 만든다 */
+  waveDef(n: number): WaveDef | undefined {
+    if (n < 1) return undefined;
+    if (n <= this.cfg.waves.length) return this.cfg.waves[n - 1];
+    return this.endless ? this.cfg.extraWave?.(n) : undefined;
   }
 
   apply(cmd: Command): CommandResult {
@@ -151,6 +169,12 @@ export class Game {
       }
       case 'startWave':
         return this.startWave() ? { ok: true } : { ok: false, reason: 'phase' };
+      case 'continueEndless':
+        if (this.phase !== 'won' || !this.cfg.extraWave) return { ok: false, reason: 'phase' };
+        this.endless = true;
+        this.phase = 'intermission';
+        this.timer = this.cfg.intermission;
+        return { ok: true };
       case 'ability':
         return this.useAbility(cmd.id, cmd.x ?? 0, cmd.y ?? 0);
     }
@@ -240,7 +264,7 @@ export class Game {
 
   /** n번째 웨이브에 나오는 적 종류별 마릿수 (미리보기용) */
   wavePreview(n: number): { id: EnemyId; count: number }[] {
-    const def = this.cfg.waves[n - 1];
+    const def = this.waveDef(n);
     if (!def) return [];
     const counts = new Map<EnemyId, number>();
     for (const g of def.groups) counts.set(g.enemy, (counts.get(g.enemy) ?? 0) + g.count);
@@ -270,7 +294,7 @@ export class Game {
   }
 
   private startWave(): boolean {
-    if ((this.phase !== 'ready' && this.phase !== 'intermission') || this.wave >= this.totalWaves) return false;
+    if ((this.phase !== 'ready' && this.phase !== 'intermission') || !this.waveDef(this.wave + 1)) return false;
     const bonus = this.earlyBonus;
     if (bonus > 0) {
       this.money += bonus;
@@ -279,7 +303,7 @@ export class Game {
     this.wave++;
     this.phase = 'wave';
     this.waveTime = 0;
-    const def = this.cfg.waves[this.wave - 1];
+    const def = this.waveDef(this.wave)!;
     this.events.push({ type: 'waveStart', wave: this.wave, boss: def.groups.some((g) => this.cfg.enemies[g.enemy].boss) });
     this.spawnQueue = [];
     for (const g of def.groups) {
@@ -306,12 +330,12 @@ export class Game {
 
   spawnEnemy(id: EnemyId, dist = 0): Enemy {
     const def = this.cfg.enemies[id];
-    const hpMul = this.wave > 0 ? this.cfg.waves[this.wave - 1].hpMul : 1;
+    const hpMul = this.waveDef(this.wave)?.hpMul ?? 1;
     const hp = Math.round(def.hp * hpMul * this.cfg.enemyHpMul);
     const p = this.path.pointAt(dist);
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, x: p.x, y: p.y,
-      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, summonTimer: def.summon?.interval ?? 0,
+      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, summonTimer: def.summon?.interval ?? 0,
     };
     this.enemies.push(e);
     return e;
@@ -352,7 +376,7 @@ export class Game {
       this.money += income;
       this.events.push({ type: 'income', x: u.x, y: u.y, amount: income });
     }
-    if (this.wave >= this.totalWaves) {
+    if (!this.waveDef(this.wave + 1)) {
       this.phase = 'won';
       this.events.push({ type: 'victory' });
     } else {
@@ -416,7 +440,8 @@ export class Game {
           const resist = e.def.boss ? 0.3 : 1;
           e.slowMul = Math.min(e.slowMul, lv.slow ?? 1);
           e.slowTime = Math.max(e.slowTime, lv.slowDuration ?? 0);
-          if (lv.knockback) {
+          if (lv.knockback && e.knockImmune <= 0) {
+            e.knockImmune = KNOCK_IMMUNE;
             e.dist = Math.max(0, e.dist - lv.knockback * resist);
             const p = this.path.pointAt(e.dist);
             e.x = p.x;
@@ -497,6 +522,7 @@ export class Game {
   private moveEnemies(dt: number): void {
     const survivors: Enemy[] = [];
     for (const e of this.enemies) {
+      if (e.knockImmune > 0) e.knockImmune -= dt;
       if (e.slowTime > 0) {
         e.slowTime -= dt;
         if (e.slowTime <= 0) e.slowMul = 1;

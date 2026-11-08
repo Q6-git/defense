@@ -81,8 +81,9 @@ const VERBOSE = process.argv.includes('-v');
 
 function run(
   diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = false, useSkills = false, pickBranch: BranchPick = null,
+  endless = false,
 ): { wave: number; hp: number; won: boolean } {
-  const g = new Game({ ...defaultConfig(diff), seed: 42 });
+  const g = new Game({ ...defaultConfig(diff, endless), seed: 42 });
   let lastWave = 0;
   let i = 0;
   const tryBuild = () => {
@@ -108,7 +109,7 @@ function run(
     if (spendRest) spendGreedy(g, pickBranch);
   };
   g.apply({ type: 'startWave' });
-  for (let t = 0; t < 3600 && !g.finished; t += 0.1) {
+  for (let t = 0; t < 20000 && !g.finished; t += 0.1) {
     tryBuild();
     if (useSkills && g.phase === 'wave' && g.enemies.length) {
       // 가장 앞선 적을 뚫어뻥으로 내려치고, 적이 많으면 과부하
@@ -135,7 +136,8 @@ const cases = [
   ['smart+스킬', smart, true, true],
 ] as const;
 const only = process.argv.find((a) => (DIFFICULTY_ORDER as string[]).includes(a)) as DifficultyId | undefined;
-for (const diff of process.argv.includes('--branches') ? [] : only ? [only] : DIFFICULTY_ORDER) {
+const special = process.argv.includes('--branches') || process.argv.includes('--endless');
+for (const diff of special ? [] : only ? [only] : DIFFICULTY_ORDER) {
   console.log(`[${diff}]`);
   for (const [name, plan, rest, skills] of cases) {
     const r = run(diff, plan, true, rest, skills);
@@ -158,5 +160,21 @@ if (process.argv.includes('--branches')) {
       const r = run(diff, smart, true, true, true, pick);
       console.log(`  ${name.padEnd(14)} → 웨이브 ${String(r.wave).padStart(2)}  HP ${String(r.hp).padStart(4)}  ${r.won ? '승리' : '패배'}`);
     }
+  }
+}
+
+// 무한 모드: 가장 잘하는 봇(유닛 섞기 + 남는 돈 전부 + 스킬 + 갈림길)이 몇 웨이브까지 버티는지
+if (process.argv.includes('--endless')) {
+  for (const diff of only ? [only] : DIFFICULTY_ORDER) {
+    // --flip=<유닛>: 그 유닛만 B, 나머지는 A
+    const flip = process.argv.find((x) => x.startsWith('--flip='))?.slice(7);
+    if (flip) {
+      const r = run(diff, smart, true, true, true, (id) => (id === flip ? 1 : 0), true);
+      console.log(`[무한 ${diff}] ${flip}만 B → 웨이브 ${r.wave}`);
+      continue;
+    }
+    const a = run(diff, smart, true, true, true, () => 0, true);
+    const b = run(diff, smart, true, true, true, () => 1, true);
+    console.log(`[무한 ${diff}] 모두 A → 웨이브 ${a.wave}   모두 B → 웨이브 ${b.wave}`);
   }
 }

@@ -8,7 +8,7 @@
 npm install
 npm run dev        # 개발 서버 (http://localhost:5173)
 npm test           # 로직 단위 테스트
-npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 조합 비교)
+npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 조합 비교, --endless: 무한 모드)
 npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
 npm run build      # dist/ 에 배포용 빌드
 ```
@@ -35,6 +35,7 @@ npm run build      # dist/ 에 배포용 빌드
 | 🪙 세탁기 | 🏦 이자 | ⛲ 동전 분수 |
 
 - 공격의 10%는 크리티컬(2.5배)
+- **♾️ 무한 모드**: 시작 화면에서 켜거나, 20웨이브 승리 후 '계속 버티기'. 21웨이브부터 자동 생성, 10웨이브마다 보스가 늘어남. 기록은 따로 저장
 - 상단에 다음 웨이브 구성 미리보기, 🔊 버튼으로 효과음 끄기
 
 | 가전 | 역할 |
