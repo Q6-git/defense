@@ -5,7 +5,7 @@ import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type Unit,
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { UNIT_ORDER } from '../data/units';
-import { sfx } from '../sfx';
+import { sfx, type SoundId } from '../sfx';
 import { loadBest, loadDifficulty, saveBest, saveDifficulty } from '../storage';
 import { STR } from '../strings.ko';
 import { button, text, type Button } from './ui';
@@ -16,6 +16,13 @@ const SPEEDS = [1, 2, 3];
 /** 투사체가 날아가는 속도(px/초). 피해는 즉시 들어가므로 너무 느리면 어색하다. */
 const PROJECTILE_SPEED = 1400;
 const PROJECTILE_EMOJI: Partial<Record<UnitId, string>> = { toaster: '🍞', microwave: '🔥' };
+/** 갈래별 공격 모양: 빠른 공격은 투사체 대신 선으로 그린다 */
+const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; sound: SoundId }> = {
+  rapid: { color: 0xffd35a, width: 2, fade: 60, sound: 'shoot' },
+  sniper: { color: 0xffffff, width: 5, fade: 250, sound: 'snipe' },
+  grill: { color: 0xff7a1a, width: 6, fade: 110, sound: 'beam' },
+  crusher: { color: 0xc0c4d0, width: 6, fade: 120, sound: 'blast' },
+};
 
 interface AbilityButton {
   id: AbilityId;
@@ -31,6 +38,8 @@ export class GameScene extends Phaser.Scene {
   private overlay!: Phaser.GameObjects.Graphics;
   private enemyEmojis = new Map<number, Phaser.GameObjects.Text>();
   private unitEmojis = new Map<number, Phaser.GameObjects.Text>();
+  /** 갈림길을 고른 가전 위의 작은 배지 */
+  private badges = new Map<number, Phaser.GameObjects.Text>();
   /** 맞은 적을 잠깐 하얗게 깜빡이게 하는 남은 시간 */
   private flashes = new Map<number, number>();
   private hud!: Phaser.GameObjects.Text;
@@ -59,6 +68,8 @@ export class GameScene extends Phaser.Scene {
     title: Phaser.GameObjects.Text;
     stats: Phaser.GameObjects.Text;
     upgrade: Button;
+    branchA: Button;
+    branchB: Button;
     sell: Button;
     target: Button;
   };
@@ -76,6 +87,7 @@ export class GameScene extends Phaser.Scene {
     if (import.meta.env.DEV) (window as unknown as { sim: Game }).sim = this.sim;
     this.enemyEmojis.clear();
     this.unitEmojis.clear();
+    this.badges.clear();
     this.flashes.clear();
     this.placing = null;
     this.aiming = null;
@@ -263,23 +275,33 @@ export class GameScene extends Phaser.Scene {
     const title = text(this, 12, 10, '', 20);
     const stats = text(this, 12, 44, '', 15, '#c9d2dc').setLineSpacing(4);
     const upgrade = button(this, w / 2, 204, w - 24, 38, '', () => this.upgradeSelected(), 0x2f6fd6, 16);
+    const half = (w - 24) / 2 - 3;
+    const branchA = button(this, 12 + half / 2, 200, half, 46, '', () => this.upgradeSelected(0), 0x8a4fd6, 14);
+    const branchB = button(this, w - 12 - half / 2, 200, half, 46, '', () => this.upgradeSelected(1), 0x8a4fd6, 14);
+    branchA.label.setAlign('center');
+    branchB.label.setAlign('center');
     const target = button(this, w / 2, 248, w - 24, 32, '', () => this.cycleTarget(), 0x4a4f5e, 15);
     const sell = button(this, w / 2, 290, w - 24, 32, '', () => this.sellSelected(), 0xa8443d, 15);
-    const root = this.add.container(x, y, [bg, title, stats, upgrade.container, target.container, sell.container]);
-    this.info = { root, title, stats, upgrade, sell, target };
+    const root = this.add.container(x, y, [
+      bg, title, stats, upgrade.container, branchA.container, branchB.container, target.container, sell.container,
+    ]);
+    this.info = { root, title, stats, upgrade, branchA, branchB, sell, target };
   }
 
-  private upgradeSelected(): void {
+  private upgradeSelected(branch?: 0 | 1): void {
     const u = this.selected;
     if (!u) return;
-    if (!this.sim.apply({ type: 'upgrade', uid: u.uid }).ok) {
+    if (!this.sim.apply({ type: 'upgrade', uid: u.uid, branch }).ok) {
       sfx.play('error');
       return;
     }
     sfx.play('upgrade');
-    const ring = this.add.circle(u.x, u.y, u.def.radius, 0xffd35a, 0).setStrokeStyle(4, 0xffd35a).setDepth(8);
-    this.tweens.add({ targets: ring, scale: 2.4, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
-    this.floatText(u.x, u.y - 10, STR.levelUp, '#ffd35a', 18);
+    const color = branch !== undefined ? 0xc58aff : 0xffd35a;
+    const ring = this.add.circle(u.x, u.y, u.def.radius, color, 0).setStrokeStyle(4, color).setDepth(8);
+    this.tweens.add({ targets: ring, scale: branch !== undefined ? 3.5 : 2.4, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
+    const label = branch !== undefined ? `${u.def.branches![branch].emoji} ${STR.branches[u.def.branches![branch].id].full}!` : STR.levelUp;
+    this.floatText(u.x, u.y - 10, label, branch !== undefined ? '#e0c0ff' : '#ffd35a', 18);
+    if (branch !== undefined) this.burst(u.x, u.y, color, 12, 60);
     const em = this.unitEmojis.get(u.uid);
     if (em) this.tweens.add({ targets: em, scale: 1.5, duration: 120, yoyo: true });
   }
@@ -341,13 +363,20 @@ export class GameScene extends Phaser.Scene {
     // 선택한 유닛 사거리
     const sel = this.selected;
     if (sel) {
-      const r = sel.def.levels[sel.level].range;
+      const r = this.sim.stats(sel).range;
       if (r > 0) g.fillStyle(0xffffff, 0.08).fillCircle(sel.x, sel.y, r).lineStyle(2, 0xffffff, 0.35).strokeCircle(sel.x, sel.y, r);
     }
 
     // 유닛
     const overload = gm.overloadTime > 0;
     this.syncUnits();
+    syncEmojis(this, this.badges, gm.units.filter((u) => u.branch !== null).map((u) => ({
+      uid: u.uid, x: u.x + u.def.radius * 0.8, y: u.y - u.def.radius * 0.8, emoji: u.def.branches![u.branch!].emoji, size: 14,
+    })), 3);
+    // 불 장판
+    for (const z of gm.zones) {
+      g.fillStyle(0xff6a1a, 0.18 + 0.08 * Math.sin(t * 20 + z.x)).fillCircle(z.x, z.y, z.r);
+    }
     for (const u of gm.units) {
       g.fillStyle(u.def.color, 0.9).fillCircle(u.x, u.y, u.def.radius);
       g.lineStyle(2, u === sel ? 0xffffff : 0x000000, u === sel ? 1 : 0.4).strokeCircle(u.x, u.y, u.def.radius);
@@ -355,7 +384,10 @@ export class GameScene extends Phaser.Scene {
       if (overload && u.def.kind !== 'income' && u.def.kind !== 'buff') {
         g.lineStyle(3, 0xffe14a, 0.5 + 0.4 * Math.sin(t * 20)).strokeCircle(u.x, u.y, u.def.radius + 7);
       }
-      for (let i = 0; i <= u.level; i++) g.fillStyle(0xffd35a).fillCircle(u.x - 8 + i * 8, u.y + u.def.radius + 5, 3);
+      for (let i = 0; i <= u.level; i++) {
+        g.fillStyle(i === 3 ? 0xc58aff : 0xffd35a).fillCircle(u.x - 12 + i * 8, u.y + u.def.radius + 5, 3);
+      }
+      if (u.branch !== null) g.lineStyle(2, 0xc58aff, 0.9).strokeCircle(u.x, u.y, u.def.radius + 2);
     }
 
     // 적: 통통 튀며 움직이고, 맞으면 하얗게 깜빡인다
@@ -376,6 +408,8 @@ export class GameScene extends Phaser.Scene {
         else em.clearTint();
       }
       if (e.slowMul < 1) g.lineStyle(3, 0x9fe3ff).strokeCircle(p.x, p.y, e.def.radius + 2);
+      if (e.stunTime > 0 && e.frozenVuln > 1) g.fillStyle(0xbfefff, 0.45).fillCircle(p.x, p.y, e.def.radius + 3);
+      if (e.hackMul > 1) g.lineStyle(2, 0x5fff9f, 0.5 + 0.5 * Math.sin(t * 25)).strokeRect(p.x - e.def.radius - 3, p.y - e.def.radius - 3, e.def.radius * 2 + 6, e.def.radius * 2 + 6);
       if (e.stunTime > 0) {
         for (let i = 0; i < 3; i++) {
           const a = t * 6 + (i * Math.PI * 2) / 3;
@@ -452,28 +486,49 @@ export class GameScene extends Phaser.Scene {
     if (!id) return;
     const def = this.sim.cfg.units[id];
     const level = u?.level ?? 0;
-    const lv = def.levels[level];
+    const lv = u ? this.sim.stats(u) : def.levels[0];
     const name = STR.units[id];
-    this.info.title.setText(`${def.emoji} ${name.name}${u ? `  ${STR.level(level + 1)}` : ''}`);
+    const br = u && u.branch !== null ? def.branches![u.branch] : null;
+    const title = br ? `${br.emoji} ${STR.branches[br.id].full}` : `${def.emoji} ${name.name}`;
+    this.info.title.setText(`${title}${u ? `  ${STR.level(level + 1)}` : ''}`);
     const s = STR.stats;
-    const lines = [name.desc, ''];
-    if (lv.damage) lines.push(`${s.damage} ${lv.damage}`);
-    if (lv.cooldown) lines.push(`${s.rate} ${lv.cooldown}초`);
-    if (lv.range) lines.push(`${s.range} ${lv.range}`);
-    if (lv.splash) lines.push(`${s.splash} ${lv.splash}`);
-    if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
-    if (lv.buff) lines.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
-    if (lv.income) lines.push(`${s.income} 💰${lv.income}`);
-    this.info.stats.setText(lines.join('\n'));
+    const opts = u ? this.sim.upgradeOptions(u) : [];
+    const atFork = opts.length === 2;
+    // 갈림길에서는 설명과 스탯 대신 두 갈래 설명만 보여 준다 (패널 공간이 좁다)
+    const lines = atFork ? [] : [br ? STR.branches[br.id].desc : name.desc, ''];
+    if (atFork) {
+      lines.push(STR.branchPrompt);
+      for (const b of def.branches!) lines.push(`${b.emoji} ${STR.branches[b.id].name}: ${STR.branches[b.id].desc}`);
+    }
+    if (!atFork && lv.damage) lines.push(`${s.damage} ${lv.damage}`);
+    if (!atFork) {
+      if (lv.cooldown) lines.push(`${s.rate} ${lv.cooldown}초`);
+      if (lv.range) lines.push(`${s.range} ${lv.range}`);
+      if (lv.splash) lines.push(`${s.splash} ${lv.splash}`);
+      if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
+      if (lv.buff) lines.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
+      if (lv.income) lines.push(`${s.income} 💰${lv.income}`);
+    }
+    this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
     const showControls = u !== null;
-    this.info.upgrade.container.setVisible(showControls);
+    this.info.upgrade.container.setVisible(showControls && !atFork);
+    this.info.branchA.container.setVisible(showControls && atFork);
+    this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
     const attacks = def.kind === 'single' || def.kind === 'splash';
     this.info.target.container.setVisible(showControls && attacks);
     if (!u) return;
-    const cost = this.sim.upgradeCost(u);
-    this.info.upgrade.setText(cost === null ? STR.maxLevel : STR.upgrade(cost));
-    this.info.upgrade.setEnabled(cost !== null && this.sim.money >= cost);
+    if (atFork) {
+      [this.info.branchA, this.info.branchB].forEach((b, i) => {
+        const bd = def.branches![i];
+        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, bd.cost));
+        b.setEnabled(this.sim.money >= bd.cost);
+      });
+    } else {
+      const cost = opts[0]?.cost ?? null;
+      this.info.upgrade.setText(cost === null ? STR.maxLevel : STR.upgrade(cost));
+      this.info.upgrade.setEnabled(cost !== null && this.sim.money >= cost);
+    }
     this.info.sell.setText(STR.sell(this.sim.sellValue(u)));
     this.info.target.setText(STR.target(u.target));
   }
@@ -484,8 +539,14 @@ export class GameScene extends Phaser.Scene {
     switch (ev.type) {
       case 'shot': {
         this.recoil(ev.unit);
-        const emoji = PROJECTILE_EMOJI[ev.kind];
-        if (emoji) {
+        const style = ev.branch ? BRANCH_SHOT[ev.branch] : undefined;
+        const emoji = ev.branch ? undefined : PROJECTILE_EMOJI[ev.kind];
+        if (style) {
+          const line = this.add.line(0, 0, ev.from.x, ev.from.y, ev.to.x, ev.to.y, style.color, 0.95).setOrigin(0).setLineWidth(style.width).setDepth(7);
+          this.tweens.add({ targets: line, alpha: 0, duration: style.fade, onComplete: () => line.destroy() });
+          sfx.play(style.sound);
+          break;
+        } else if (emoji) {
           const dur = (Phaser.Math.Distance.Between(ev.from.x, ev.from.y, ev.to.x, ev.to.y) / PROJECTILE_SPEED) * 1000;
           const p = text(this, ev.from.x, ev.from.y, emoji, 18).setOrigin(0.5).setDepth(7);
           this.tweens.add({ targets: p, x: ev.to.x, y: ev.to.y, angle: 360, duration: dur, onComplete: () => p.destroy() });
@@ -504,7 +565,8 @@ export class GameScene extends Phaser.Scene {
       }
       case 'pulse': {
         this.recoil(ev.unit);
-        const c = this.add.circle(ev.x, ev.y, ev.r, ev.color, 0).setStrokeStyle(3, ev.color, 0.7).setScale(0.3).setDepth(6);
+        const color = ev.branch === 'frost' ? 0xdff8ff : ev.branch === 'typhoon' ? 0xb0e0ff : ev.color;
+        const c = this.add.circle(ev.x, ev.y, ev.r, color, ev.branch === 'frost' ? 0.15 : 0).setStrokeStyle(ev.branch ? 5 : 3, color, 0.7).setScale(0.3).setDepth(6);
         this.tweens.add({ targets: c, alpha: 0, scale: 1, duration: 350, onComplete: () => c.destroy() });
         sfx.play('pulse');
         break;
@@ -655,13 +717,14 @@ function syncEmojis(
   scene: Phaser.Scene,
   pool: Map<number, Phaser.GameObjects.Text>,
   items: { uid: number; x: number; y: number; emoji: string; size: number }[],
+  depth = 2,
 ): void {
   const alive = new Set<number>();
   for (const it of items) {
     alive.add(it.uid);
     let t = pool.get(it.uid);
     if (!t) {
-      t = text(scene, 0, 0, it.emoji, it.size).setOrigin(0.5).setDepth(2);
+      t = text(scene, 0, 0, it.emoji, it.size).setOrigin(0.5).setDepth(depth);
       pool.set(it.uid, t);
     }
     t.setPosition(it.x, it.y);

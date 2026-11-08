@@ -51,11 +51,18 @@ const smart: Step[] = [
   { upgradeAll: 'toaster' },
 ];
 
-/** 계획이 끝난 뒤 남는 돈은 경로 근처 빈칸에 유닛을 깔고 업그레이드하는 데 쓴다 */
-function spendGreedy(g: Game): void {
+/** Lv4 갈림길 선택 규칙. 없으면 갈림길을 찍지 않는다 */
+type BranchPick = ((id: UnitId) => 0 | 1) | null;
+
+/** 계획이 끝난 뒤 남는 돈은 업그레이드, 갈림길, 경로 근처 빈칸 설치에 쓴다 */
+function spendGreedy(g: Game, pickBranch: BranchPick): void {
   for (const u of g.units) {
-    const c = g.upgradeCost(u);
-    if (c !== null && g.money >= c) g.apply({ type: 'upgrade', uid: u.uid });
+    const opts = g.upgradeOptions(u);
+    if (opts.length === 1 && g.money >= opts[0].cost) g.apply({ type: 'upgrade', uid: u.uid });
+    if (opts.length === 2 && pickBranch) {
+      const b = pickBranch(u.def.id);
+      if (g.money >= opts[b].cost) g.apply({ type: 'upgrade', uid: u.uid, branch: b });
+    }
   }
   const pick: UnitId = g.units.filter((u) => u.def.id === 'microwave').length > g.units.filter((u) => u.def.id === 'toaster').length ? 'toaster' : 'microwave';
   if (g.money < g.cfg.units[pick].levels[0].cost * 2) return;
@@ -72,7 +79,9 @@ function spendGreedy(g: Game): void {
 
 const VERBOSE = process.argv.includes('-v');
 
-function run(diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = false, useSkills = false): { wave: number; hp: number; won: boolean } {
+function run(
+  diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = false, useSkills = false, pickBranch: BranchPick = null,
+): { wave: number; hp: number; won: boolean } {
   const g = new Game({ ...defaultConfig(diff), seed: 42 });
   let lastWave = 0;
   let i = 0;
@@ -86,7 +95,7 @@ function run(diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = f
           throw new Error(`설치 실패 ${s.unit} ${s.x},${s.y}: ${r.reason}`);
         }
       } else {
-        const targets = g.units.filter((u) => u.def.id === s.upgradeAll && g.upgradeCost(u) !== null);
+        const targets = g.units.filter((u) => u.def.id === s.upgradeAll && g.upgradeOptions(u)[0]?.branch === null);
         const lowest = Math.min(...targets.map((u) => u.level));
         const u = targets.find((t) => t.level === lowest);
         if (u) {
@@ -96,7 +105,7 @@ function run(diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = f
       }
       i++;
     }
-    if (spendRest) spendGreedy(g);
+    if (spendRest) spendGreedy(g, pickBranch);
   };
   g.apply({ type: 'startWave' });
   for (let t = 0; t < 3600 && !g.finished; t += 0.1) {
@@ -126,10 +135,28 @@ const cases = [
   ['smart+스킬', smart, true, true],
 ] as const;
 const only = process.argv.find((a) => (DIFFICULTY_ORDER as string[]).includes(a)) as DifficultyId | undefined;
-for (const diff of only ? [only] : DIFFICULTY_ORDER) {
+for (const diff of process.argv.includes('--branches') ? [] : only ? [only] : DIFFICULTY_ORDER) {
   console.log(`[${diff}]`);
   for (const [name, plan, rest, skills] of cases) {
     const r = run(diff, plan, true, rest, skills);
     console.log(`  ${name.padEnd(10)} → 웨이브 ${String(r.wave).padStart(2)}  HP ${String(r.hp).padStart(4)}  ${r.won ? '승리' : '패배'}`);
+  }
+}
+
+// 갈림길 비교: 모두 A / 모두 B / 한 유닛만 반대로. 한쪽만 압도적으로 좋으면 고민이 사라지므로 비슷해야 한다.
+if (process.argv.includes('--branches')) {
+  const units: UnitId[] = ['toaster', 'fan', 'microwave', 'vacuum', 'wifi', 'washer'];
+  const variants: [string, BranchPick][] = [
+    ['갈림길 없음', null],
+    ['모두 A', () => 0],
+    ['모두 B', () => 1],
+    ...units.map((id): [string, BranchPick] => [`${id}만 B`, (u) => (u === id ? 1 : 0)]),
+  ];
+  for (const diff of (only ? [only] : ['normal', 'hard', 'hell']) as DifficultyId[]) {
+    console.log(`[갈림길 비교: ${diff}]`);
+    for (const [name, pick] of variants) {
+      const r = run(diff, smart, true, true, true, pick);
+      console.log(`  ${name.padEnd(14)} → 웨이브 ${String(r.wave).padStart(2)}  HP ${String(r.hp).padStart(4)}  ${r.won ? '승리' : '패배'}`);
+    }
   }
 }

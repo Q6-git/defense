@@ -16,6 +16,8 @@ interface Tone {
 const SOUNDS = {
   shoot: { gap: 0.06, tones: [{ wave: 'square', from: 660, to: 330, dur: 0.06, vol: 0.05 }] },
   vacuum: { gap: 0.09, tones: [{ wave: 'sawtooth', from: 220, to: 180, dur: 0.05, vol: 0.03 }] },
+  snipe: { gap: 0.1, tones: [{ wave: 'square', from: 1600, to: 200, dur: 0.18, vol: 0.08, noise: true }] },
+  beam: { gap: 0.15, tones: [{ wave: 'sawtooth', from: 90, to: 110, dur: 0.15, vol: 0.03 }] },
   hit: { gap: 0.05, tones: [{ wave: 'triangle', from: 300, to: 120, dur: 0.05, vol: 0.05 }] },
   crit: { gap: 0.08, tones: [{ wave: 'square', from: 900, to: 1400, dur: 0.08, vol: 0.06 }] },
   blast: { gap: 0.1, tones: [{ wave: 'sine', from: 160, to: 40, dur: 0.25, vol: 0.18, noise: true }] },
