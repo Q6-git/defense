@@ -12,6 +12,7 @@
     "balance": "vite-node scripts/balance.ts"
   },
   "dependencies": {
+    "@fontsource/jua": "^5.2.8",
     "phaser": "3.90.0"
   },
   "devDependencies": {
