@@ -65,7 +65,9 @@ function spendGreedy(g: Game, pickBranch: BranchPick): void {
       if (g.money >= opts[b].cost) g.apply({ type: 'upgrade', uid: u.uid, branch: b });
     }
   }
-  const pick: UnitId = g.units.filter((u) => u.def.id === 'microwave').length > g.units.filter((u) => u.def.id === 'toaster').length ? 'toaster' : 'microwave';
+  // --mix: 사람처럼 선풍기와 청소기도 섞어서 더 산다 (군중 제어를 겹쳐 쓰는 운영 재현)
+  const rotation: UnitId[] = process.argv.includes('--mix') ? ['toaster', 'fan', 'microwave', 'vacuum', 'fan', 'toaster'] : ['microwave', 'toaster'];
+  const pick: UnitId = rotation[g.units.length % rotation.length];
   if (g.money < g.cfg.units[pick].levels[0].cost * 2) return;
   const spot = bestSpot(g, pick);
   if (spot) g.apply({ type: 'place', unit: pick, x: spot.x, y: spot.y });
@@ -205,8 +207,9 @@ if (process.argv.includes('--endless')) {
       console.log(`[무한 ${diff}] ${flip}만 B → 웨이브 ${r.wave}`);
       continue;
     }
-    const a = run(diff, smart, true, true, true, () => 0, true);
-    const b = run(diff, smart, true, true, true, () => 1, true);
+    const auto = process.argv.includes('--mix');
+    const a = run(diff, smart, true, true, true, () => 0, true, 'kitchen', auto);
+    const b = run(diff, smart, true, true, true, () => 1, true, 'kitchen', auto);
     console.log(`[무한 ${diff}] 모두 A → 웨이브 ${a.wave}   모두 B → 웨이브 ${b.wave}`);
   }
 }

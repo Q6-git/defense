@@ -57,6 +57,7 @@ export function endlessWave(n: number): WaveDef {
     { enemy: b, count: Math.round(size * 0.7), interval: interval * 1.2, delay: 4 },
   ];
   if (n % 10 === 0) groups.push({ enemy: 'boss', count: n / 10 - 2, interval: 4, delay: 6 });
-  // 정해진 웨이브 이후에는 웨이브마다 체력이 6%씩 추가로 복리 증가한다
-  return { hpMul: hpMulFor(n) * Math.pow(1.06, k), groups };
+  // 정해진 웨이브 이후에는 웨이브마다 체력이 8%씩 추가로 복리 증가한다 (약 9웨이브마다 2배).
+  // 가전을 놓을 자리는 한정돼 있으니, 아무리 잘 짜도 언젠가는 무너진다
+  return { hpMul: hpMulFor(n) * Math.pow(1.08, k), groups };
 }

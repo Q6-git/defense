@@ -38,6 +38,11 @@ export const STR = {
   waveEndless: (n: number) => `🌊 ${n} ♾️`,
   start: '▶ 시작',
   drain: '배수구',
+  paused: '일시정지',
+  resume: '▶ 계속하기',
+  restartRun: '🔄 처음부터 다시',
+  quit: '🏠 나가기 (시작 화면)',
+  pauseHint: 'Esc 또는 P 키로도 멈추고 풀 수 있어요',
   chooseMap: '맵을 고르세요',
   maps: {
     kitchen: { name: '🍳 주방', desc: '길게 굽이치는 배수관' },

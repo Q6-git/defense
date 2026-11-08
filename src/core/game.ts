@@ -104,7 +104,9 @@ export interface Zone {
 /** 시뮬레이션 1스텝의 최대 길이. 배속이 높아도 결과가 크게 달라지지 않게 쪼개서 돌린다. */
 const MAX_STEP = 1 / 60;
 /** 밀려난 적이 다시 밀리지 않는 시간(초) */
-const KNOCK_IMMUNE = 2;
+const KNOCK_IMMUNE = 3;
+/** 얼었다 풀린 적이 다시 얼지 않는 시간(초) */
+const FREEZE_IMMUNE = 2.5;
 
 export class Game {
   readonly cfg: GameConfig;
@@ -350,7 +352,7 @@ export class Game {
     const p = path.pointAt(dist);
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
-      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, summonTimer: def.summon?.interval ?? 0,
+      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
     };
     this.enemies.push(e);
     return e;
@@ -463,9 +465,11 @@ export class Game {
             e.x = p.x;
             e.y = p.y;
           }
-          if (lv.freeze) {
-            e.stunTime = Math.max(e.stunTime, lv.freeze * resist);
+          if (lv.freeze && e.freezeImmune <= 0) {
+            const t = lv.freeze * resist;
+            e.stunTime = Math.max(e.stunTime, t);
             e.frozenVuln = lv.frozenVuln ?? 1;
+            e.freezeImmune = t + FREEZE_IMMUNE;
           }
           this.damage(e, lv.damage);
         }
@@ -539,6 +543,7 @@ export class Game {
     const survivors: Enemy[] = [];
     for (const e of this.enemies) {
       if (e.knockImmune > 0) e.knockImmune -= dt;
+      if (e.freezeImmune > 0) e.freezeImmune -= dt;
       if (e.slowTime > 0) {
         e.slowTime -= dt;
         if (e.slowTime <= 0) e.slowMul = 1;
