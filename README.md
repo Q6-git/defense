@@ -68,6 +68,24 @@ scripts/       balance.ts (밸런스 시뮬레이터), branches.ts (갈래 벤�
 
 유저 조작은 모두 `game.apply(command)`를 거친다. 멀티플레이를 붙일 때는 이 명령을 서버로 보내고, 서버가 같은 `Game`을 돌리면 된다.
 
+## 그래픽 바꾸기
+
+그림은 `public/sprites/`에 있고, 목록은 `src/sprites.ts`에 있다. 지금 그림은 모두 직접 그린 SVG다.
+
+- **같은 이름의 파일로 덮어쓰면** 그 그림이 바뀐다 (예: `public/sprites/toaster.svg`)
+- **PNG를 쓰려면** `toaster.png`를 넣고 `src/sprites.ts`에서 `toaster: 'toaster.png'`로 고친다
+- 권장 규격: 정사각형, 256×256 이상, 배경 투명, 캐릭터가 가운데를 꽉 채우게
+- 파일이 없거나 깨져 있으면 그 그림만 이모지로 그려지고 게임은 정상 동작한다
+
+| 파일 이름 | 대상 |
+|---|---|
+| `toaster` `fan` `microwave` `vacuum` `wifi` `washer` | 가전 6종 |
+| `goo` `rat` `grease` `roach` `splitter` `splitling` `boss` | 하수구 군단 7종 |
+| `outlet` `drain` | 기지(콘센트), 배수구 |
+| `proj_toast` `proj_fire` | 투사체 (식빵, 불꽃) |
+| `ob_bathtub` `ob_plant` `ob_basket` `ob_shirt` | 장애물 |
+| `ab_plunger` `ab_overload` | 스킬 아이콘 |
+
 ## 배포
 
 `main`에 push되면 GitHub Actions가 테스트 → 빌드 → GitHub Pages 배포를 한다.

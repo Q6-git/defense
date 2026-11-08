@@ -41,3 +41,22 @@ export function button(
     },
   };
 }
+
+/** 그림이 있으면 그림, 없으면 이모지 글자. size는 화면에 보이는 지름(px) */
+export type Icon = Phaser.GameObjects.Image | Phaser.GameObjects.Text;
+
+export function icon(scene: Phaser.Scene, x: number, y: number, key: string | undefined, emoji: string, size: number): Icon {
+  if (key && scene.textures.exists(key)) {
+    const im = scene.add.image(x, y, key).setDisplaySize(size, size);
+    im.setData('base', im.scaleX);
+    return im;
+  }
+  const t = text(scene, x, y, emoji, Math.round(size * 0.55)).setOrigin(0.5);
+  t.setData('base', 1);
+  return t;
+}
+
+/** 반동·튕김 효과를 줄 때 기준이 되는 원래 배율 */
+export function baseScale(o: Icon): number {
+  return (o.getData('base') as number | undefined) ?? 1;
+}

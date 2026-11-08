@@ -37,6 +37,7 @@ export const STR = {
   continueEndless: '♾️ 계속 버티기',
   waveEndless: (n: number) => `🌊 ${n} ♾️`,
   start: '▶ 시작',
+  drain: '배수구',
   chooseMap: '맵을 고르세요',
   maps: {
     kitchen: { name: '🍳 주방', desc: '길게 굽이치는 배수관' },
