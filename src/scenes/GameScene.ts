@@ -459,10 +459,6 @@ export class GameScene extends Phaser.Scene {
     layer(hw * 2 + 8, 0x7fa7bf, 1);
     layer(hw * 2, 0xcfe7f3, 1);
     layer(hw * 0.7, 0xeaf6fc, 0.9, -hw * 0.35);
-    // 꺾이는 곳마다 이음매 링
-    for (const pts of lines) {
-      for (const p of pts.slice(1, -1)) g.lineStyle(4, 0x7fa7bf, 1).strokeCircle(p.x, p.y, hw + 2);
-    }
     // 진행 방향 표시
     g.fillStyle(0x7fa7bf, 0.45);
     for (const path of this.sim.paths) {
