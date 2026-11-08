@@ -26,13 +26,26 @@ export interface EnemyDef {
   summon?: { id: EnemyId; count: number; interval: number };
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface MapDef {
+  id: string;
   width: number;
   height: number;
   /** 배치 가능한 맵 영역 (상단 바·우측 패널 제외) */
-  area: { x: number; y: number; w: number; h: number };
-  path: Vec[];
+  area: Rect;
+  /** 적이 지나가는 길. 여러 개면 적이 번갈아 나눠 탄다 (끝은 모두 같은 기지) */
+  paths: Vec[][];
   pathHalfWidth: number;
+  /** 설치할 수 없는 장애물 */
+  blocked?: (Rect & { emoji: string })[];
+  /** 맵별 적 체력 배율 (길 길이와 설치 공간 차이를 보정) */
+  enemyHpMul?: number;
 }
 
 export interface Enemy {
@@ -42,6 +55,10 @@ export interface Enemy {
   maxHp: number;
   /** 경로 시작점부터 이동한 거리 */
   dist: number;
+  /** 타고 있는 길 번호 (MapDef.paths 인덱스) */
+  lane: number;
+  /** 기지까지 남은 거리. 길이 여러 개일 때 '맨 앞' 판단에 쓴다 */
+  left: number;
   x: number;
   y: number;
   slowMul: number;
@@ -52,6 +69,8 @@ export interface Enemy {
   frozenVuln: number;
   /** 이번 스텝 해킹 배율 (1이면 해킹 안 됨) */
   hackMul: number;
+  /** 밀려난 뒤 다시 밀리지 않는 남은 시간. 태풍 여러 대로 적을 영원히 붙잡지 못하게 한다 */
+  knockImmune: number;
   summonTimer: number;
 }
 
@@ -104,7 +123,7 @@ export interface UnitLevel {
   pierceArmor?: boolean;
   /** 사거리 안 모든 적을 동시에 때린다 */
   hitAll?: boolean;
-  /** 선풍기 펄스가 적을 경로 뒤로 밀어내는 거리(px). 보스는 30%만 */
+  /** 선풍기 펄스가 적을 경로 뒤로 밀어내는 거리(px). 보스는 30%만, 한 번 밀리면 2초간 면역 */
   knockback?: number;
   /** 선풍기 펄스가 적을 얼리는 시간(초) */
   freeze?: number;

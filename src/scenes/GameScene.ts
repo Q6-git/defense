@@ -4,9 +4,10 @@ import { Game, type GameEvent } from '../core/game';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type Unit, type UnitId } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
+import { MAP_ORDER, type MapId } from '../data/map';
 import { UNIT_ORDER } from '../data/units';
 import { sfx, type SoundId } from '../sfx';
-import { loadBest, loadDifficulty, saveBest, saveDifficulty } from '../storage';
+import { loadBest, loadSetup, saveBest, saveSetup, type RunSetup } from '../storage';
 import { STR } from '../strings.ko';
 import { button, text, type Button } from './ui';
 
@@ -33,7 +34,11 @@ interface AbilityButton {
 
 export class GameScene extends Phaser.Scene {
   private sim!: Game;
-  private difficulty: DifficultyId = 'normal';
+  private setup: RunSetup = loadSetup();
+  private endScreen: Phaser.GameObjects.GameObject[] = [];
+  private get difficulty(): DifficultyId {
+    return this.setup.difficulty;
+  }
   private world!: Phaser.GameObjects.Graphics;
   private overlay!: Phaser.GameObjects.Graphics;
   private enemyEmojis = new Map<number, Phaser.GameObjects.Text>();
@@ -78,11 +83,11 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  /** data.difficulty가 없으면(처음 열었을 때) 난이도 선택 화면을 띄운다 */
-  create(data: { difficulty?: DifficultyId }): void {
-    this.difficulty = data.difficulty ?? loadDifficulty() ?? 'normal';
-    if (data.difficulty) saveDifficulty(data.difficulty);
-    this.sim = new Game(defaultConfig(this.difficulty));
+  /** data.start가 없으면(처음 열었거나 설정을 바꿀 때) 시작 화면을 띄운다 */
+  create(data: { start?: boolean }): void {
+    this.setup = loadSetup();
+    this.endScreen = [];
+    this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId));
     // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
     if (import.meta.env.DEV) (window as unknown as { sim: Game }).sim = this.sim;
     this.enemyEmojis.clear();
@@ -114,26 +119,54 @@ export class GameScene extends Phaser.Scene {
       if (this.placing || this.aiming) this.ghost = { x: p.worldX, y: p.worldY };
     });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onMapTap(p.worldX, p.worldY));
-    if (!data.difficulty) this.showDifficultyPicker();
+    if (!data.start) this.showDifficultyPicker();
+  }
+
+  /** 시작 화면에서 설정을 바꾸면 저장하고 시작 화면을 다시 그린다 */
+  private changeSetup(patch: Partial<RunSetup>, start = false): void {
+    saveSetup({ ...this.setup, ...patch });
+    this.scene.restart({ start });
   }
 
   private showDifficultyPicker(): void {
     const { width, height } = this.sim.cfg.map;
     const layer = this.add.container(0, 0).setDepth(60);
     const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setOrigin(0).setInteractive();
-    const title = text(this, width / 2, 120, `🔌 ${STR.title}`, 36).setOrigin(0.5);
-    const sub = text(this, width / 2, 175, STR.chooseDifficulty, 20, '#9fb3c8').setOrigin(0.5);
-    layer.add([dim, title, sub]);
+    const title = text(this, width / 2, 60, `🔌 ${STR.title}`, 34).setOrigin(0.5);
+    layer.add([dim, title]);
+    // 맵 선택 줄이 들어갈 자리 (MAP_ROW_Y)
+    this.buildMapRow(layer);
+    const sub = text(this, width / 2, 232, STR.chooseDifficulty, 18, '#9fb3c8').setOrigin(0.5);
+    layer.add(sub);
     DIFFICULTY_ORDER.forEach((id, i) => {
       const d = DIFFICULTIES[id];
-      const y = 260 + i * 100;
+      const y = 290 + i * 78;
       const colors: Record<DifficultyId, number> = { easy: 0x2e9e5b, normal: 0x2f6fd6, hard: 0xc0612b, hell: 0x8a1f2a };
-      const b = button(this, width / 2, y, 520, 84, '', () => this.scene.restart({ difficulty: id }), colors[id], 18);
+      const b = button(this, width / 2, y, 520, 68, '', () => this.changeSetup({ difficulty: id }, true), colors[id], 17);
       const name = STR.difficulties[id];
-      b.label.setText(`${name.name}\n${name.desc}`).setAlign('center').setLineSpacing(4);
-      const info = text(this, 190, 0, `${STR.bestShort(loadBest(id))}\n❤️${d.startHp}`, 14, '#e8eef5').setOrigin(0.5).setAlign('center');
+      b.label.setText(`${name.name}\n${name.desc}`).setAlign('center').setLineSpacing(2);
+      const info = text(this, 190, 0, `${STR.bestShort(loadBest({ ...this.setup, difficulty: id }))}\n❤️${d.startHp}`, 14, '#e8eef5').setOrigin(0.5).setAlign('center');
       b.container.add(info);
       if (id === this.difficulty) b.bg.setStrokeStyle(4, 0xffd35a);
+      layer.add(b.container);
+    });
+    const on = this.setup.endless;
+    const toggle = button(this, width / 2, 640, 520, 52, '', () => this.changeSetup({ endless: !on }), on ? 0x7a3fc0 : 0x3a3e4a, 17);
+    toggle.label.setText(`${STR.endlessToggle(on)}\n${STR.endlessHint}`).setAlign('center').setFontSize(15);
+    if (on) toggle.bg.setStrokeStyle(3, 0xe0b0ff);
+    layer.add(toggle.container);
+  }
+
+  /** 맵 선택 줄 */
+  private buildMapRow(layer: Phaser.GameObjects.Container): void {
+    const { width } = this.sim.cfg.map;
+    layer.add(text(this, width / 2, 108, STR.chooseMap, 18, '#9fb3c8').setOrigin(0.5));
+    MAP_ORDER.forEach((id, i) => {
+      const x = width / 2 + (i - 1) * 176;
+      const b = button(this, x, 160, 166, 66, '', () => this.changeSetup({ map: id }), 0x3a3e4a, 16);
+      const m = STR.maps[id];
+      b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(15).setLineSpacing(2);
+      if (id === this.setup.map) b.bg.setStrokeStyle(4, 0xffd35a).setFillStyle(0x4a5470);
       layer.add(b.container);
     });
   }
@@ -329,26 +362,46 @@ export class GameScene extends Phaser.Scene {
   private drawMap(): void {
     const { map } = this.sim.cfg;
     const g = this.add.graphics();
-    g.fillStyle(0x23262e).fillRect(map.area.x, map.area.y, map.area.w, map.area.h);
+    // 맵마다 바닥색을 조금 다르게
+    const floor: Record<string, number> = { kitchen: 0x23262e, bathroom: 0x1f2a30, balcony: 0x262a22 };
+    g.fillStyle(floor[map.id] ?? 0x23262e).fillRect(map.area.x, map.area.y, map.area.w, map.area.h);
     g.lineStyle(1, 0xffffff, 0.04);
     for (let x = map.area.x; x <= map.area.x + map.area.w; x += 40) g.lineBetween(x, map.area.y, x, map.height);
     for (let y = map.area.y; y <= map.height; y += 40) g.lineBetween(map.area.x, y, map.area.x + map.area.w, y);
-    const pts = map.path.map((p) => new Phaser.Math.Vector2(p.x, p.y));
-    g.lineStyle(map.pathHalfWidth * 2 + 8, 0x3b3f4a).strokePoints(pts);
-    for (const p of pts) g.fillStyle(0x3b3f4a).fillCircle(p.x, p.y, map.pathHalfWidth + 4);
-    g.lineStyle(map.pathHalfWidth * 2, 0x4c5262).strokePoints(pts);
-    for (const p of pts) g.fillStyle(0x4c5262).fillCircle(p.x, p.y, map.pathHalfWidth);
+    // 장애물
+    for (const b of map.blocked ?? []) {
+      g.fillStyle(0x000000, 0.25).fillRoundedRect(b.x, b.y, b.w, b.h, 10);
+      g.lineStyle(2, 0xffffff, 0.12).strokeRoundedRect(b.x, b.y, b.w, b.h, 10);
+      // 상자 안에 이모지를 고르게 채운다
+      const size = Math.min(b.w, b.h) * 0.62;
+      const n = Math.max(1, Math.floor(b.w / (size * 1.25)));
+      for (let i = 0; i < n; i++) {
+        text(this, b.x + (b.w * (i + 0.5)) / n, b.y + b.h / 2, b.emoji, size).setOrigin(0.5).setAlpha(0.85);
+      }
+    }
+    // 배수관: 테두리를 먼저 모두 그리고 안쪽을 그려야 합류 지점이 깔끔하다
+    const lines = map.paths.map((path) => path.map((p) => new Phaser.Math.Vector2(p.x, p.y)));
+    for (const pts of lines) {
+      g.lineStyle(map.pathHalfWidth * 2 + 8, 0x3b3f4a).strokePoints(pts);
+      for (const p of pts) g.fillStyle(0x3b3f4a).fillCircle(p.x, p.y, map.pathHalfWidth + 4);
+    }
+    for (const pts of lines) {
+      g.lineStyle(map.pathHalfWidth * 2, 0x4c5262).strokePoints(pts);
+      for (const p of pts) g.fillStyle(0x4c5262).fillCircle(p.x, p.y, map.pathHalfWidth);
+    }
     // 진행 방향 표시
     g.fillStyle(0xffffff, 0.06);
-    for (let d = 40; d < this.sim.path.length; d += 80) {
-      const a = this.sim.path.pointAt(d);
-      const b = this.sim.path.pointAt(d + 1);
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      const tri = [0, 2.5, -2.5].map((o) => ({ x: a.x + Math.cos(ang + o) * 8, y: a.y + Math.sin(ang + o) * 8 }));
-      g.fillTriangle(tri[0].x, tri[0].y, tri[1].x, tri[1].y, tri[2].x, tri[2].y);
+    for (const path of this.sim.paths) {
+      for (let d = 40; d < path.length; d += 80) {
+        const a = path.pointAt(d);
+        const b = path.pointAt(d + 1);
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        const tri = [0, 2.5, -2.5].map((o) => ({ x: a.x + Math.cos(ang + o) * 8, y: a.y + Math.sin(ang + o) * 8 }));
+        g.fillTriangle(tri[0].x, tri[0].y, tri[1].x, tri[1].y, tri[2].x, tri[2].y);
+      }
     }
-    const end = pts[pts.length - 1];
-    text(this, 24, pts[0].y - 52, '🕳️ 배수구', 18, '#9fb3c8');
+    for (const pts of lines) text(this, 24, pts[0].y - 52, '🕳️ 배수구', 18, '#9fb3c8');
+    const end = lines[0][lines[0].length - 1];
     text(this, end.x + 10, end.y, '🔌', 46).setOrigin(0.5);
     g.fillStyle(0x1b1d24).fillRect(0, 0, map.width, map.area.y);
     g.fillStyle(0x1b1d24).fillRect(PANEL_X, map.area.y, PANEL_W, map.area.h);
@@ -447,8 +500,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     // HUD
-    this.hud.setText(`${STR.hp} ${gm.hp}   ${STR.money} ${gm.money}   ${STR.wave(gm.wave, gm.totalWaves)}`);
-    this.diffLabel.setText(STR.difficulties[this.difficulty].name);
+    const waveText = gm.endless ? STR.waveEndless(gm.wave) : STR.wave(gm.wave, gm.totalWaves);
+    this.hud.setText(`${STR.hp} ${gm.hp}   ${STR.money} ${gm.money}   ${waveText}`);
+    this.diffLabel.setText(`${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
     const next = gm.wavePreview(gm.wave + 1);
     this.preview.setText(next.length ? `${STR.preview} ${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
     this.waveBtn.setEnabled(gm.phase === 'ready' || gm.phase === 'intermission');
@@ -692,22 +746,43 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: t, y: y - 45, alpha: 0, duration: 750, onComplete: () => t.destroy() });
   }
 
+  private continueEndless(): void {
+    if (!this.sim.apply({ type: 'continueEndless' }).ok) return;
+    for (const ob of this.endScreen) ob.destroy();
+    this.endScreen = [];
+    this.banner(STR.continueEndless, '#e0b0ff');
+    sfx.play('wave');
+  }
+
   private showEndScreen(won: boolean): void {
     this.placing = null;
     this.aiming = null;
     this.selected = null;
     const reached = this.sim.wave;
-    const isNew = saveBest(this.difficulty, reached);
+    const run: RunSetup = { ...this.setup, endless: this.sim.endless };
+    const isNew = saveBest(run, reached);
     const { width, height } = this.sim.cfg.map;
     const dim = this.add.rectangle(0, 0, width, height, 0x000000, 0.65).setOrigin(0).setInteractive();
-    const box = this.add.rectangle(width / 2, height / 2, 540, 320, 0x23262e).setStrokeStyle(2, won ? 0xffd35a : 0xff5a5a);
-    const title = text(this, width / 2, height / 2 - 100, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
-    const lines = [STR.difficulties[this.difficulty].name, STR.reachedWave(reached), STR.best(loadBest(this.difficulty))];
+    const canContinue = won && !!this.sim.cfg.extraWave;
+    const boxH = canContinue ? 400 : 320;
+    const top = height / 2 - boxH / 2;
+    const box = this.add.rectangle(width / 2, height / 2, 540, boxH, 0x23262e).setStrokeStyle(2, won ? 0xffd35a : 0xff5a5a);
+    const title = text(this, width / 2, top + 60, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
+    const lines = [
+      `${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${run.endless ? ' ♾️' : ''}`,
+      STR.reachedWave(reached), STR.best(loadBest(run)),
+    ];
     if (isNew) lines.push(STR.newBest);
-    const body = text(this, width / 2, height / 2 - 5, lines.join('\n'), 20, '#c9d2dc').setOrigin(0.5).setAlign('center').setLineSpacing(6);
-    const again = button(this, width / 2 - 120, height / 2 + 105, 220, 50, STR.restart, () => this.scene.restart({ difficulty: this.difficulty }), 0x2e9e5b, 20);
-    const change = button(this, width / 2 + 120, height / 2 + 105, 220, 50, STR.changeDifficulty, () => this.scene.restart({}), 0x4a4f5e, 20);
-    for (const ob of [dim, box, title, body, again.container, change.container]) ob.setDepth(50);
+    const body = text(this, width / 2, top + 155, lines.join('\n'), 20, '#c9d2dc').setOrigin(0.5).setAlign('center').setLineSpacing(6);
+    const again = button(this, width / 2 - 120, top + 265, 220, 50, STR.restart, () => this.scene.restart({ start: true }), 0x2e9e5b, 20);
+    const change = button(this, width / 2 + 120, top + 265, 220, 50, STR.changeDifficulty, () => this.scene.restart({}), 0x4a4f5e, 20);
+    this.endScreen = [dim, box, title, body, again.container, change.container];
+    // 20웨이브를 이기면 그대로 무한 모드로 이어갈 수 있다
+    if (canContinue) {
+      const cont = button(this, width / 2, top + 340, 460, 50, STR.continueEndless, () => this.continueEndless(), 0x7a3fc0, 20);
+      this.endScreen.push(cont.container);
+    }
+    for (const ob of this.endScreen) (ob as unknown as { setDepth(d: number): void }).setDepth(50);
     box.setScale(0.6);
     this.tweens.add({ targets: box, scale: 1, duration: 300, ease: 'Back.easeOut' });
   }

@@ -1,4 +1,4 @@
-// 최고 기록(난이도별 도달 웨이브)과 마지막으로 고른 난이도만 브라우저에 저장한다.
+// 최고 기록과 마지막으로 고른 설정(난이도, 무한 모드, 맵)만 브라우저에 저장한다.
 // 저장소를 쓸 수 없는 환경(사생활 보호 모드 등)에서는 조용히 무시한다.
 import type { DifficultyId } from './core/types';
 
@@ -20,22 +20,43 @@ function set(key: string, value: string): void {
   }
 }
 
-export function loadBest(d: DifficultyId): number {
-  return Number(get(`best.${d}`)) || 0;
+/** 판 하나의 설정 */
+export interface RunSetup {
+  difficulty: DifficultyId;
+  endless: boolean;
+  map: string;
+}
+
+const DIFFS: DifficultyId[] = ['easy', 'normal', 'hard', 'hell'];
+
+/** 기록은 맵 × 난이도 × 모드별로 따로 둔다. 첫 맵은 예전 키와 호환되도록 맵 이름을 붙이지 않는다 */
+function bestKey(s: RunSetup): string {
+  const map = s.map === 'kitchen' ? '' : `${s.map}.`;
+  return `best.${map}${s.endless ? 'endless.' : ''}${s.difficulty}`;
+}
+
+export function loadBest(s: RunSetup): number {
+  return Number(get(bestKey(s))) || 0;
 }
 
 /** 새 기록이면 저장하고 true를 돌려준다 */
-export function saveBest(d: DifficultyId, wave: number): boolean {
-  if (wave <= loadBest(d)) return false;
-  set(`best.${d}`, String(wave));
+export function saveBest(s: RunSetup, wave: number): boolean {
+  if (wave <= loadBest(s)) return false;
+  set(bestKey(s), String(wave));
   return true;
 }
 
-export function loadDifficulty(): DifficultyId | null {
-  const v = get('difficulty');
-  return v === 'easy' || v === 'normal' || v === 'hard' || v === 'hell' ? v : null;
+export function loadSetup(): RunSetup {
+  const d = get('difficulty');
+  return {
+    difficulty: DIFFS.includes(d as DifficultyId) ? (d as DifficultyId) : 'normal',
+    endless: get('endless') === '1',
+    map: ['kitchen', 'bathroom', 'balcony'].includes(get('map') ?? '') ? get('map')! : 'kitchen',
+  };
 }
 
-export function saveDifficulty(d: DifficultyId): void {
-  set('difficulty', d);
+export function saveSetup(s: RunSetup): void {
+  set('difficulty', s.difficulty);
+  set('endless', s.endless ? '1' : '0');
+  set('map', s.map);
 }
