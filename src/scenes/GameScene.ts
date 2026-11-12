@@ -262,7 +262,7 @@ export class GameScene extends Phaser.Scene {
 
   private onMapTap(x: number, y: number): void {
     const { area } = this.sim.cfg.map;
-    if (this.pauseLayer || this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
+    if (this.pauseLayer || this.sim.offer || this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
     if (this.aiming) {
       const res = this.sim.apply({ type: 'ability', id: this.aiming, x, y });
       if (res.ok) {
@@ -310,6 +310,7 @@ export class GameScene extends Phaser.Scene {
       sfx.play('error');
       return;
     }
+    if (this.sim.offer) return;
     if (this.sim.cfg.abilities[id].radius) {
       // 범위 스킬은 조준 모드로 들어간다
       this.select(null);
@@ -611,7 +612,7 @@ export class GameScene extends Phaser.Scene {
       this.ghostIcon = null;
     }
     if (this.aiming && this.ghost) {
-      const r = gm.cfg.abilities[this.aiming].radius ?? 0;
+      const r = gm.abilityStats(this.aiming).radius ?? 0;
       drawRange(o, this.ghost.x, this.ghost.y, r, 0xa57be0, t);
     }
 
@@ -620,11 +621,12 @@ export class GameScene extends Phaser.Scene {
     this.hpText.setText(`${STR.hp} ${gm.hp}`);
     this.moneyText.setText(`${STR.money} ${gm.money}`);
     this.waveText.setText(waveText);
-    this.diffLabel.setText(`${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
+    const cardTag = gm.cards.length ? `${STR.cardCount(gm.cards.length)}  ` : '';
+    this.diffLabel.setText(`${cardTag}${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
     const next = gm.wavePreview(gm.wave + 1);
     this.preview.setText(next.length ? `${STR.preview} ${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
     this.pauseBtn.setEnabled(!gm.finished && !this.picking);
-    this.waveBtn.setEnabled(gm.phase === 'ready' || gm.phase === 'intermission');
+    this.waveBtn.setEnabled((gm.phase === 'ready' || gm.phase === 'intermission') && !gm.offer);
     this.waveBtn.setText(
       gm.phase === 'intermission' ? STR.nextWave(Math.ceil(gm.timer), gm.earlyBonus)
         : gm.phase === 'ready' ? STR.startWave : STR.waveRunning,
@@ -635,13 +637,16 @@ export class GameScene extends Phaser.Scene {
       this.waveBtn.container.setScale(1);
     }
     for (const { id, btn } of this.shopBtns) {
-      const def = gm.cfg.units[id];
-      btn.setEnabled(gm.money >= def.levels[0].cost);
+      const cost = gm.placeCost(id);
+      btn.setEnabled(gm.money >= cost);
+      // 할인 카드를 고르면 가격표가 바뀐다
+      const label = `${STR.units[id].name}\n💰${cost}`;
+      if (btn.label.text !== label) btn.label.setText(label);
       btn.bg.setStrokeStyle(this.placing === id ? 3 : 2, this.placing === id ? 0xffd35a : 0xffffff, this.placing === id ? 1 : 0.25);
     }
     for (const a of this.abilityBtns) {
       const cd = gm.cooldowns[a.id];
-      const ratio = cd / gm.cfg.abilities[a.id].cooldown;
+      const ratio = cd / gm.abilityStats(a.id).cooldown;
       a.shade.setScale(1, ratio).setVisible(cd > 0);
       a.timer.setText(cd > 0 ? String(Math.ceil(cd)) : '');
       a.btn.label.setVisible(cd <= 0);
@@ -673,11 +678,12 @@ export class GameScene extends Phaser.Scene {
       lines.push(STR.branchPrompt);
       for (const b of def.branches!) lines.push(`${b.emoji} ${STR.branches[b.id].name}: ${STR.branches[b.id].desc}`);
     }
-    if (!atFork && lv.damage) lines.push(`${s.damage} ${lv.damage}`);
+    const n1 = (v: number) => String(Math.round(v * 10) / 10);
+    if (!atFork && lv.damage) lines.push(`${s.damage} ${n1(lv.damage)}`);
     if (!atFork) {
-      if (lv.cooldown) lines.push(`${s.rate} ${lv.cooldown}초`);
-      if (lv.range) lines.push(`${s.range} ${lv.range}`);
-      if (lv.splash) lines.push(`${s.splash} ${lv.splash}`);
+      if (lv.cooldown) lines.push(`${s.rate} ${Math.round(lv.cooldown * 100) / 100}초`);
+      if (lv.range) lines.push(`${s.range} ${Math.round(lv.range)}`);
+      if (lv.splash) lines.push(`${s.splash} ${Math.round(lv.splash)}`);
       if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
       if (lv.buff) lines.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
       if (lv.income) lines.push(`${s.income} 💰${lv.income}`);
@@ -813,6 +819,20 @@ export class GameScene extends Phaser.Scene {
         this.banner(STR.clearBanner(ev.bonus), '#ffd35a', 0.8);
         sfx.play('clear');
         break;
+      case 'cardOffer':
+        this.showCards();
+        break;
+      case 'cardPicked':
+        this.showToast(STR.cardPicked(STR.cards[ev.id]?.name ?? ev.id));
+        sfx.play('upgrade');
+        break;
+      case 'chain':
+        this.fx.impact(ev.x, ev.y, 0xff8a2a, true);
+        break;
+      case 'blocked':
+        this.floatText(ev.x, ev.y, STR.blocked, THEME.pink, 22);
+        sfx.play('clear');
+        break;
       case 'earlyBonus':
         this.showToast(STR.earlyBonus(ev.amount));
         sfx.play('coin');
@@ -886,7 +906,7 @@ export class GameScene extends Phaser.Scene {
   /** 일시정지 켜기/끄기. 시작 화면이나 결과 화면이 떠 있을 때는 무시한다 */
   private setPaused(on: boolean): void {
     if (on === !!this.pauseLayer) return;
-    if (on && (this.sim.finished || this.picking)) return;
+    if (on && (this.sim.finished || this.picking || this.sim.offer)) return;
     if (!on) {
       this.pauseLayer?.destroy();
       this.pauseLayer = null;
@@ -900,13 +920,86 @@ export class GameScene extends Phaser.Scene {
     this.aiming = null;
     const { width, height } = this.sim.cfg.map;
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
-    const box = card(this, width / 2, height / 2, 420, 370, 'center', THEME.bar);
-    const title = text(this, width / 2, height / 2 - 130, `⏸️ ${STR.paused}`, 34).setOrigin(0.5);
-    const resume = button(this, width / 2, height / 2 - 50, 320, 54, STR.resume, () => this.setPaused(false), THEME.green, 21);
-    const restart = button(this, width / 2, height / 2 + 20, 320, 50, STR.restartRun, () => this.leaveRun(true), THEME.neutral, 18);
-    const quit = button(this, width / 2, height / 2 + 84, 320, 50, STR.quit, () => this.leaveRun(false), THEME.red, 18);
-    const hint = text(this, width / 2, height / 2 + 148, STR.pauseHint, 14, THEME.textSoft).setOrigin(0.5);
-    this.pauseLayer = this.add.container(0, 0, [dim, box, title, resume.container, restart.container, quit.container, hint]).setDepth(70);
+    // 왼쪽: 이번 판 카드 목록, 오른쪽: 일시정지 메뉴
+    const cx = 920;
+    const box = card(this, cx, height / 2, 420, 370, 'center', THEME.bar);
+    const title = text(this, cx, height / 2 - 130, `⏸️ ${STR.paused}`, 34).setOrigin(0.5);
+    const resume = button(this, cx, height / 2 - 50, 320, 54, STR.resume, () => this.setPaused(false), THEME.green, 21);
+    const restart = button(this, cx, height / 2 + 20, 320, 50, STR.restartRun, () => this.leaveRun(true), THEME.neutral, 18);
+    const quit = button(this, cx, height / 2 + 84, 320, 50, STR.quit, () => this.leaveRun(false), THEME.red, 18);
+    const hint = text(this, cx, height / 2 + 148, STR.pauseHint, 14, THEME.textSoft).setOrigin(0.5);
+    this.pauseLayer = this.add.container(0, 0, [dim, box, title, resume.container, restart.container, quit.container, hint, ...this.cardListPanel(360, height / 2)]).setDepth(70);
+  }
+
+  /** 이번 판에 고른 카드 목록 패널 (일시정지 화면용) */
+  private cardListPanel(cx: number, cy: number): Phaser.GameObjects.GameObject[] {
+    const gm = this.sim;
+    const ids = [...new Set(gm.cards)];
+    const rowH = 30;
+    const h = Math.max(140, 80 + ids.length * rowH);
+    const top = cy - h / 2;
+    const out: Phaser.GameObjects.GameObject[] = [
+      card(this, cx, cy, 600, h, 'center', THEME.bar),
+      text(this, cx, top + 34, `🃏 ${STR.cardList}`, 24).setOrigin(0.5),
+    ];
+    if (!ids.length) out.push(text(this, cx, top + 90, STR.cardNone, 16, THEME.textSoft).setOrigin(0.5));
+    ids.forEach((id, i) => {
+      const def = gm.cfg.cards?.find((c) => c.id === id);
+      const n = gm.cardCount(id);
+      const y = top + 78 + i * rowH;
+      const info = STR.cards[id];
+      out.push(text(this, cx - 280, y, `${def?.emoji ?? ''} ${info?.name ?? id}${n > 1 ? ` ×${n}` : ''}`, 17).setOrigin(0, 0.5));
+      out.push(text(this, cx - 80, y, (info?.desc ?? '').replace('\n', ' / '), 14, THEME.textSoft).setOrigin(0, 0.5));
+    });
+    return out;
+  }
+
+  /** 카드 고르기 화면. 고르거나 건너뛸 때까지 게임이 멈춰 있다 */
+  private showCards(): void {
+    const gm = this.sim;
+    const offer = gm.offer;
+    if (!offer) return;
+    this.placing = null;
+    this.aiming = null;
+    this.select(null);
+    const { width, height } = gm.cfg.map;
+    const layer = this.add.container(0, 0).setDepth(65);
+    const close = () => layer.destroy();
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.6).setOrigin(0).setInteractive();
+    const title = text(this, width / 2, 110, STR.cardTitle(gm.wave), 34, THEME.textOnDark).setOrigin(0.5).setStroke('#4a3b34', 8);
+    layer.add([dim, title]);
+    const colors = { common: 0x8fb3c9, rare: THEME.purple, legend: 0xf5a623, risk: 0xe5484d };
+    offer.forEach((c, i) => {
+      const kind = c.risk ? 'risk' : c.rarity;
+      const color = colors[kind];
+      const x = width / 2 + (i - (offer.length - 1) / 2) * 290;
+      const y = 370;
+      const pick = () => {
+        if (gm.apply({ type: 'pickCard', index: i }).ok) close();
+      };
+      const bg = new RoundBox(this, 0, 0, 260, 360, THEME.white, 20, 6).setStrokeStyle(6, color);
+      bg.setInteractive(new Phaser.Geom.Rectangle(-130, -180, 260, 366), Phaser.Geom.Rectangle.Contains);
+      if (bg.input) bg.input.cursor = 'pointer';
+      bg.on('pointerup', pick);
+      const tag = new RoundBox(this, 0, -150, 90, 30, color, 15);
+      const tagText = text(this, 0, -150, STR.rarity[kind], 16, THEME.textOnDark).setOrigin(0.5);
+      const emoji = text(this, 0, -80, c.emoji, 64).setOrigin(0.5);
+      const info = STR.cards[c.id];
+      const name = text(this, 0, -10, info?.name ?? c.id, 26).setOrigin(0.5);
+      const desc = text(this, 0, 55, info?.desc ?? '', 17, THEME.text).setOrigin(0.5).setAlign('center').setLineSpacing(6).setWordWrapWidth(230, true);
+      const owned = gm.cardCount(c.id);
+      const stack = text(this, 0, 118, c.max > 1 ? STR.cardOwned(owned, c.max) : '', 14, THEME.textSoft).setOrigin(0.5);
+      const cont = this.add.container(x, y + 40, [bg, tag, tagText, emoji, name, desc, stack]).setAlpha(0);
+      layer.add(cont);
+      // 한 장씩 아래에서 올라온다
+      this.tweens.add({ targets: cont, y, alpha: 1, delay: i * 90, duration: 260, ease: 'Back.easeOut' });
+      bg.on('pointerover', () => cont.setScale(1.04)).on('pointerout', () => cont.setScale(1));
+    });
+    const skip = button(this, width / 2, 630, 300, 50, STR.cardSkip(gm.cfg.cardSkipMoney ?? 0), () => {
+      if (gm.apply({ type: 'skipCard' }).ok) close();
+    }, THEME.neutral, 18);
+    layer.add(skip.container);
+    sfx.play('clear');
   }
 
   /** 판을 그만둔다. 도달한 웨이브는 기록으로 남긴다 */

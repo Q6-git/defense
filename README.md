@@ -8,7 +8,7 @@
 npm install
 npm run dev        # 개발 서버 (http://localhost:5173)
 npm test           # 로직 단위 테스트
-npm run balance    # 봇 플레이어로 밸런스 확인 (--branches: 갈림길 비교, --endless: 무한 모드, --maps: 맵 비교)
+npm run balance    # 봇 플레이어로 밸런스 확인 (--seed=N: 카드 운 바꾸기, --nocards: 카드 없이, --branches: 갈림길 비교, --endless: 무한 모드, --maps: 맵 비교)
 npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
 npx vite-node scripts/cc-stack.ts   # 선풍기 여러 대로 적을 영원히 묶을 수 없는지 확인
 npm run build      # dist/ 에 배포용 빌드
@@ -35,6 +35,10 @@ npm run build      # dist/ 에 배포용 빌드
 | 📶 와이파이 | 📡 5G (버프 강화) | 🛰️ 해킹 (적 약화) |
 | 🪙 세탁기 | 🏦 이자 | ⛲ 동전 분수 |
 
+- **🃏 보상 카드**: 3웨이브마다 카드 3장 중 1장을 고른다 (건너뛰면 💰50). 판마다 무작위로 나와서 전략이 달라진다
+  - 일반 11장, 희귀 7장, 위험 5장(좋은 효과 + 나쁜 효과), 전설 6장(규칙을 바꿈)
+  - 수치형 카드는 3번까지 겹치고, 고른 카드는 일시정지 화면에서 볼 수 있다
+  - 카드 목록은 `src/data/cards.ts`, 이름과 설명은 `src/strings.ko.ts`
 - 공격의 10%는 크리티컬(2.5배)
 - **맵 3개** (시작 화면에서 선택, 기록은 맵별로 따로)
   - 🍳 주방: 길게 굽이치는 배수관 하나

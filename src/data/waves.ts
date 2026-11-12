@@ -30,7 +30,7 @@ const TABLE: G[][] = [
 /** 웨이브가 올라갈수록 적 체력이 늘어난다 */
 export function hpMulFor(wave: number): number {
   const w = wave - 1;
-  return 1 + 0.12 * w + 0.025 * w * w;
+  return 1 + 0.12 * w + 0.031 * w * w;
 }
 
 export const WAVES: WaveDef[] = TABLE.map((groups, i) => ({

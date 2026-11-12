@@ -1,6 +1,7 @@
 import type { GameConfig } from './core/game';
 import type { DifficultyId } from './core/types';
 import { ABILITIES } from './data/abilities';
+import { CARDS } from './data/cards';
 import { DIFFICULTIES } from './data/difficulty';
 import { ENEMIES } from './data/enemies';
 import { MAPS, type MapId } from './data/map';
@@ -28,5 +29,8 @@ export function defaultConfig(difficulty: DifficultyId = 'normal', endless = fal
     rewardMul: d.rewardMul,
     endless,
     extraWave: endlessWave,
+    cards: CARDS,
+    cardEvery: 3,
+    cardSkipMoney: 50,
   };
 }

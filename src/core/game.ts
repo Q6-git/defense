@@ -1,3 +1,4 @@
+import { baseMods, type CardDef, type CardRarity, type Mods } from './cards';
 import { dist, Path } from './path';
 import { makeRng } from './rng';
 import type {
@@ -43,6 +44,12 @@ export interface GameConfig {
   enemySpeedMul: number;
   rewardMul: number;
   seed?: number;
+  /** 보상 카드 목록. 비어 있으면 카드가 나오지 않는다 */
+  cards?: CardDef[];
+  /** 몇 웨이브마다 카드를 고르는지 */
+  cardEvery?: number;
+  /** 카드를 건너뛰면 받는 돈 */
+  cardSkipMoney?: number;
   /** 무한 모드: 정해진 웨이브가 끝나도 extraWave로 계속 만든다 */
   endless?: boolean;
   /** 정해진 웨이브 이후의 웨이브를 만드는 함수 (무한 모드용) */
@@ -70,6 +77,10 @@ export type GameEvent =
   | { type: 'waveCleared'; wave: number; bonus: number }
   | { type: 'earlyBonus'; amount: number }
   | { type: 'gameOver' }
+  | { type: 'cardOffer' }
+  | { type: 'cardPicked'; id: string }
+  | { type: 'chain'; x: number; y: number; r: number }
+  | { type: 'blocked'; x: number; y: number }
   | { type: 'victory' };
 
 /** 유저 조작. 멀티플레이를 붙일 때는 이 명령을 서버로 보내면 된다. */
@@ -80,6 +91,8 @@ export type Command =
   | { type: 'setTarget'; uid: number; mode: TargetMode }
   | { type: 'startWave' }
   | { type: 'continueEndless' }
+  | { type: 'pickCard'; index: number }
+  | { type: 'skipCard' }
   | { type: 'ability'; id: AbilityId; x?: number; y?: number };
 
 export type PlaceError = 'money' | 'path' | 'overlap' | 'bounds' | 'limit';
@@ -105,6 +118,8 @@ export interface Zone {
 const MAX_STEP = 1 / 60;
 /** 밀려난 적이 다시 밀리지 않는 시간(초) */
 const KNOCK_IMMUNE = 3;
+/** 연쇄 폭발 카드의 폭발 반경 */
+const CHAIN_RADIUS = 70;
 /** 얼었다 풀린 적이 다시 얼지 않는 시간(초) */
 const FREEZE_IMMUNE = 2.5;
 
@@ -129,6 +144,15 @@ export class Game {
   /** 무한 모드 여부. 20웨이브 승리 후 '계속 버티기'로 켤 수도 있다 */
   endless: boolean;
   zones: Zone[] = [];
+  /** 이번 판에 고른 카드 id (고른 순서대로, 겹친 카드는 여러 번 들어 있다) */
+  cards: string[] = [];
+  /** 고른 카드가 반영된 수치 */
+  mods: Mods = baseMods();
+  /** 지금 고르라고 내민 카드. 있는 동안 게임은 멈춘다 */
+  offer: CardDef[] | null = null;
+  private breakerUsed = false;
+  private modVersion = 0;
+  private statCache = new WeakMap<Unit, { key: number; stats: UnitLevel }>();
   private rng: () => number;
 
   private nextUid = 1;
@@ -181,6 +205,13 @@ export class Game {
         return { ok: true };
       case 'ability':
         return this.useAbility(cmd.id, cmd.x ?? 0, cmd.y ?? 0);
+      case 'pickCard':
+        return this.pickCard(cmd.index);
+      case 'skipCard':
+        if (!this.offer) return { ok: false, reason: 'phase' };
+        this.money += this.cfg.cardSkipMoney ?? 0;
+        this.offer = null;
+        return { ok: true };
     }
   }
 
@@ -197,14 +228,100 @@ export class Game {
     if (this.distanceToPath({ x, y }) < pathHalfWidth + r) return 'path';
     if (this.cfg.map.blocked?.some((b) => circleHitsRect(x, y, r, b))) return 'bounds';
     if (this.units.some((u) => dist(u, { x, y }) < u.def.radius + r)) return 'overlap';
-    if (def.maxCount !== undefined && this.units.filter((u) => u.def.id === id).length >= def.maxCount) return 'limit';
-    if (this.money < def.levels[0].cost) return 'money';
+    if (this.units.filter((u) => u.def.id === id).length >= this.maxCount(id)) return 'limit';
+    if (this.money < this.placeCost(id)) return 'money';
     return null;
   }
 
-  /** 유닛의 현재 스탯. 갈림길을 골랐으면 그 갈래 스탯 */
+  /** 설치 비용 (카드 할인 반영) */
+  placeCost(id: UnitId): number {
+    return Math.round(this.cfg.units[id].levels[0].cost * this.mods.placeCost);
+  }
+
+  /** 설치할 수 있는 최대 대수 (제한이 없으면 Infinity) */
+  maxCount(id: UnitId): number {
+    const max = this.cfg.units[id].maxCount;
+    if (max === undefined) return Infinity;
+    return max + (id === 'washer' ? this.mods.washerMax : 0);
+  }
+
+  /** 유닛의 현재 스탯. 갈림길을 골랐으면 그 갈래 스탯이고, 카드 효과가 반영돼 있다 */
   stats(u: Unit): UnitLevel {
-    return u.branch !== null && u.def.branches ? u.def.branches[u.branch] : u.def.levels[u.level];
+    const key = this.modVersion * 100 + u.level * 10 + (u.branch ?? 9);
+    const hit = this.statCache.get(u);
+    if (hit && hit.key === key) return hit.stats;
+    const base = u.branch !== null && u.def.branches ? u.def.branches[u.branch] : u.def.levels[u.level];
+    const m = this.mods;
+    const id = u.def.id;
+    const stats: UnitLevel = {
+      ...base,
+      damage: base.damage * m.damage[id] * m.allDamage,
+      range: base.range * m.allRange * (id === 'fan' ? m.fanRange : 1),
+      cooldown: id === 'vacuum' ? base.cooldown / m.vacuumSpeed : base.cooldown,
+    };
+    if (base.splash) stats.splash = base.splash * m.splash;
+    if (base.buff) stats.buff = base.buff + m.wifiBuff;
+    this.statCache.set(u, { key, stats });
+    return stats;
+  }
+
+  /** 스킬의 현재 수치 (카드 효과 반영) */
+  abilityStats(id: AbilityId): AbilityDef {
+    const d = this.cfg.abilities[id];
+    const m = this.mods;
+    return {
+      ...d,
+      cooldown: d.cooldown * (id === 'plunger' ? m.plungerCooldown : m.overloadCooldown),
+      radius: d.radius === undefined ? undefined : d.radius * m.plungerRadius,
+      duration: d.duration === undefined ? undefined : d.duration + m.overloadDuration,
+    };
+  }
+
+  /** 카드 id별로 이번 판에 고른 횟수 */
+  cardCount(id: string): number {
+    return this.cards.filter((c) => c === id).length;
+  }
+
+  private pickCard(index: number): CommandResult {
+    const card = this.offer?.[index];
+    if (!card) return { ok: false, reason: 'phase' };
+    this.cards.push(card.id);
+    this.money += card.money ?? 0;
+    this.hp += card.hp ?? 0;
+    // 수치는 고른 카드를 처음부터 다시 적용해서 만든다
+    const all = this.cfg.cards ?? [];
+    this.mods = baseMods();
+    for (const id of this.cards) all.find((c) => c.id === id)?.apply?.(this.mods);
+    this.modVersion++;
+    this.offer = null;
+    this.events.push({ type: 'cardPicked', id: card.id });
+    return { ok: true };
+  }
+
+  /** 카드 3장을 뽑는다. 뒤 웨이브일수록 희귀·전설이 잘 나온다 */
+  private drawCards(): CardDef[] {
+    const pool = (this.cfg.cards ?? []).filter(
+      (c) => this.cardCount(c.id) < c.max && (c.hp === undefined || c.hp >= 0 || this.hp > -c.hp),
+    );
+    const weight: Record<CardRarity, number> = { common: 60, rare: 30 + this.wave, legend: 10 + this.wave * 0.5 };
+    const out: CardDef[] = [];
+    while (out.length < 3 && pool.length) {
+      const rarities = (['common', 'rare', 'legend'] as CardRarity[]).filter((r) => pool.some((c) => c.rarity === r));
+      let roll = this.rng() * rarities.reduce((a, r) => a + weight[r], 0);
+      let rarity = rarities[rarities.length - 1];
+      for (const r of rarities) {
+        roll -= weight[r];
+        if (roll < 0) {
+          rarity = r;
+          break;
+        }
+      }
+      const options = pool.filter((c) => c.rarity === rarity);
+      const card = options[Math.floor(this.rng() * options.length)];
+      out.push(card);
+      pool.splice(pool.indexOf(card), 1);
+    }
+    return out;
   }
 
   get path(): Path {
@@ -218,20 +335,23 @@ export class Game {
 
   upgradeOptions(u: Unit): UpgradeOption[] {
     const next = u.def.levels[u.level + 1];
-    if (next) return [{ branch: null, cost: next.cost }];
-    if (u.branch === null && u.def.branches) return u.def.branches.map((b, i) => ({ branch: i as 0 | 1, cost: b.cost }));
+    const m = this.mods;
+    if (next) return [{ branch: null, cost: Math.round(next.cost * m.upgradeCost) }];
+    if (u.branch === null && u.def.branches) {
+      return u.def.branches.map((b, i) => ({ branch: i as 0 | 1, cost: Math.round(b.cost * m.upgradeCost * m.branchCost) }));
+    }
     return [];
   }
 
   sellValue(u: Unit): number {
-    return Math.floor(u.invested * this.cfg.sellRate);
+    return Math.floor(u.invested * Math.max(this.cfg.sellRate, this.mods.sellRate));
   }
 
   private place(id: UnitId, x: number, y: number): CommandResult {
     const err = this.canPlace(id, x, y);
     if (err) return { ok: false, reason: err };
     const def = this.cfg.units[id];
-    const cost = def.levels[0].cost;
+    const cost = this.placeCost(id);
     this.money -= cost;
     this.units.push({
       uid: this.nextUid++, def, level: 0, branch: null, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1,
@@ -286,12 +406,12 @@ export class Game {
   }
 
   private useAbility(id: AbilityId, x: number, y: number): CommandResult {
-    if (this.finished || this.phase === 'ready') return { ok: false, reason: 'phase' };
+    if (this.finished || this.phase === 'ready' || this.offer) return { ok: false, reason: 'phase' };
     if (this.cooldowns[id] > 0) return { ok: false, reason: 'cooldown' };
-    const def = this.cfg.abilities[id];
+    const def = this.abilityStats(id);
     this.cooldowns[id] = def.cooldown;
     if (def.radius) {
-      const dmg = (def.damage ?? 0) + (def.damagePerWave ?? 0) * this.wave;
+      const dmg = ((def.damage ?? 0) + (def.damagePerWave ?? 0) * this.wave) * this.mods.plungerDamage;
       for (const e of this.enemies) {
         if (dist(e, { x, y }) > def.radius + e.def.radius) continue;
         // 보스는 기절 시간이 짧다
@@ -308,7 +428,8 @@ export class Game {
   }
 
   private startWave(): boolean {
-    if ((this.phase !== 'ready' && this.phase !== 'intermission') || !this.waveDef(this.wave + 1)) return false;
+    if ((this.phase !== 'ready' && this.phase !== 'intermission') || this.offer || !this.waveDef(this.wave + 1)) return false;
+    this.breakerUsed = false;
     const bonus = this.earlyBonus;
     if (bonus > 0) {
       this.money += bonus;
@@ -328,7 +449,8 @@ export class Game {
   }
 
   update(dt: number): void {
-    while (dt > 0 && !this.finished) {
+    // 카드를 고르는 동안에는 게임이 멈춘다
+    while (dt > 0 && !this.finished && !this.offer) {
       const step = Math.min(dt, MAX_STEP);
       this.step(step);
       dt -= step;
@@ -382,7 +504,7 @@ export class Game {
   }
 
   private clearWave(): void {
-    const bonus = this.cfg.waveBonus(this.wave);
+    const bonus = Math.round(this.cfg.waveBonus(this.wave) * this.mods.waveBonus);
     this.money += bonus;
     this.events.push({ type: 'waveCleared', wave: this.wave, bonus });
     for (const u of this.units) {
@@ -399,6 +521,14 @@ export class Game {
     } else {
       this.phase = 'intermission';
       this.timer = this.cfg.intermission;
+      const every = this.cfg.cardEvery ?? 0;
+      if (every > 0 && this.wave % every === 0) {
+        const offer = this.drawCards();
+        if (offer.length) {
+          this.offer = offer;
+          this.events.push({ type: 'cardOffer' });
+        }
+      }
     }
   }
 
@@ -477,8 +607,8 @@ export class Game {
         const t = pickTarget(inRange, u.target, u);
         this.events.push({ type: 'shot', unit: u.uid, kind: u.def.id, branch, from: { x: u.x, y: u.y }, to: { x: t.x, y: t.y }, color: u.def.color });
         // 크리티컬은 한 번의 공격 단위로 굴린다 (범위 공격이면 맞은 적 모두에게 적용)
-        const crit = this.rng() < this.cfg.critChance;
-        let dmg = crit ? lv.damage * this.cfg.critMul : lv.damage;
+        const crit = this.rng() < Math.min(1, (this.cfg.critChance + this.mods.critChance) * this.mods.critChanceMul);
+        let dmg = crit ? lv.damage * (this.cfg.critMul + this.mods.critDamage) : lv.damage;
         if (lv.ramp) {
           // 같은 적을 계속 지지면 배율이 쌓이고, 대상이 바뀌면 처음부터
           if (u.rampTarget === t.uid) u.rampMul = Math.min(lv.ramp.max, u.rampMul + lv.ramp.step);
@@ -527,15 +657,25 @@ export class Game {
   }
 
   private removeDead(): void {
-    const dead = this.enemies.filter((e) => e.hp <= 0);
-    if (!dead.length) return;
-    this.enemies = this.enemies.filter((e) => e.hp > 0);
-    for (const e of dead) {
-      const reward = Math.max(1, Math.round(e.def.reward * this.cfg.rewardMul * this.bountyMul(e)));
-      this.money += reward;
-      this.events.push({ type: 'kill', enemy: e.def.id, x: e.x, y: e.y, reward });
-      const sp = e.def.splitInto;
-      if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14), e.lane);
+    // 연쇄 폭발로 또 죽는 적이 생길 수 있어서 더 죽는 적이 없을 때까지 반복한다
+    for (let pass = 0; pass < 50; pass++) {
+      const dead = this.enemies.filter((e) => e.hp <= 0);
+      if (!dead.length) return;
+      this.enemies = this.enemies.filter((e) => e.hp > 0);
+      for (const e of dead) {
+        const reward = Math.max(1, Math.round(e.def.reward * this.cfg.rewardMul * this.mods.reward * this.bountyMul(e)));
+        this.money += reward;
+        this.events.push({ type: 'kill', enemy: e.def.id, x: e.x, y: e.y, reward });
+        const sp = e.def.splitInto;
+        if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14), e.lane);
+        if (this.mods.chain > 0) {
+          const dmg = e.maxHp * this.mods.chain;
+          for (const o of this.enemies) {
+            if (o.hp > 0 && dist(o, e) <= CHAIN_RADIUS + o.def.radius) this.damage(o, dmg, { silent: true });
+          }
+          this.events.push({ type: 'chain', x: e.x, y: e.y, r: CHAIN_RADIUS });
+        }
+      }
     }
   }
 
@@ -554,10 +694,16 @@ export class Game {
         survivors.push(e);
         continue;
       }
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * e.slowMul * dt;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * e.slowMul * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {
+        // 차단기 카드: 웨이브마다 처음 닿는 적(보스 제외) 하나는 막아 낸다
+        if (this.mods.breaker && !this.breakerUsed && !e.def.boss) {
+          this.breakerUsed = true;
+          this.events.push({ type: 'blocked', x: e.x, y: e.y });
+          continue;
+        }
         // 기지에 도착한 적은 남은 체력만큼 피해를 준다.
         const damage = Math.ceil(e.hp);
         this.hp = Math.max(0, this.hp - damage);
