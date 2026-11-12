@@ -109,12 +109,17 @@ function bestSpot(g: Game, id: UnitId): { x: number; y: number } | null {
 }
 
 const VERBOSE = process.argv.includes('-v');
+/** --nocards: 보상 카드 없이. --seed=N: 난수 시드 (카드와 크리티컬이 달라진다) */
+const NO_CARDS = process.argv.includes('--nocards');
+const SEED = Number(process.argv.find((x) => x.startsWith('--seed='))?.slice(7) ?? 42);
 
 function run(
   diff: DifficultyId, plan: Step[], callEarly: boolean, spendRest = false, useSkills = false, pickBranch: BranchPick = null,
   endless = false, map: MapId = 'kitchen', auto = false,
 ): { wave: number; hp: number; won: boolean } {
-  const g = new Game({ ...defaultConfig(diff, endless, map), seed: 42 });
+  const cfg = defaultConfig(diff, endless, map);
+  if (NO_CARDS) cfg.cards = [];
+  const g = new Game({ ...cfg, seed: SEED });
   let lastWave = 0;
   let i = 0;
   const tryBuild = () => {
@@ -144,6 +149,8 @@ function run(
   };
   g.apply({ type: 'startWave' });
   for (let t = 0; t < 20000 && !g.finished; t += 0.1) {
+    // 카드는 내민 것 중 첫 장을 고른다 (뽑기가 무작위라 사실상 무작위 선택)
+    if (g.offer) g.apply({ type: 'pickCard', index: 0 });
     tryBuild();
     if (useSkills && g.phase === 'wave' && g.enemies.length) {
       // 가장 앞선 적을 뚫어뻥으로 내려치고, 적이 많으면 과부하
