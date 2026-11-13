@@ -11,6 +11,13 @@ export const SPRITES: Record<string, string> = {
   vacuum: 'vacuum.svg',
   wifi: 'wifi.svg',
   washer: 'washer.svg',
+  // 뽑기로 얻는 가전
+  stove: 'stove.svg',
+  strip: 'strip.svg',
+  battery: 'battery.svg',
+  iron: 'iron.svg',
+  aircon: 'aircon.svg',
+  dishwasher: 'dishwasher.svg',
   // 하수구 군단 (적 id와 같은 이름)
   goo: 'goo.svg',
   rat: 'rat.svg',

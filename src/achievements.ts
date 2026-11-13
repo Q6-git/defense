@@ -25,12 +25,16 @@ export interface Progress {
   branches: string[];
   /** 달성한 업적 id */
   done: string[];
-  /** 업적 보상으로 모은 부품 (뽑기에 쓸 재화) */
+  /** 부품 (뽑기 재화). 업적과 판 보상으로 모은다 */
   parts: number;
+  /** 뽑기로 얻은 가전 */
+  owned: string[];
+  /** 마지막 전설 이후 뽑은 횟수 (확정 뽑기 계산용) */
+  pity: number;
 }
 
 export function emptyProgress(): Progress {
-  return { kills: 0, legends: [], branches: [], done: [], parts: 0 };
+  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0 };
 }
 
 export interface AchievementDef {

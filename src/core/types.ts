@@ -99,6 +99,11 @@ export interface Enemy {
   knockImmune: number;
   /** 얼었다 풀린 뒤 다시 얼지 않는 남은 시간 (얼어 있는 시간 포함). 냉풍 여러 대로 영원히 얼려 두지 못하게 한다 */
   freezeImmune: number;
+  /** 불붙은 상태: 초당 피해와 남은 시간 */
+  burnDps: number;
+  burnTime: number;
+  /** 깎인 방어력 */
+  shred: number;
   summonTimer: number;
   /** 남은 방패 겹 수 */
   shield: number;
@@ -125,7 +130,9 @@ export interface AbilityDef {
   speedMul?: number;
 }
 
-export type UnitId = 'toaster' | 'fan' | 'microwave' | 'vacuum' | 'wifi' | 'washer';
+export type UnitId =
+  | 'toaster' | 'fan' | 'microwave' | 'vacuum' | 'wifi' | 'washer'
+  | 'stove' | 'strip' | 'battery' | 'iron' | 'aircon' | 'dishwasher';
 
 /**
  * 유닛 행동 방식
@@ -135,7 +142,7 @@ export type UnitId = 'toaster' | 'fan' | 'microwave' | 'vacuum' | 'wifi' | 'wash
  * - buff: 사거리 안 아군 유닛의 공격 속도 증가
  * - income: 공격하지 않고 웨이브가 끝날 때 돈을 번다
  */
-export type UnitKind = 'single' | 'splash' | 'slow' | 'buff' | 'income';
+export type UnitKind = 'single' | 'splash' | 'slow' | 'buff' | 'income' | 'aura';
 
 export interface UnitLevel {
   /** Lv1은 설치 비용, 그 위는 해당 레벨로 올리는 업그레이드 비용 */
@@ -171,6 +178,20 @@ export interface UnitLevel {
   hackVuln?: number;
   /** 세탁기 이자: 웨이브가 끝날 때 보유 돈의 rate만큼, 최대 max */
   interest?: { rate: number; max: number };
+
+  // ── 뽑기로 얻는 가전 전용 효과 ──
+  /** 맞은 적에게 불을 붙인다 (초당 피해, 지속 시간) */
+  dot?: { dps: number; duration: number };
+  /** 번개가 맞히는 적의 수 (첫 대상 포함). 튕길 때마다 피해가 30%씩 줄어든다 */
+  chainHits?: number;
+  /** 사거리 안 가전의 공격력 증가율 (0.2 = +20%) */
+  dmgBuff?: number;
+  /** 맞힐 때마다 깎는 방어력 (적마다 최대 20까지 누적) */
+  shred?: number;
+  /** 맵 전체 적 이동 속도 감소율 (0.1 = -10%) */
+  globalSlow?: number;
+  /** 대상 방향 일직선 위의 적을 모두 맞힌다 (선의 반폭) */
+  line?: number;
   /** 세탁기 동전 분수: 반경 안에서 처치된 적 보상 배율 */
   bounty?: { radius: number; mul: number };
 }
@@ -212,6 +233,8 @@ export interface Unit {
   invested: number;
   /** 이번 스텝에 받은 버프 배율 (렌더링용) */
   buffMul: number;
+  /** 이번 스텝에 받은 공격력 버프 배율 */
+  dmgMul: number;
 }
 
 export type DifficultyId = 'easy' | 'normal' | 'hard' | 'hell';

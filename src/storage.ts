@@ -75,3 +75,17 @@ export function loadProgress(): Progress {
 export function saveProgress(p: Progress): void {
   set('progress', JSON.stringify(p));
 }
+
+// ── 덱 (한 판에 들고 가는 가전, 최대 6종)
+export function loadDeck(): string[] | null {
+  try {
+    const v = JSON.parse(get('deck') ?? 'null') as unknown;
+    return Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveDeck(deck: string[]): void {
+  set('deck', JSON.stringify(deck));
+}

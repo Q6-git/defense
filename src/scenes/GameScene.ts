@@ -5,10 +5,11 @@ import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type Unit,
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { MAP_ORDER, type MapId } from '../data/map';
-import { UNIT_ORDER } from '../data/units';
+import { GACHA_UNITS, UNIT_ORDER } from '../data/units';
+import { GACHA, GACHA_POOL, pull, waveReward, WIN_BONUS, type PullResult } from '../gacha';
 import { sfx, type SoundId } from '../sfx';
 import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achievements';
-import { loadBest, loadProgress, loadSetup, saveBest, saveProgress, saveSetup, type RunSetup } from '../storage';
+import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, saveProgress, saveSetup, type RunSetup } from '../storage';
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import { OBSTACLE_SPRITE } from '../sprites';
@@ -36,10 +37,22 @@ function easeOutBack(x: number): number {
 }
 
 /** 갈래별 공격 모양: 빠른 공격은 투사체 대신 빛나는 탄도로 그린다 */
+/** 한 판에 들고 갈 수 있는 가전 수 */
+const DECK_SIZE = 6;
+const RARITY_COLOR: Record<string, number> = { rare: 0x5aa9e6, hero: 0xa57be0, legend: 0xf5a623 };
+
 const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; sound: SoundId; big: boolean }> = {
   rapid: { color: 0xffc94d, width: 2, fade: 70, sound: 'shoot', big: false },
   sniper: { color: 0xffffff, width: 4, fade: 240, sound: 'snipe', big: true },
   crusher: { color: 0x9aa0b4, width: 5, fade: 120, sound: 'blast', big: true },
+};
+
+/** 뽑기 가전의 공격 모양 */
+const KIND_SHOT: Partial<Record<UnitId, { color: number; width: number; fade: number; sound: SoundId; big: boolean }>> = {
+  stove: { color: 0xff8a2a, width: 5, fade: 120, sound: 'vacuum', big: false },
+  strip: { color: 0xffe14a, width: 3, fade: 140, sound: 'crit', big: false },
+  iron: { color: 0xffffff, width: 7, fade: 220, sound: 'blast', big: true },
+  dishwasher: { color: 0x4fb3f0, width: 11, fade: 260, sound: 'pulse', big: false },
 };
 
 interface AbilityButton {
@@ -68,6 +81,10 @@ export class GameScene extends Phaser.Scene {
   private run!: RunStats;
   /** 지금 떠 있는 업적 알림 수 (겹치지 않게 아래로 쌓는다) */
   private popups = 0;
+  /** 이번 판에 들고 온 가전 (상점에 나오는 순서) */
+  private deck: UnitId[] = [...UNIT_ORDER];
+  /** 이번 판에 번 부품 */
+  private runParts = 0;
   /** 설치 미리보기로 반투명하게 보여 주는 가전 그림 */
   private ghostIcon: { id: UnitId; icon: Icon } | null = null;
   /** 순간 크기 변화(반동·피격·업그레이드). 1이 기본이고 매 프레임 1로 돌아간다. 유닛·적 uid는 겹치지 않는다 */
@@ -171,6 +188,11 @@ export class GameScene extends Phaser.Scene {
     this.pauseLayer = null;
     this.picking = false;
     this.progress = loadProgress();
+    // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
+    const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
+    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, DECK_SIZE) as UnitId[];
+    this.deck = saved.length ? saved : [...UNIT_ORDER];
+    this.runParts = 0;
     this.run = {
       map: this.setup.map, difficulty: this.setup.difficulty, endless: this.setup.endless,
       cleared: 0, placed: [], usedSkill: false, leaked: false, cards: 0,
@@ -217,6 +239,9 @@ export class GameScene extends Phaser.Scene {
     layer.add([dim, box, title]);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
+    const deckBtn = button(this, 1120, 124, 230, 52, STR.deckButton, () => this.showDeck(), THEME.blue, 19);
+    const gachaBtn = button(this, 1120, 188, 230, 52, STR.gachaButton(this.progress.parts), () => this.showGacha(), THEME.purple, 19);
+    layer.add([deckBtn.container, gachaBtn.container]);
     // 맵 선택 줄이 들어갈 자리 (MAP_ROW_Y)
     this.buildMapRow(layer);
     const sub = text(this, width / 2, 232, STR.chooseDifficulty, 18, THEME.textSoft).setOrigin(0.5);
@@ -364,7 +389,7 @@ export class GameScene extends Phaser.Scene {
 
   private buildShop(): void {
     text(this, PANEL_X + 16, 66, STR.shop, 16, THEME.textSoft);
-    this.shopBtns = UNIT_ORDER.map((id, i) => {
+    this.shopBtns = this.deck.map((id, i) => {
       const def = this.sim.cfg.units[id];
       const x = PANEL_X + 64 + (i % 2) * 112;
       const y = 122 + Math.floor(i / 2) * 76;
@@ -597,6 +622,12 @@ export class GameScene extends Phaser.Scene {
         this.lastX.set(e.uid, e.x);
       }
       if (e.slowMul < 1) g.lineStyle(3, 0x4fb3e8, 0.9).strokeCircle(p.x, p.y, e.def.radius + 2);
+      // 불붙은 적: 머리 위에 일렁이는 불꽃
+      if (e.burnTime > 0) {
+        const f = 5 + 2 * Math.sin(t * 30 + e.uid);
+        g.fillStyle(0xff7a1a, 0.9).fillCircle(p.x, p.y - e.def.radius - 2, f);
+        g.fillStyle(0xffe14a, 0.9).fillCircle(p.x, p.y - e.def.radius - 1, f * 0.5);
+      }
       if (e.stunTime > 0 && e.frozenVuln > 1) g.fillStyle(0xbfefff, 0.45).fillCircle(p.x, p.y, e.def.radius + 3);
       if (e.hackMul > 1) g.lineStyle(2, 0x5fff9f, 0.5 + 0.5 * Math.sin(t * 25)).strokeRect(p.x - e.def.radius - 3, p.y - e.def.radius - 3, e.def.radius * 2 + 6, e.def.radius * 2 + 6);
       if (e.stunTime > 0) {
@@ -726,6 +757,11 @@ export class GameScene extends Phaser.Scene {
       if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
       if (lv.buff) lines.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
       if (lv.income) lines.push(`${s.income} 💰${lv.income}`);
+      if (lv.dot) lines.push(`${s.dot} 초당 ${lv.dot.dps} (${lv.dot.duration}초)`);
+      if (lv.chainHits) lines.push(`${s.chain} ${lv.chainHits}마리`);
+      if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${Math.round(lv.dmgBuff * 100)}%`);
+      if (lv.shred) lines.push(`${s.shred} ${lv.shred}`);
+      if (lv.globalSlow) lines.push(`${s.globalSlow} ${Math.round(lv.globalSlow * 100)}%`);
     }
     this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
     const showControls = u !== null;
@@ -760,7 +796,7 @@ export class GameScene extends Phaser.Scene {
         const { from, to } = ev;
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const radius = this.sim.cfg.units[ev.kind].radius;
-        const style = ev.branch ? BRANCH_SHOT[ev.branch] : undefined;
+        const style = ev.branch ? BRANCH_SHOT[ev.branch] : KIND_SHOT[ev.kind];
         const proj = ev.branch ? undefined : PROJECTILE[ev.kind];
         if (ev.branch === 'grill') {
           // 그릴: 지질수록 굵어지는 광선
@@ -855,6 +891,14 @@ export class GameScene extends Phaser.Scene {
         this.fx.impact(ev.x, ev.y, 0x4f8fd0, ev.left === 0);
         sfx.play(ev.left === 0 ? 'crit' : 'hit');
         break;
+      case 'bolt':
+        for (let i = 1; i < ev.points.length; i++) {
+          const a = ev.points[i - 1];
+          const b = ev.points[i];
+          this.fx.tracer(a.x, a.y, b.x, b.y, 0xffe14a, 3, 140);
+          if (i > 1) this.fx.impact(b.x, b.y, 0xffe14a);
+        }
+        break;
       case 'heal':
         this.fx.heal(ev.x, ev.y, ev.r);
         break;
@@ -868,6 +912,12 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'waveCleared':
         this.run.cleared = ev.wave;
+        {
+          // 판 보상: 웨이브마다 부품, 20웨이브를 깨면 보너스
+          const gain = waveReward(1, this.setup.difficulty) + (ev.wave === this.sim.totalWaves ? WIN_BONUS : 0);
+          this.progress.parts += gain;
+          this.runParts += gain;
+        }
         this.run.endless = this.sim.endless;
         this.checkAchievements();
         this.banner(STR.clearBanner(ev.bonus), '#ffd35a', 0.8);
@@ -1015,6 +1065,108 @@ export class GameScene extends Phaser.Scene {
     saveProgress(this.progress);
   }
 
+  /** 덱 편성 화면: 가진 가전 중 최대 6종을 고른다 */
+  private showDeck(): void {
+    const { width, height } = this.sim.cfg.map;
+    const layer = this.add.container(0, 0).setDepth(80);
+    const reopen = () => {
+      layer.destroy();
+      this.showDeck();
+    };
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 800, 520, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, 132, STR.deckTitle, 30).setOrigin(0, 0.5);
+    const hint = text(this, width / 2, 180, STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
+    const warn = text(this, width / 2, 560, '', 17, THEME.danger).setOrigin(0.5);
+    // 닫으면 덱을 저장하고 시작 화면을 다시 그린다 (상점이 새 덱으로 바뀐다)
+    const close = button(this, width / 2 + 310, 132, 130, 44, STR.close, () => {
+      saveDeck(this.deck);
+      this.scene.restart({});
+    }, THEME.green, 18);
+    layer.add([dim, box, title, hint, warn, close.container]);
+    const all: UnitId[] = [...UNIT_ORDER, ...GACHA_UNITS];
+    all.forEach((id, i) => {
+      const def = this.sim.cfg.units[id];
+      const x = width / 2 + ((i % 6) - 2.5) * 125;
+      const y = 285 + Math.floor(i / 6) * 160;
+      const owned = UNIT_ORDER.includes(id) || this.progress.owned.includes(id);
+      const inDeck = this.deck.includes(id);
+      const rarity = GACHA_POOL[id];
+      const bg = new RoundBox(this, x, y, 112, 140, !owned ? THEME.neutral : inDeck ? 0xfff0c8 : THEME.white, 14)
+        .setStrokeStyle(inDeck ? 5 : 3, inDeck ? THEME.selected : rarity ? RARITY_COLOR[rarity] : THEME.cardLine);
+      const ic = icon(this, x, y - 26, id, def.emoji, 62).setAlpha(owned ? 1 : 0.35);
+      const name = text(this, x, y + 26, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
+      const sub = text(this, x, y + 48, owned ? (rarity ? STR.gachaRarity[rarity] : `💰${def.levels[0].cost}`) : STR.locked, 12, THEME.textSoft).setOrigin(0.5);
+      layer.add([bg, ic, name, sub]);
+      if (!owned) return;
+      bg.setInteractive(new Phaser.Geom.Rectangle(-56, -70, 112, 140), Phaser.Geom.Rectangle.Contains);
+      if (bg.input) bg.input.cursor = 'pointer';
+      bg.on('pointerup', () => {
+        if (inDeck) {
+          if (this.deck.length <= 1) return warn.setText(STR.deckMin);
+          this.deck = this.deck.filter((u) => u !== id);
+        } else {
+          if (this.deck.length >= DECK_SIZE) return warn.setText(STR.deckFull);
+          this.deck = [...this.deck, id];
+        }
+        sfx.play('place');
+        reopen();
+      });
+    });
+  }
+
+  /** 뽑기 화면. results가 있으면 방금 뽑은 결과를 보여 준다 */
+  private showGacha(results: PullResult[] = []): void {
+    const { width, height } = this.sim.cfg.map;
+    const p = this.progress;
+    const layer = this.add.container(0, 0).setDepth(80);
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 800, 600, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, 92, STR.gachaTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2, 92, STR.gachaParts(p.parts), 20, THEME.gold).setOrigin(0.5);
+    const close = button(this, width / 2 + 310, 92, 130, 44, STR.close, () => this.scene.restart({}), THEME.neutral, 18);
+    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}`, 15, THEME.textSoft).setOrigin(0.5);
+    layer.add([dim, box, title, parts, close.container, info]);
+    const doPull = (n: 1 | 10) => {
+      const r = pull(p, n);
+      if (!r) return sfx.play('error');
+      saveProgress(p);
+      sfx.play(r.some((x) => !x.duplicate) ? 'win' : 'coin');
+      layer.destroy();
+      this.showGacha(r);
+    };
+    const one = button(this, width / 2 - 140, 200, 250, 56, STR.gachaOne(GACHA.cost), () => doPull(1), THEME.purple, 20);
+    const ten = button(this, width / 2 + 140, 200, 250, 56, STR.gachaTen(GACHA.cost10), () => doPull(10), THEME.orange, 20);
+    one.setEnabled(p.parts >= GACHA.cost);
+    ten.setEnabled(p.parts >= GACHA.cost10);
+    layer.add([one.container, ten.container]);
+    // 방금 뽑은 결과: 한 장씩 튀어나온다
+    results.forEach((r, i) => {
+      const x = width / 2 + (i - (results.length - 1) / 2) * 74;
+      const def = this.sim.cfg.units[r.unit as UnitId];
+      const bg = new RoundBox(this, 0, 0, 66, 96, r.duplicate ? THEME.white : 0xfff0c8, 12).setStrokeStyle(4, RARITY_COLOR[r.rarity]);
+      const ic = icon(this, 0, -14, r.unit, def.emoji, 50);
+      const tag = text(this, 0, 32, r.duplicate ? STR.gachaDup(r.refund) : STR.gachaNew, r.duplicate ? 11 : 15, r.duplicate ? THEME.textSoft : THEME.danger).setOrigin(0.5);
+      const c = this.add.container(x, 330, [bg, ic, tag]).setScale(0);
+      layer.add(c);
+      this.tweens.add({ targets: c, scale: 1, delay: i * 70, duration: 240, ease: 'Back.easeOut' });
+    });
+    // 수집 현황
+    GACHA_UNITS.forEach((id, i) => {
+      const def = this.sim.cfg.units[id];
+      const x = width / 2 + (i - 2.5) * 125;
+      const y = 500;
+      const owned = p.owned.includes(id);
+      const rarity = GACHA_POOL[id];
+      const bg = new RoundBox(this, x, y, 112, 150, owned ? THEME.white : THEME.neutral, 14).setStrokeStyle(3, RARITY_COLOR[rarity]);
+      const ic = icon(this, x, y - 34, id, def.emoji, 56).setAlpha(owned ? 1 : 0.35);
+      const name = text(this, x, y + 10, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
+      const rar = text(this, x, y + 32, STR.gachaRarity[rarity], 13, THEME.textSoft).setOrigin(0.5);
+      const st = text(this, x, y + 54, owned ? `✅ ${STR.gachaOwned}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      layer.add([bg, ic, name, rar, st]);
+    });
+  }
+
   /** 업적 목록 화면 (시작 화면에서 연다) */
   private showAchievements(): void {
     const { width, height } = this.sim.cfg.map;
@@ -1138,7 +1290,7 @@ export class GameScene extends Phaser.Scene {
     const { width, height } = this.sim.cfg.map;
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
     const canContinue = won && !!this.sim.cfg.extraWave;
-    const boxH = canContinue ? 400 : 320;
+    const boxH = canContinue ? 430 : 350;
     const top = height / 2 - boxH / 2;
     const box = card(this, width / 2, height / 2, 540, boxH, 'center', THEME.bar).setStrokeStyle(4, won ? THEME.selected : THEME.red);
     const title = text(this, width / 2, top + 60, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
@@ -1147,6 +1299,7 @@ export class GameScene extends Phaser.Scene {
       STR.reachedWave(reached), STR.best(loadBest(run)),
     ];
     if (isNew) lines.push(STR.newBest);
+    lines.push(STR.runReward(this.runParts));
     const body = text(this, width / 2, top + 155, lines.join('\n'), 20, THEME.text).setOrigin(0.5).setAlign('center').setLineSpacing(6);
     const again = button(this, width / 2 - 120, top + 265, 220, 50, STR.restart, () => this.scene.restart({ start: true }), THEME.green, 20);
     const change = button(this, width / 2 + 120, top + 265, 220, 50, STR.changeDifficulty, () => this.scene.restart({}), THEME.neutral, 20);

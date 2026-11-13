@@ -1,6 +1,9 @@
 import type { UnitDef, UnitId } from '../core/types';
 
+/** 처음부터 가진 가전 (기본 덱) */
 export const UNIT_ORDER: UnitId[] = ['toaster', 'fan', 'microwave', 'vacuum', 'wifi', 'washer'];
+/** 뽑기로 얻는 가전 */
+export const GACHA_UNITS: UnitId[] = ['stove', 'strip', 'battery', 'iron', 'aircon', 'dishwasher'];
 
 export const UNITS: Record<UnitId, UnitDef> = {
   toaster: {
@@ -73,6 +76,55 @@ export const UNITS: Record<UnitId, UnitDef> = {
     branches: [
       { id: 'interest', emoji: '🏦', cost: 400, damage: 0, range: 0, cooldown: 0, income: 120, interest: { rate: 0.1, max: 120 } },
       { id: 'bounty', emoji: '⛲', cost: 400, damage: 0, range: 160, cooldown: 0, income: 120, bounty: { radius: 160, mul: 1.5 } },
+    ],
+  },
+  // ── 뽑기로 얻는 가전 (Lv3까지, 갈림길 없음)
+  stove: {
+    id: 'stove', kind: 'single', emoji: '🔥', color: 0xe8603a, radius: 19,
+    levels: [
+      { cost: 180, damage: 6, range: 95, cooldown: 0.5, dot: { dps: 14, duration: 3 } },
+      { cost: 180, damage: 10, range: 100, cooldown: 0.5, dot: { dps: 26, duration: 3 } },
+      { cost: 300, damage: 16, range: 110, cooldown: 0.45, dot: { dps: 45, duration: 3 } },
+    ],
+  },
+  strip: {
+    id: 'strip', kind: 'single', emoji: '⚡', color: 0xf2c230, radius: 18,
+    levels: [
+      { cost: 200, damage: 20, range: 150, cooldown: 1.0, chainHits: 4 },
+      { cost: 200, damage: 34, range: 160, cooldown: 0.9, chainHits: 4 },
+      { cost: 340, damage: 58, range: 170, cooldown: 0.8, chainHits: 5 },
+    ],
+  },
+  battery: {
+    id: 'battery', kind: 'buff', emoji: '🔋', color: 0x7ac74f, radius: 17,
+    levels: [
+      { cost: 220, damage: 0, range: 110, cooldown: 0, dmgBuff: 0.2 },
+      { cost: 220, damage: 0, range: 125, cooldown: 0, dmgBuff: 0.3 },
+      { cost: 320, damage: 0, range: 140, cooldown: 0, dmgBuff: 0.4 },
+    ],
+  },
+  iron: {
+    id: 'iron', kind: 'single', emoji: '👔', color: 0x8c9ab0, radius: 19,
+    levels: [
+      { cost: 260, damage: 90, range: 130, cooldown: 2.2, shred: 2 },
+      { cost: 260, damage: 160, range: 140, cooldown: 2.0, shred: 3 },
+      { cost: 420, damage: 280, range: 150, cooldown: 1.8, shred: 4 },
+    ],
+  },
+  aircon: {
+    id: 'aircon', kind: 'aura', emoji: '❄️', color: 0x9fd8f0, radius: 20, maxCount: 1,
+    levels: [
+      { cost: 250, damage: 0, range: 0, cooldown: 0, globalSlow: 0.1 },
+      { cost: 250, damage: 0, range: 0, cooldown: 0, globalSlow: 0.15 },
+      { cost: 400, damage: 0, range: 0, cooldown: 0, globalSlow: 0.2 },
+    ],
+  },
+  dishwasher: {
+    id: 'dishwasher', kind: 'single', emoji: '🚿', color: 0x4f9fe0, radius: 20,
+    levels: [
+      { cost: 350, damage: 36, range: 260, cooldown: 1.6, line: 22 },
+      { cost: 350, damage: 65, range: 280, cooldown: 1.5, line: 22 },
+      { cost: 550, damage: 115, range: 300, cooldown: 1.4, line: 24 },
     ],
   },
 };
