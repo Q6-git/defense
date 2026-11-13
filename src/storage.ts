@@ -60,3 +60,18 @@ export function saveSetup(s: RunSetup): void {
   set('endless', s.endless ? '1' : '0');
   set('map', s.map);
 }
+
+// ── 업적 진행 상황
+import { emptyProgress, type Progress } from './achievements';
+
+export function loadProgress(): Progress {
+  try {
+    return { ...emptyProgress(), ...(JSON.parse(get('progress') ?? '{}') as Partial<Progress>) };
+  } catch {
+    return emptyProgress();
+  }
+}
+
+export function saveProgress(p: Progress): void {
+  set('progress', JSON.stringify(p));
+}

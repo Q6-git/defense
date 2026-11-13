@@ -7,7 +7,8 @@ import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { MAP_ORDER, type MapId } from '../data/map';
 import { UNIT_ORDER } from '../data/units';
 import { sfx, type SoundId } from '../sfx';
-import { loadBest, loadSetup, saveBest, saveSetup, type RunSetup } from '../storage';
+import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achievements';
+import { loadBest, loadProgress, loadSetup, saveBest, saveProgress, saveSetup, type RunSetup } from '../storage';
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import { OBSTACLE_SPRITE } from '../sprites';
@@ -62,6 +63,11 @@ export class GameScene extends Phaser.Scene {
   /** 갈림길을 고른 가전 위의 작은 배지 */
   private badges = new Map<number, Icon>();
   private fx!: Fx;
+  /** 업적: 판을 넘어 쌓이는 진행 상황과 이번 판 기록 */
+  private progress: Progress = loadProgress();
+  private run!: RunStats;
+  /** 지금 떠 있는 업적 알림 수 (겹치지 않게 아래로 쌓는다) */
+  private popups = 0;
   /** 설치 미리보기로 반투명하게 보여 주는 가전 그림 */
   private ghostIcon: { id: UnitId; icon: Icon } | null = null;
   /** 순간 크기 변화(반동·피격·업그레이드). 1이 기본이고 매 프레임 1로 돌아간다. 유닛·적 uid는 겹치지 않는다 */
@@ -164,6 +170,12 @@ export class GameScene extends Phaser.Scene {
     this.modLabel = text(this, 520, 64, '', 17, THEME.danger).setOrigin(0.5, 0).setStroke('#ffffff', 5).setDepth(6);
     this.pauseLayer = null;
     this.picking = false;
+    this.progress = loadProgress();
+    this.run = {
+      map: this.setup.map, difficulty: this.setup.difficulty, endless: this.setup.endless,
+      cleared: 0, placed: [], usedSkill: false, leaked: false, cards: 0,
+    };
+    this.popups = 0;
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), THEME.neutral, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), THEME.neutral, 17);
@@ -203,6 +215,8 @@ export class GameScene extends Phaser.Scene {
     const box = card(this, width / 2, height / 2, 640, 700, 'center', THEME.bar);
     const title = text(this, width / 2, 58, `🔌 ${STR.title}`, 36).setOrigin(0.5);
     layer.add([dim, box, title]);
+    const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
+    layer.add(ach.container);
     // 맵 선택 줄이 들어갈 자리 (MAP_ROW_Y)
     this.buildMapRow(layer);
     const sub = text(this, width / 2, 232, STR.chooseDifficulty, 18, THEME.textSoft).setOrigin(0.5);
@@ -282,6 +296,7 @@ export class GameScene extends Phaser.Scene {
         this.placing = null;
         this.ghost = null;
         sfx.play('place');
+        if (!this.run.placed.includes(id)) this.run.placed.push(id);
         const u = this.sim.units[this.sim.units.length - 1];
         this.popIn(u);
       } else if (res.reason in STR.placeError) {
@@ -408,6 +423,11 @@ export class GameScene extends Phaser.Scene {
     const color = branch !== undefined ? 0xc58aff : 0xffd35a;
     const ring = this.add.circle(u.x, u.y, u.def.radius, color, 0).setStrokeStyle(4, color).setDepth(8);
     this.tweens.add({ targets: ring, scale: branch !== undefined ? 3.5 : 2.4, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
+    if (branch !== undefined) {
+      const bid = u.def.branches![branch].id;
+      if (!this.progress.branches.includes(bid)) this.progress.branches.push(bid);
+      this.checkAchievements();
+    }
     const label = branch !== undefined ? `${u.def.branches![branch].emoji} ${STR.branches[u.def.branches![branch].id].full}!` : STR.levelUp;
     this.floatText(u.x, u.y - 10, label, branch !== undefined ? THEME.pink : THEME.gold, 18);
     if (branch !== undefined) this.burst(u.x, u.y, color, 12, 60);
@@ -798,6 +818,7 @@ export class GameScene extends Phaser.Scene {
         }
         break;
       case 'kill': {
+        this.progress.kills++;
         const def = this.sim.cfg.enemies[ev.enemy];
         const ghost = icon(this, ev.x, ev.y, def.id, def.emoji, def.radius * 2.6).setDepth(8);
         const s0 = baseScale(ghost);
@@ -808,6 +829,7 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'leak': {
+        this.run.leaked = true;
         this.floatText(ev.x, ev.y, `-${ev.damage}`, THEME.danger, 24);
         this.cameras.main.shake(200, Math.min(0.02, 0.004 + ev.damage / 20000));
         const { width, height } = this.sim.cfg.map;
@@ -821,6 +843,7 @@ export class GameScene extends Phaser.Scene {
         sfx.play('coin');
         break;
       case 'ability':
+        this.run.usedSkill = true;
         if (ev.id === 'plunger') this.plungerFx(ev.x, ev.y, ev.r);
         else {
           sfx.play('overload');
@@ -844,6 +867,9 @@ export class GameScene extends Phaser.Scene {
         } else sfx.play('wave');
         break;
       case 'waveCleared':
+        this.run.cleared = ev.wave;
+        this.run.endless = this.sim.endless;
+        this.checkAchievements();
         this.banner(STR.clearBanner(ev.bonus), '#ffd35a', 0.8);
         sfx.play('clear');
         break;
@@ -851,6 +877,11 @@ export class GameScene extends Phaser.Scene {
         this.showCards();
         break;
       case 'cardPicked':
+        this.run.cards++;
+        if (this.sim.cfg.cards?.find((c) => c.id === ev.id)?.rarity === 'legend' && !this.progress.legends.includes(ev.id)) {
+          this.progress.legends.push(ev.id);
+        }
+        this.checkAchievements();
         this.showToast(STR.cardPicked(STR.cards[ev.id]?.name ?? ev.id));
         sfx.play('upgrade');
         break;
@@ -959,6 +990,55 @@ export class GameScene extends Phaser.Scene {
     this.pauseLayer = this.add.container(0, 0, [dim, box, title, resume.container, restart.container, quit.container, hint, ...this.cardListPanel(360, height / 2)]).setDepth(70);
   }
 
+  /** 새로 달성한 업적이 있으면 알림을 띄우고 진행 상황을 저장한다 */
+  private checkAchievements(): void {
+    for (const a of evaluate(this.run, this.progress)) {
+      const slot = this.popups++;
+      const label = STR.achUnlocked(STR.achievements[a.id]?.name ?? a.id, a.reward);
+      const box = new RoundBox(this, 0, 0, 520, 50, THEME.yellow, 16, 4);
+      const t = text(this, 0, -2, label, 20).setOrigin(0.5);
+      const c = this.add.container(520, -40, [box, t]).setDepth(75);
+      this.tweens.chain({
+        targets: c,
+        tweens: [
+          { y: 100 + slot * 60, duration: 350, ease: 'Back.easeOut' },
+          { y: 100 + slot * 60, duration: 2600 },
+          { alpha: 0, duration: 400 },
+        ],
+        onComplete: () => {
+          c.destroy();
+          this.popups = Math.max(0, this.popups - 1);
+        },
+      });
+      sfx.play('win');
+    }
+    saveProgress(this.progress);
+  }
+
+  /** 업적 목록 화면 (시작 화면에서 연다) */
+  private showAchievements(): void {
+    const { width, height } = this.sim.cfg.map;
+    const p = this.progress;
+    const layer = this.add.container(0, 0).setDepth(80);
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 860, 690, 'center', THEME.bar);
+    const title = text(this, width / 2 - 400, 40, STR.achTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2 + 230, 40, STR.achParts(p.parts), 18, THEME.gold).setOrigin(1, 0.5);
+    const close = button(this, width / 2 + 340, 40, 130, 44, STR.close, () => layer.destroy(), THEME.neutral, 18);
+    layer.add([dim, box, title, parts, close.container]);
+    ACHIEVEMENTS.forEach((a, i) => {
+      const y = 96 + i * 43;
+      const done = p.done.includes(a.id);
+      const info = STR.achievements[a.id];
+      const row = new RoundBox(this, width / 2, y, 820, 38, done ? 0xfff0c8 : THEME.white, 10).setStrokeStyle(2, done ? THEME.selected : THEME.cardLine);
+      const name = text(this, width / 2 - 395, y, `${a.emoji} ${info?.name ?? a.id}`, 17, done ? THEME.text : THEME.textSoft).setOrigin(0, 0.5);
+      const prog = a.progress && !done ? `  (${a.progress(p).join('/')})` : '';
+      const desc = text(this, width / 2 - 170, y, `${info?.desc ?? ''}${prog}`, 15, THEME.textSoft).setOrigin(0, 0.5);
+      const reward = text(this, width / 2 + 395, y, done ? `✅ ${STR.achReward(a.reward)}` : STR.achReward(a.reward), 16, done ? THEME.gold : THEME.textSoft).setOrigin(1, 0.5);
+      layer.add([row, name, desc, reward]);
+    });
+  }
+
   /** 이번 판에 고른 카드 목록 패널 (일시정지 화면용) */
   private cardListPanel(cx: number, cy: number): Phaser.GameObjects.GameObject[] {
     const gm = this.sim;
@@ -1033,6 +1113,7 @@ export class GameScene extends Phaser.Scene {
   /** 판을 그만둔다. 도달한 웨이브는 기록으로 남긴다 */
   private leaveRun(restart: boolean): void {
     if (this.sim.wave > 0) saveBest({ ...this.setup, endless: this.sim.endless }, this.sim.wave);
+    saveProgress(this.progress);
     this.tweens.resumeAll();
     this.time.paused = false;
     this.scene.restart(restart ? { start: true } : {});
@@ -1050,6 +1131,7 @@ export class GameScene extends Phaser.Scene {
     this.placing = null;
     this.aiming = null;
     this.selected = null;
+    saveProgress(this.progress); // 마지막 웨이브에서 잡은 적까지 저장
     const reached = this.sim.wave;
     const run: RunSetup = { ...this.setup, endless: this.sim.endless };
     const isNew = saveBest(run, reached);
