@@ -14,4 +14,8 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     id: 'boss', hp: 1700, speed: 35, armor: 12, reward: 800, radius: 34, emoji: '👹', color: 0x4b2a5e, boss: true,
     summon: { id: 'goo', count: 3, interval: 6 },
   },
+  shield: { id: 'shield', hp: 45, speed: 70, armor: 0, reward: 14, radius: 15, emoji: '🛡️', color: 0x7aa0c8, shield: 4 },
+  ghost: { id: 'ghost', hp: 60, speed: 100, armor: 0, reward: 10, radius: 14, emoji: '👻', color: 0xcfd3e6, phase: { every: 3, duration: 1.5 } },
+  healer: { id: 'healer', hp: 120, speed: 70, armor: 0, reward: 18, radius: 15, emoji: '💉', color: 0xf08fb0, heal: { interval: 2, pct: 0.04, radius: 110 } },
+  charger: { id: 'charger', hp: 55, speed: 75, armor: 0, reward: 12, radius: 15, emoji: '🏃', color: 0xe0703a, enrage: { below: 0.5, speedMul: 1.5 } },
 };

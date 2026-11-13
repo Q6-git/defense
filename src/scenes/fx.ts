@@ -104,6 +104,19 @@ export class Fx {
     if (kind === 'frost') this.flakes.explode(8, x, y);
   }
 
+  /** 치유사의 회복: 초록 고리가 퍼지고 십자가 떠오른다 */
+  heal(x: number, y: number, r: number): void {
+    const s = this.scene;
+    const ring = s.add.image(x, y, 'fx_ring').setDepth(6).setTint(0x4fd06a).setDisplaySize(r * 2, r * 2);
+    const full = ring.scaleX;
+    ring.setScale(full * 0.2).setAlpha(0.8);
+    s.tweens.add({ targets: ring, scale: full, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+    const g = s.add.graphics({ x, y: y - 20 }).setDepth(9);
+    g.fillStyle(0xffffff).fillRect(-4, -11, 8, 22).fillRect(-11, -4, 22, 8);
+    g.fillStyle(0x3fae55).fillRect(-2.5, -9.5, 5, 19).fillRect(-9.5, -2.5, 19, 5);
+    s.tweens.add({ targets: g, y: y - 50, alpha: 0, duration: 600, onComplete: () => g.destroy() });
+  }
+
   /** 처치: 몸 색 불꽃 + 작은 고리 */
   pop(x: number, y: number, color: number): void {
     const ring = this.scene.add.image(x, y, 'fx_ring').setDepth(8).setScale(0.2).setTint(color);

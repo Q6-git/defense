@@ -6,7 +6,7 @@ import { DIFFICULTIES } from './data/difficulty';
 import { ENEMIES } from './data/enemies';
 import { MAPS, type MapId } from './data/map';
 import { UNITS } from './data/units';
-import { endlessWave, WAVES } from './data/waves';
+import { endlessWave, WAVE_MODS, WAVES } from './data/waves';
 
 export function defaultConfig(difficulty: DifficultyId = 'normal', endless = false, map: MapId = 'kitchen'): GameConfig {
   const d = DIFFICULTIES[difficulty];
@@ -29,6 +29,9 @@ export function defaultConfig(difficulty: DifficultyId = 'normal', endless = fal
     rewardMul: d.rewardMul,
     endless,
     extraWave: endlessWave,
+    waveMods: WAVE_MODS,
+    specialEvery: 5,
+    specialFrom: 10,
     cards: CARDS,
     cardEvery: 3,
     cardSkipMoney: 50,
