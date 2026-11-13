@@ -79,6 +79,7 @@ export type GameEvent =
   | { type: 'waveStart'; wave: number; boss: boolean; mod: WaveModDef | null }
   | { type: 'shieldHit'; enemy: number; x: number; y: number; left: number }
   | { type: 'heal'; x: number; y: number; r: number }
+  | { type: 'bolt'; points: Vec[] }
   | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
   | { type: 'income'; x: number; y: number; amount: number }
   | { type: 'waveCleared'; wave: number; bonus: number }
@@ -127,6 +128,10 @@ const MAX_STEP = 1 / 60;
 const KNOCK_IMMUNE = 3;
 /** 연쇄 폭발 카드의 폭발 반경 */
 const CHAIN_RADIUS = 70;
+/** 멀티탭 번개가 튕길 수 있는 거리 */
+const CHAIN_JUMP = 120;
+/** 다리미로 깎을 수 있는 방어력 한도 */
+const MAX_SHRED = 20;
 /** 얼었다 풀린 적이 다시 얼지 않는 시간(초) */
 const FREEZE_IMMUNE = 2.5;
 
@@ -161,6 +166,8 @@ export class Game {
   activeMod: WaveModDef | null = null;
   private seed: number;
   private modCache = new Map<number, WaveModDef | null>();
+  /** 에어컨의 맵 전체 감속 배율 (1이면 없음) */
+  globalSlow = 1;
   private breakerUsed = false;
   private modVersion = 0;
   private statCache = new WeakMap<Unit, { key: number; stats: UnitLevel }>();
@@ -367,7 +374,7 @@ export class Game {
     this.money -= cost;
     this.units.push({
       uid: this.nextUid++, def, level: 0, branch: null, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1,
-      rampTarget: 0, rampMul: 1,
+      rampTarget: 0, rampMul: 1, dmgMul: 1,
     });
     return { ok: true };
   }
@@ -518,6 +525,7 @@ export class Game {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
       slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
       shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0,
+      burnDps: 0, burnTime: 0, shred: 0,
     };
     this.enemies.push(e);
     return e;
@@ -627,11 +635,20 @@ export class Game {
     // 1) 와이파이 버프와 해킹 계산 (겹치면 가장 센 것 하나만)
     for (const u of this.units) u.buffMul = 1;
     for (const e of this.enemies) e.hackMul = 1;
+    for (const u of this.units) u.dmgMul = 1;
+    // 에어컨: 맵 전체 감속 (가장 센 것 하나)
+    this.globalSlow = 1;
+    for (const u of this.units) {
+      const gs = this.stats(u).globalSlow;
+      if (gs) this.globalSlow = Math.min(this.globalSlow, 1 - gs);
+    }
     for (const b of this.units) {
       if (b.def.kind !== 'buff') continue;
       const lv = this.stats(b);
       for (const u of this.units) {
-        if (u !== b && dist(u, b) <= lv.range) u.buffMul = Math.max(u.buffMul, 1 + (lv.buff ?? 0));
+        if (u === b || dist(u, b) > lv.range) continue;
+        u.buffMul = Math.max(u.buffMul, 1 + (lv.buff ?? 0));
+        u.dmgMul = Math.max(u.dmgMul, 1 + (lv.dmgBuff ?? 0));
       }
       if (lv.hackVuln) {
         for (const e of this.enemies) if (dist(e, b) <= lv.range + e.def.radius) e.hackMul = Math.max(e.hackMul, lv.hackVuln);
@@ -641,7 +658,7 @@ export class Game {
     for (const u of this.units) {
       const lv = this.stats(u);
       const branch = u.branch !== null ? u.def.branches![u.branch].id : null;
-      if (u.def.kind === 'buff' || u.def.kind === 'income') continue;
+      if (u.def.kind === 'buff' || u.def.kind === 'income' || u.def.kind === 'aura') continue;
       u.cooldown -= dt * u.buffMul * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
       if (u.cooldown > 0) continue;
       const inRange = this.enemies.filter((e) => e.hp > 0 && dist(u, e) <= lv.range + e.def.radius);
@@ -680,7 +697,7 @@ export class Game {
         this.events.push({ type: 'shot', unit: u.uid, kind: u.def.id, branch, from: { x: u.x, y: u.y }, to: { x: t.x, y: t.y }, color: u.def.color });
         // 크리티컬은 한 번의 공격 단위로 굴린다 (범위 공격이면 맞은 적 모두에게 적용)
         const crit = this.rng() < Math.min(1, (this.cfg.critChance + this.mods.critChance) * this.mods.critChanceMul);
-        let dmg = crit ? lv.damage * (this.cfg.critMul + this.mods.critDamage) : lv.damage;
+        let dmg = (crit ? lv.damage * (this.cfg.critMul + this.mods.critDamage) : lv.damage) * u.dmgMul;
         if (lv.ramp) {
           // 같은 적을 계속 지지면 배율이 쌓이고, 대상이 바뀌면 처음부터
           if (u.rampTarget === t.uid) u.rampMul = Math.min(lv.ramp.max, u.rampMul + lv.ramp.step);
@@ -700,14 +717,49 @@ export class Game {
           this.events.push({ type: 'pulse', unit: u.uid, x: u.x, y: u.y, r: lv.range, color: u.def.color, branch });
           for (const e of inRange) this.damage(e, dmg, opts);
         } else {
-          this.damage(t, dmg, opts);
+          if (lv.line) {
+            // 식기세척기: 대상 방향으로 사거리 끝까지 뻗는 물줄기 위의 적을 모두 맞힌다
+            const d = Math.max(1, dist(u, t));
+            const end = { x: u.x + ((t.x - u.x) / d) * lv.range, y: u.y + ((t.y - u.y) / d) * lv.range };
+            this.events[this.events.length - 1] = { type: 'shot', unit: u.uid, kind: u.def.id, branch, from: { x: u.x, y: u.y }, to: end, color: u.def.color };
+            for (const e of this.enemies) {
+              if (e.hp > 0 && distToSegment(e, u, end) <= lv.line + e.def.radius) this.damage(e, dmg, opts);
+            }
+          } else {
+            this.damage(t, dmg, opts, lv.shred);
+          }
+          if (lv.dot && t.hp > 0 && t.shield <= 0) {
+            t.burnDps = Math.max(t.burnDps, lv.dot.dps * this.mods.damage[u.def.id] * this.mods.allDamage * u.dmgMul);
+            t.burnTime = lv.dot.duration;
+          }
+          if (lv.chainHits && lv.chainHits > 1) {
+            // 멀티탭: 가까운 적으로 번개가 튕긴다
+            const points: Vec[] = [{ x: u.x, y: u.y }, { x: t.x, y: t.y }];
+            const hit = new Set([t.uid]);
+            let from: Vec = t;
+            let power = dmg;
+            for (let i = 1; i < lv.chainHits; i++) {
+              let next: Enemy | null = null;
+              for (const e of this.enemies) {
+                if (e.hp <= 0 || hit.has(e.uid) || dist(e, from) > CHAIN_JUMP) continue;
+                if (!next || dist(e, from) < dist(next, from)) next = e;
+              }
+              if (!next) break;
+              power *= 0.7;
+              this.damage(next, power, opts);
+              hit.add(next.uid);
+              points.push({ x: next.x, y: next.y });
+              from = next;
+            }
+            this.events.push({ type: 'bolt', points });
+          }
         }
       }
     }
     this.removeDead();
   }
 
-  private damage(e: Enemy, amount: number, opts: { crit?: boolean; pierce?: boolean; silent?: boolean; dot?: boolean } = {}): void {
+  private damage(e: Enemy, amount: number, opts: { crit?: boolean; pierce?: boolean; silent?: boolean; dot?: boolean } = {}, shred = 0): void {
     if (e.hp <= 0 || amount <= 0) return;
     if (e.shield > 0) {
       // 방패는 한 번 맞을 때마다 한 겹씩만 벗겨진다. 지속 피해(불 장판)는 막기만 하고 벗기지 못한다
@@ -720,7 +772,9 @@ export class Game {
     const frozen = e.stunTime > 0 ? e.frozenVuln : 1;
     const amp = amount * e.hackMul * frozen;
     // 방어력 무시 공격이거나 해킹당한 적은 방어력이 0
-    const armor = opts.pierce || e.hackMul > 1 ? 0 : e.def.armor + (this.activeMod?.armorAdd ?? 0);
+    const armor = opts.pierce || e.hackMul > 1 ? 0 : Math.max(0, e.def.armor + (this.activeMod?.armorAdd ?? 0) - e.shred);
+    // 다리미: 맞힌 뒤 방어력을 깎는다 (다음 공격부터 적용)
+    if (shred) e.shred = Math.min(MAX_SHRED, e.shred + shred);
     const dealt = Math.max(amp * 0.25, amp - armor);
     e.hp -= dealt;
     if (!opts.silent) this.events.push({ type: 'hit', enemy: e.uid, x: e.x, y: e.y, amount: Math.round(dealt), crit: !!opts.crit });
@@ -763,9 +817,17 @@ export class Game {
 
   private moveEnemies(dt: number): void {
     const survivors: Enemy[] = [];
+    let burned = false;
     for (const e of this.enemies) {
       if (e.knockImmune > 0) e.knockImmune -= dt;
       if (e.freezeImmune > 0) e.freezeImmune -= dt;
+      if (e.burnTime > 0) {
+        e.burnTime -= dt;
+        // 화상은 방어력을 무시한다 (틱마다 방어력에 깎이면 피해가 거의 안 들어간다)
+        this.damage(e, e.burnDps * dt, { silent: true, dot: true, pierce: true });
+        if (e.burnTime <= 0) e.burnDps = 0;
+        if (e.hp <= 0) burned = true;
+      }
       if (e.slowTime > 0) {
         e.slowTime -= dt;
         if (e.slowTime <= 0) e.slowMul = 1;
@@ -777,7 +839,7 @@ export class Game {
         continue;
       }
       const enrage = e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below ? e.def.enrage.speedMul : 1;
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * e.slowMul * dt;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * e.slowMul * this.globalSlow * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {
@@ -799,6 +861,7 @@ export class Game {
       survivors.push(e);
     }
     this.enemies = survivors;
+    if (burned) this.removeDead();
     if (this.hp <= 0) {
       this.phase = 'over';
       this.events.push({ type: 'gameOver' });
@@ -831,4 +894,12 @@ function circleHitsRect(x: number, y: number, r: number, b: { x: number; y: numb
   const cx = Math.max(b.x, Math.min(x, b.x + b.w));
   const cy = Math.max(b.y, Math.min(y, b.y + b.h));
   return Math.hypot(x - cx, y - cy) < r;
+}
+
+function distToSegment(p: Vec, a: Vec, b: Vec): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
 }

@@ -60,3 +60,32 @@ export function saveSetup(s: RunSetup): void {
   set('endless', s.endless ? '1' : '0');
   set('map', s.map);
 }
+
+// ── 업적 진행 상황
+import { emptyProgress, type Progress } from './achievements';
+
+export function loadProgress(): Progress {
+  try {
+    return { ...emptyProgress(), ...(JSON.parse(get('progress') ?? '{}') as Partial<Progress>) };
+  } catch {
+    return emptyProgress();
+  }
+}
+
+export function saveProgress(p: Progress): void {
+  set('progress', JSON.stringify(p));
+}
+
+// ── 덱 (한 판에 들고 가는 가전, 최대 6종)
+export function loadDeck(): string[] | null {
+  try {
+    const v = JSON.parse(get('deck') ?? 'null') as unknown;
+    return Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveDeck(deck: string[]): void {
+  set('deck', JSON.stringify(deck));
+}
