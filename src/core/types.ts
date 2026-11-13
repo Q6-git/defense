@@ -8,7 +8,9 @@ export interface Vec {
 export type TargetMode = 'first' | 'last' | 'strong' | 'close';
 export const TARGET_MODES: readonly TargetMode[] = ['first', 'last', 'strong', 'close'];
 
-export type EnemyId = 'goo' | 'rat' | 'grease' | 'roach' | 'splitter' | 'splitling' | 'boss';
+export type EnemyId =
+  | 'goo' | 'rat' | 'grease' | 'roach' | 'splitter' | 'splitling' | 'boss'
+  | 'shield' | 'ghost' | 'healer' | 'charger';
 
 export interface EnemyDef {
   id: EnemyId;
@@ -24,6 +26,30 @@ export interface EnemyDef {
   boss?: boolean;
   splitInto?: { id: EnemyId; count: number };
   summon?: { id: EnemyId; count: number; interval: number };
+  /** 방패 겹 수. 피해량과 상관없이 한 번 맞을 때마다 한 겹 벗겨지고, 다 벗겨져야 피해를 받는다 */
+  shield?: number;
+  /** 유령: every초 보이다가 duration초 동안 투명해져 조준되지 않는다 (범위 공격은 맞는다) */
+  phase?: { every: number; duration: number };
+  /** 치유사: interval초마다 반경 안 다른 적(보스 제외)의 체력을 최대 체력의 pct만큼 회복 */
+  heal?: { interval: number; pct: number; radius: number };
+  /** 돌격병: 체력 비율이 below 이하가 되면 속도가 speedMul배 */
+  enrage?: { below: number; speedMul: number };
+}
+
+export type WaveModId = 'rush' | 'fog' | 'haste' | 'steel' | 'gold';
+
+/** 특수 웨이브의 변칙. 없는 값은 영향 없음 */
+export interface WaveModDef {
+  id: WaveModId;
+  emoji: string;
+  /** 적 마릿수 배율 (보스 제외) */
+  countMul?: number;
+  hpMul?: number;
+  /** 모든 가전 사거리 배율 */
+  rangeMul?: number;
+  speedMul?: number;
+  armorAdd?: number;
+  rewardMul?: number;
 }
 
 export interface Rect {
@@ -74,6 +100,12 @@ export interface Enemy {
   /** 얼었다 풀린 뒤 다시 얼지 않는 남은 시간 (얼어 있는 시간 포함). 냉풍 여러 대로 영원히 얼려 두지 못하게 한다 */
   freezeImmune: number;
   summonTimer: number;
+  /** 남은 방패 겹 수 */
+  shield: number;
+  /** 유령이 지금 투명한지, 그리고 상태가 바뀔 때까지 남은 시간 */
+  hidden: boolean;
+  phaseTimer: number;
+  healTimer: number;
 }
 
 export type AbilityId = 'plunger' | 'overload';

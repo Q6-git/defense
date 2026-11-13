@@ -2,7 +2,7 @@ import { baseMods, type CardDef, type CardRarity, type Mods } from './cards';
 import { dist, Path } from './path';
 import { makeRng } from './rng';
 import type {
-  AbilityDef, AbilityId, Enemy, EnemyDef, EnemyId, MapDef, TargetMode, Unit, UnitDef, UnitId, UnitLevel, Vec,
+  AbilityDef, AbilityId, Enemy, EnemyDef, EnemyId, MapDef, TargetMode, Unit, UnitDef, UnitId, UnitLevel, Vec, WaveModDef,
 } from './types';
 
 export interface SpawnGroup {
@@ -44,6 +44,11 @@ export interface GameConfig {
   enemySpeedMul: number;
   rewardMul: number;
   seed?: number;
+  /** 특수 웨이브 변칙 목록과 주기. 주기의 배수 웨이브 중 보스가 없는 웨이브에 무작위로 하나가 붙는다 */
+  waveMods?: WaveModDef[];
+  specialEvery?: number;
+  /** 이 웨이브부터 변칙이 붙는다 (초반 웨이브는 제외) */
+  specialFrom?: number;
   /** 보상 카드 목록. 비어 있으면 카드가 나오지 않는다 */
   cards?: CardDef[];
   /** 몇 웨이브마다 카드를 고르는지 */
@@ -71,7 +76,9 @@ export type GameEvent =
   | { type: 'pulse'; unit: number; x: number; y: number; r: number; color: number; branch: string | null }
   | { type: 'hit'; enemy: number; x: number; y: number; amount: number; crit: boolean }
   | { type: 'ability'; id: AbilityId; x: number; y: number; r: number }
-  | { type: 'waveStart'; wave: number; boss: boolean }
+  | { type: 'waveStart'; wave: number; boss: boolean; mod: WaveModDef | null }
+  | { type: 'shieldHit'; enemy: number; x: number; y: number; left: number }
+  | { type: 'heal'; x: number; y: number; r: number }
   | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
   | { type: 'income'; x: number; y: number; amount: number }
   | { type: 'waveCleared'; wave: number; bonus: number }
@@ -150,6 +157,10 @@ export class Game {
   mods: Mods = baseMods();
   /** 지금 고르라고 내민 카드. 있는 동안 게임은 멈춘다 */
   offer: CardDef[] | null = null;
+  /** 지금 진행 중인 웨이브에 걸린 변칙 (웨이브가 끝나면 null) */
+  activeMod: WaveModDef | null = null;
+  private seed: number;
+  private modCache = new Map<number, WaveModDef | null>();
   private breakerUsed = false;
   private modVersion = 0;
   private statCache = new WeakMap<Unit, { key: number; stats: UnitLevel }>();
@@ -165,7 +176,8 @@ export class Game {
     this.paths = cfg.map.paths.map((p) => new Path(p));
     this.hp = cfg.startHp;
     this.money = cfg.startMoney;
-    this.rng = makeRng(cfg.seed ?? Date.now());
+    this.seed = cfg.seed ?? Date.now();
+    this.rng = makeRng(this.seed);
     this.endless = !!cfg.endless && !!cfg.extraWave;
   }
 
@@ -256,7 +268,7 @@ export class Game {
     const stats: UnitLevel = {
       ...base,
       damage: base.damage * m.damage[id] * m.allDamage,
-      range: base.range * m.allRange * (id === 'fan' ? m.fanRange : 1),
+      range: base.range * m.allRange * (id === 'fan' ? m.fanRange : 1) * (this.activeMod?.rangeMul ?? 1),
       cooldown: id === 'vacuum' ? base.cooldown / m.vacuumSpeed : base.cooldown,
     };
     if (base.splash) stats.splash = base.splash * m.splash;
@@ -396,13 +408,36 @@ export class Game {
     return this.phase === 'intermission' ? Math.floor(this.timer * this.cfg.earlyBonusPerSec) : 0;
   }
 
+  /**
+   * n번째 웨이브의 변칙. 판(시드)마다 다르지만 한 판 안에서는 언제 물어도 같다.
+   * 웨이브 번호별로 따로 굴려서, 미리보기를 먼저 보든 나중에 보든 결과가 같다.
+   */
+  waveMod(n: number): WaveModDef | null {
+    const mods = this.cfg.waveMods ?? [];
+    const every = this.cfg.specialEvery ?? 0;
+    if (!mods.length || every <= 0 || n % every !== 0 || n < (this.cfg.specialFrom ?? 0)) return null;
+    if (!this.modCache.has(n)) {
+      const def = this.waveDef(n);
+      const boss = !def || def.groups.some((g) => this.cfg.enemies[g.enemy].boss);
+      this.modCache.set(n, boss ? null : mods[Math.floor(makeRng(this.seed * 7919 + n)() * mods.length)]);
+    }
+    return this.modCache.get(n) ?? null;
+  }
+
   /** n번째 웨이브에 나오는 적 종류별 마릿수 (미리보기용) */
   wavePreview(n: number): { id: EnemyId; count: number }[] {
     const def = this.waveDef(n);
     if (!def) return [];
     const counts = new Map<EnemyId, number>();
-    for (const g of def.groups) counts.set(g.enemy, (counts.get(g.enemy) ?? 0) + g.count);
+    const mod = this.waveMod(n);
+    for (const g of def.groups) counts.set(g.enemy, (counts.get(g.enemy) ?? 0) + this.groupCount(g, mod));
     return [...counts].map(([id, count]) => ({ id, count }));
+  }
+
+  /** 변칙(러시)이 반영된 그룹 마릿수. 보스는 늘지 않는다 */
+  private groupCount(g: SpawnGroup, mod: WaveModDef | null): number {
+    if (!mod?.countMul || this.cfg.enemies[g.enemy].boss) return g.count;
+    return Math.round(g.count * mod.countMul);
   }
 
   private useAbility(id: AbilityId, x: number, y: number): CommandResult {
@@ -439,10 +474,17 @@ export class Game {
     this.phase = 'wave';
     this.waveTime = 0;
     const def = this.waveDef(this.wave)!;
-    this.events.push({ type: 'waveStart', wave: this.wave, boss: def.groups.some((g) => this.cfg.enemies[g.enemy].boss) });
+    this.activeMod = this.waveMod(this.wave);
+    this.modVersion++; // 안개(사거리) 변칙이 스탯 캐시에 반영되도록
+    this.events.push({
+      type: 'waveStart', wave: this.wave, boss: def.groups.some((g) => this.cfg.enemies[g.enemy].boss), mod: this.activeMod,
+    });
     this.spawnQueue = [];
     for (const g of def.groups) {
-      for (let i = 0; i < g.count; i++) this.spawnQueue.push({ t: g.delay + i * g.interval, id: g.enemy });
+      // 마릿수가 늘어도 그룹이 나오는 데 걸리는 시간은 같게 간격을 줄인다
+      const count = this.groupCount(g, this.activeMod);
+      const interval = (g.interval * g.count) / count;
+      for (let i = 0; i < count; i++) this.spawnQueue.push({ t: g.delay + i * interval, id: g.enemy });
     }
     this.spawnQueue.sort((a, b) => a.t - b.t);
     return true;
@@ -469,12 +511,13 @@ export class Game {
     const def = this.cfg.enemies[id];
     if (lane === undefined) lane = this.nextLane++ % this.paths.length;
     const hpMul = this.waveDef(this.wave)?.hpMul ?? 1;
-    const hp = Math.round(def.hp * hpMul * this.cfg.enemyHpMul * (this.cfg.map.enemyHpMul ?? 1));
+    const hp = Math.round(def.hp * hpMul * this.cfg.enemyHpMul * (this.cfg.map.enemyHpMul ?? 1) * (this.activeMod?.hpMul ?? 1));
     const path = this.paths[lane];
     const p = path.pointAt(dist);
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
       slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
+      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0,
     };
     this.enemies.push(e);
     return e;
@@ -504,6 +547,8 @@ export class Game {
   }
 
   private clearWave(): void {
+    this.activeMod = null;
+    this.modVersion++;
     const bonus = Math.round(this.cfg.waveBonus(this.wave) * this.mods.waveBonus);
     this.money += bonus;
     this.events.push({ type: 'waveCleared', wave: this.wave, bonus });
@@ -534,6 +579,30 @@ export class Game {
 
   private summon(dt: number): void {
     for (const e of [...this.enemies]) {
+      // 유령: 보였다 안 보였다 한다
+      const ph = e.def.phase;
+      if (ph) {
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.hidden = !e.hidden;
+          e.phaseTimer = e.hidden ? ph.duration : ph.every;
+        }
+      }
+      // 치유사: 주변 적을 회복시킨다 (자기 자신과 보스는 제외)
+      const h = e.def.heal;
+      if (h) {
+        e.healTimer -= dt;
+        if (e.healTimer <= 0) {
+          e.healTimer = h.interval;
+          let healed = false;
+          for (const o of this.enemies) {
+            if (o === e || o.def.boss || o.hp >= o.maxHp || dist(o, e) > h.radius) continue;
+            o.hp = Math.min(o.maxHp, o.hp + o.maxHp * h.pct);
+            healed = true;
+          }
+          if (healed) this.events.push({ type: 'heal', x: e.x, y: e.y, r: h.radius });
+        }
+      }
       const s = e.def.summon;
       if (!s) continue;
       e.summonTimer -= dt;
@@ -548,7 +617,7 @@ export class Game {
     if (!this.zones.length) return;
     for (const z of this.zones) {
       z.time -= dt;
-      for (const e of this.enemies) if (dist(e, z) <= z.r + e.def.radius) this.damage(e, z.dps * dt, { silent: true });
+      for (const e of this.enemies) if (dist(e, z) <= z.r + e.def.radius) this.damage(e, z.dps * dt, { silent: true, dot: true });
     }
     this.zones = this.zones.filter((z) => z.time > 0);
     this.removeDead();
@@ -576,7 +645,10 @@ export class Game {
       u.cooldown -= dt * u.buffMul * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
       if (u.cooldown > 0) continue;
       const inRange = this.enemies.filter((e) => e.hp > 0 && dist(u, e) <= lv.range + e.def.radius);
-      if (inRange.length === 0) {
+      // 투명한 유령은 조준할 수 없다. 범위형(선풍기, 흡입)은 조준이 필요 없어서 그대로 맞힌다
+      const area = u.def.kind === 'slow' || !!lv.hitAll;
+      const targets = area ? inRange : inRange.filter((e) => !e.hidden);
+      if (targets.length === 0) {
         u.cooldown = 0;
         continue;
       }
@@ -604,7 +676,7 @@ export class Game {
           this.damage(e, lv.damage);
         }
       } else {
-        const t = pickTarget(inRange, u.target, u);
+        const t = pickTarget(targets, u.target, u);
         this.events.push({ type: 'shot', unit: u.uid, kind: u.def.id, branch, from: { x: u.x, y: u.y }, to: { x: t.x, y: t.y }, color: u.def.color });
         // 크리티컬은 한 번의 공격 단위로 굴린다 (범위 공격이면 맞은 적 모두에게 적용)
         const crit = this.rng() < Math.min(1, (this.cfg.critChance + this.mods.critChance) * this.mods.critChanceMul);
@@ -635,12 +707,20 @@ export class Game {
     this.removeDead();
   }
 
-  private damage(e: Enemy, amount: number, opts: { crit?: boolean; pierce?: boolean; silent?: boolean } = {}): void {
+  private damage(e: Enemy, amount: number, opts: { crit?: boolean; pierce?: boolean; silent?: boolean; dot?: boolean } = {}): void {
     if (e.hp <= 0 || amount <= 0) return;
+    if (e.shield > 0) {
+      // 방패는 한 번 맞을 때마다 한 겹씩만 벗겨진다. 지속 피해(불 장판)는 막기만 하고 벗기지 못한다
+      if (!opts.dot) {
+        e.shield--;
+        this.events.push({ type: 'shieldHit', enemy: e.uid, x: e.x, y: e.y, left: e.shield });
+      }
+      return;
+    }
     const frozen = e.stunTime > 0 ? e.frozenVuln : 1;
     const amp = amount * e.hackMul * frozen;
     // 방어력 무시 공격이거나 해킹당한 적은 방어력이 0
-    const armor = opts.pierce || e.hackMul > 1 ? 0 : e.def.armor;
+    const armor = opts.pierce || e.hackMul > 1 ? 0 : e.def.armor + (this.activeMod?.armorAdd ?? 0);
     const dealt = Math.max(amp * 0.25, amp - armor);
     e.hp -= dealt;
     if (!opts.silent) this.events.push({ type: 'hit', enemy: e.uid, x: e.x, y: e.y, amount: Math.round(dealt), crit: !!opts.crit });
@@ -663,7 +743,9 @@ export class Game {
       if (!dead.length) return;
       this.enemies = this.enemies.filter((e) => e.hp > 0);
       for (const e of dead) {
-        const reward = Math.max(1, Math.round(e.def.reward * this.cfg.rewardMul * this.mods.reward * this.bountyMul(e)));
+        const reward = Math.max(1, Math.round(
+          e.def.reward * this.cfg.rewardMul * this.mods.reward * this.bountyMul(e) * (this.activeMod?.rewardMul ?? 1),
+        ));
         this.money += reward;
         this.events.push({ type: 'kill', enemy: e.def.id, x: e.x, y: e.y, reward });
         const sp = e.def.splitInto;
@@ -694,7 +776,8 @@ export class Game {
         survivors.push(e);
         continue;
       }
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * e.slowMul * dt;
+      const enrage = e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below ? e.def.enrage.speedMul : 1;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * e.slowMul * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {

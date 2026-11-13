@@ -78,6 +78,8 @@ export class GameScene extends Phaser.Scene {
   private moneyText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private diffLabel!: Phaser.GameObjects.Text;
+  /** 진행 중인 특수 웨이브 안내 */
+  private modLabel!: Phaser.GameObjects.Text;
   private preview!: Phaser.GameObjects.Text;
   private waveBtn!: Button;
   private speedBtn!: Button;
@@ -157,7 +159,9 @@ export class GameScene extends Phaser.Scene {
     this.moneyText = chip(130, 140);
     this.waveText = chip(278, 118);
     this.preview = text(this, 408, 18, '', 15, THEME.textSoft);
-    this.diffLabel = text(this, 742, 18, '', 15, THEME.gold).setOrigin(1, 0);
+    // 맵·난이도 표시는 맵 오른쪽 위 구석에 (상단 바는 다음 웨이브 미리보기가 쓴다)
+    this.diffLabel = text(this, PANEL_X - 12, 64, '', 15, THEME.gold).setOrigin(1, 0).setStroke('#ffffff', 4).setDepth(4);
+    this.modLabel = text(this, 520, 64, '', 17, THEME.danger).setOrigin(0.5, 0).setStroke('#ffffff', 5).setDepth(6);
     this.pauseLayer = null;
     this.picking = false;
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
@@ -559,8 +563,12 @@ export class GameScene extends Phaser.Scene {
       const em = this.enemyEmojis.get(e.uid);
       if (em) {
         // 계속 맞아도 모양이 보이도록 하얗게 덮지 않고 붉게 물들인다
+        const enraged = !!e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below;
         if (flash) em.setTint(0xff7a7a);
+        else if (enraged) em.setTint(0xffa890);
         else em.clearTint();
+        // 투명한 유령은 흐릿하게
+        em.setAlpha(e.hidden ? 0.3 : 1);
         const squash = e.stunTime > 0 ? 0 : (hop(e) - 0.5) * 0.16;
         const k = baseScale(em) * (this.punch.get(e.uid) ?? 1);
         em.setScale(k * (1 - squash), k * (1 + squash));
@@ -578,6 +586,13 @@ export class GameScene extends Phaser.Scene {
         }
       }
       const w = Math.max(24, e.def.radius * 2);
+      // 방패: 남은 겹 수만큼 체력바 위에 파란 칸
+      for (let i = 0; i < e.shield; i++) {
+        const sx = p.x - (e.shield * 7) / 2 + i * 7;
+        g.fillStyle(0xffffff).fillRect(sx, p.y - e.def.radius - 17, 6, 6);
+        g.fillStyle(0x4f8fd0).fillRect(sx + 1, p.y - e.def.radius - 16, 4, 4);
+      }
+      if (e.shield > 0) g.lineStyle(3, 0x4f8fd0, 0.9).strokeCircle(p.x, p.y, e.def.radius + 4);
       g.fillStyle(0x000000, 0.6).fillRect(p.x - w / 2, p.y - e.def.radius - 9, w, 4);
       g.fillStyle(0xff5a5a).fillRect(p.x - w / 2, p.y - e.def.radius - 9, (w * Math.max(0, e.hp)) / e.maxHp, 4);
     }
@@ -624,7 +639,11 @@ export class GameScene extends Phaser.Scene {
     const cardTag = gm.cards.length ? `${STR.cardCount(gm.cards.length)}  ` : '';
     this.diffLabel.setText(`${cardTag}${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${gm.endless ? ' ♾️' : ''}`);
     const next = gm.wavePreview(gm.wave + 1);
-    this.preview.setText(next.length ? `${STR.preview} ${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
+    const nextMod = gm.waveMod(gm.wave + 1);
+    const modTag = nextMod ? `[${nextMod.emoji}${STR.waveMods[nextMod.id].name}] ` : '';
+    this.preview.setText(next.length ? `${STR.preview} ${modTag}${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
+    const am = gm.activeMod;
+    this.modLabel.setText(am ? `${am.emoji} ${STR.waveMods[am.id].name}: ${STR.waveMods[am.id].desc}` : '');
     this.pauseBtn.setEnabled(!gm.finished && !this.picking);
     this.waveBtn.setEnabled((gm.phase === 'ready' || gm.phase === 'intermission') && !gm.offer);
     this.waveBtn.setText(
@@ -808,8 +827,17 @@ export class GameScene extends Phaser.Scene {
           this.cameras.main.flash(250, 255, 230, 80);
         }
         break;
+      case 'shieldHit':
+        this.punch.set(ev.enemy, Math.max(this.punch.get(ev.enemy) ?? 1, 1.1));
+        this.fx.impact(ev.x, ev.y, 0x4f8fd0, ev.left === 0);
+        sfx.play(ev.left === 0 ? 'crit' : 'hit');
+        break;
+      case 'heal':
+        this.fx.heal(ev.x, ev.y, ev.r);
+        break;
       case 'waveStart':
-        this.banner(ev.boss ? STR.bossBanner : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
+        if (ev.mod) this.banner(STR.modBanner(ev.mod.emoji, STR.waveMods[ev.mod.id].name), '#ffd35a');
+        else this.banner(ev.boss ? STR.bossBanner : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
         if (ev.boss) {
           this.cameras.main.shake(800, 0.006);
           sfx.play('boss');

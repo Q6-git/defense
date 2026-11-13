@@ -19,6 +19,10 @@ export const SPRITES: Record<string, string> = {
   splitter: 'splitter.svg',
   splitling: 'splitling.svg',
   boss: 'boss.svg',
+  shield: 'shield.svg',
+  ghost: 'ghost.svg',
+  healer: 'healer.svg',
+  charger: 'charger.svg',
   // 지형
   outlet: 'outlet.svg',
   drain: 'drain.svg',
