@@ -63,6 +63,42 @@ describe('경제', () => {
     expect(g.drainEvents().some((e) => e.type === 'income')).toBe(true);
   });
 
+  it('클리어 보상 미리보기는 실제로 받는 보너스·세탁기 수입과 같다', () => {
+    const g = new Game(cfg());
+    const w = g.apply({ type: 'place', unit: 'washer', x: 500, y: 240 });
+    expect(w.ok).toBe(true);
+    const u = g.units[0];
+    // 이자 세탁기(Lv4)까지 올려 보유금에 따라 수입이 달라지게 한다
+    g.money = 5000;
+    g.apply({ type: 'upgrade', uid: u.uid });
+    g.apply({ type: 'upgrade', uid: u.uid });
+    g.apply({ type: 'upgrade', uid: u.uid, branch: 0 });
+    expect(g.clearRewardPreview()?.wave).toBe(1);
+    g.apply({ type: 'startWave' });
+    g.update(0.05);
+    const p = g.clearRewardPreview()!;
+    expect(p.wave).toBe(1);
+    expect(p.bonus).toBe(g.cfg.waveBonus(1));
+    expect(p.income).toBeGreaterThan(120);
+    const money = g.money;
+    g.drainEvents();
+    g.enemies = [];
+    g.update(0.05);
+    const ev = g.drainEvents().find((e) => e.type === 'waveCleared');
+    expect(ev).toMatchObject({ wave: 1, bonus: p.bonus, income: p.income });
+    expect(g.money).toBe(money + p.bonus + p.income);
+    // 대기 시간에는 다음 웨이브를 보여 준다
+    expect(g.clearRewardPreview()?.wave).toBe(2);
+  });
+
+  it('부품 보상: 웨이브당 5 × 난이도, 마지막 정규 웨이브는 승리 보너스 추가', async () => {
+    const { clearParts, WIN_BONUS } = await import('../src/gacha');
+    expect(clearParts(3, 20, 'normal')).toBe(5);
+    expect(clearParts(3, 20, 'hell')).toBe(10);
+    expect(clearParts(20, 20, 'normal')).toBe(5 + WIN_BONUS);
+    expect(clearParts(21, 20, 'normal')).toBe(5);
+  });
+
   it('마지막 웨이브를 클리어하면 승리', () => {
     const g = new Game(cfg());
     g.apply({ type: 'startWave' });

@@ -6,7 +6,7 @@ import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { MAP_ORDER, type MapId } from '../data/map';
 import { GACHA_UNITS, UNIT_ORDER } from '../data/units';
-import { GACHA, GACHA_POOL, pull, waveReward, WIN_BONUS, type PullResult } from '../gacha';
+import { clearParts, GACHA, GACHA_POOL, pull, type PullResult } from '../gacha';
 import { sfx, type SoundId } from '../sfx';
 import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achievements';
 import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, saveProgress, saveSetup, type RunSetup } from '../storage';
@@ -104,6 +104,7 @@ export class GameScene extends Phaser.Scene {
   /** 진행 중인 특수 웨이브 안내 */
   private modLabel!: Phaser.GameObjects.Text;
   private preview!: Phaser.GameObjects.Text;
+  private rewardText!: Phaser.GameObjects.Text;
   private waveBtn!: Button;
   private speedBtn!: Button;
   private muteBtn!: Button;
@@ -181,7 +182,8 @@ export class GameScene extends Phaser.Scene {
     this.hpText = chip(12, 110);
     this.moneyText = chip(130, 140);
     this.waveText = chip(278, 118);
-    this.preview = text(this, 408, 18, '', 15, THEME.textSoft);
+    this.preview = text(this, 408, 8, '', 15, THEME.textSoft);
+    this.rewardText = text(this, 408, 28, '', 14, THEME.gold);
     // 맵·난이도 표시는 맵 오른쪽 위 구석에 (상단 바는 다음 웨이브 미리보기가 쓴다)
     this.diffLabel = text(this, PANEL_X - 12, 64, '', 15, THEME.gold).setOrigin(1, 0).setStroke('#ffffff', 4).setDepth(4);
     this.modLabel = text(this, 520, 64, '', 17, THEME.danger).setOrigin(0.5, 0).setStroke('#ffffff', 5).setDepth(6);
@@ -380,9 +382,9 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private showToast(s: string): void {
+  private showToast(s: string, sec = 1.6): void {
     this.toast.setText(s);
-    this.toastTimer = 1.6;
+    this.toastTimer = sec;
   }
 
   // ───────────────────────── UI 구성
@@ -693,6 +695,10 @@ export class GameScene extends Phaser.Scene {
     const nextMod = gm.waveMod(gm.wave + 1);
     const modTag = nextMod ? `[${nextMod.emoji}${STR.waveMods[nextMod.id].name}] ` : '';
     this.preview.setText(next.length ? `${STR.preview} ${modTag}${next.map((n) => `${gm.cfg.enemies[n.id].emoji}×${n.count}`).join(' ')}` : '');
+    const reward = gm.clearRewardPreview();
+    this.rewardText.setText(
+      reward ? STR.rewardPreview(reward.wave, reward.bonus, reward.income, clearParts(reward.wave, gm.totalWaves, this.setup.difficulty)) : '',
+    );
     const am = gm.activeMod;
     this.modLabel.setText(am ? `${am.emoji} ${STR.waveMods[am.id].name}: ${STR.waveMods[am.id].desc}` : '');
     this.pauseBtn.setEnabled(!gm.finished && !this.picking);
@@ -914,13 +920,14 @@ export class GameScene extends Phaser.Scene {
         this.run.cleared = ev.wave;
         {
           // 판 보상: 웨이브마다 부품, 20웨이브를 깨면 보너스
-          const gain = waveReward(1, this.setup.difficulty) + (ev.wave === this.sim.totalWaves ? WIN_BONUS : 0);
+          const gain = clearParts(ev.wave, this.sim.totalWaves, this.setup.difficulty);
           this.progress.parts += gain;
           this.runParts += gain;
+          this.run.endless = this.sim.endless;
+          this.checkAchievements();
+          this.banner(STR.clearBanner(ev.bonus + ev.income, gain), '#ffd35a', 0.8);
+          this.showToast(STR.clearDetail(ev.bonus, ev.income, gain), 3);
         }
-        this.run.endless = this.sim.endless;
-        this.checkAchievements();
-        this.banner(STR.clearBanner(ev.bonus), '#ffd35a', 0.8);
         sfx.play('clear');
         break;
       case 'cardOffer':

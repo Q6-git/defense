@@ -61,3 +61,8 @@ export function waveReward(waves: number, difficulty: string): number {
 
 /** 20웨이브 승리 보너스 */
 export const WIN_BONUS = 50;
+
+/** wave번째 웨이브를 깨면 받는 부품 (웨이브 보상 + 마지막 정규 웨이브면 승리 보너스) */
+export function clearParts(wave: number, totalWaves: number, difficulty: string): number {
+  return waveReward(1, difficulty) + (wave === totalWaves ? WIN_BONUS : 0);
+}

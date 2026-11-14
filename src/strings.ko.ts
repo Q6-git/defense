@@ -21,7 +21,11 @@ export const STR = {
     steel: { name: '강철', desc: '모든 적 방어력 +3' },
     gold: { name: '황금', desc: '처치 보상 2배, 적 체력 +20%' },
   } as Record<string, { name: string; desc: string }>,
-  clearBanner: (bonus: number) => `클리어!  +💰${bonus}`,
+  clearBanner: (coins: number, parts: number) => `클리어!  +💰${coins}  +🔩${parts}`,
+  clearDetail: (bonus: number, income: number, parts: number) =>
+    `보너스 💰${bonus}${income ? ` · 세탁기 💰${income}` : ''} · 부품 🔩${parts}`,
+  rewardPreview: (wave: number, bonus: number, income: number, parts: number) =>
+    `🌊${wave} 클리어 보상  💰${bonus}${income ? ` + 🪙${income}` : ''}  🔩${parts}`,
   crit: (n: number) => `${n}!`,
   levelUp: 'LV UP!',
   abilities: {
