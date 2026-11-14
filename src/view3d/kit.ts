@@ -86,3 +86,32 @@ export function limbs(mat: THREE.Material, opts: { width?: number; arms?: boolea
   }
   return g;
 }
+
+/**
+ * 가전 수비대 표식: 몸 뒤에서 나와 바닥에 늘어진 전선 꼬리 + 콘센트 플러그.
+ * 3/4 시점(오른쪽 앞에서 봄)에서 보이도록 오른쪽 뒤로 휘어진다. lit이면 플러그에 초록 불(레벨업 표시용)
+ */
+export function plugTail(opts: { y?: number; z?: number; lit?: boolean } = {}): THREE.Group {
+  const y = opts.y ?? 0.42, z = opts.z ?? -0.22;
+  const cord = plastic(0x3a3440, 0.35);
+  const g = group(tube([[0, y, z], [0.12, y - 0.18, z - 0.25], [0.38, 0.07, z - 0.38], [0.62, 0.06, z - 0.22]], 0.045, cord));
+  const plug = group(
+    rbox(0.24, 0.17, 0.2, 0.06, plastic(0xffffff, 0.3)),
+    at(rbox(0.04, 0.035, 0.12, 0.01, new THREE.MeshStandardMaterial({ color: 0xd8b04a, roughness: 0.25, metalness: 0.8 })), -0.05, 0, 0.14),
+    at(rbox(0.04, 0.035, 0.12, 0.01, new THREE.MeshStandardMaterial({ color: 0xd8b04a, roughness: 0.25, metalness: 0.8 })), 0.05, 0, 0.14),
+  );
+  if (opts.lit) plug.add(at(sphere(0.04, new THREE.MeshStandardMaterial({ color: 0x6aff8a, emissive: 0x3aff6a, emissiveIntensity: 1.2 })), 0, 0.09, 0));
+  g.add(at(plug, 0.72, 0.09, z - 0.12, 0, 1.2, 0));
+  return g;
+}
+
+/** 하수구 군단 표식: 머리에 쓴 작은 배수구 뚜껑 모자 (동그란 쇠 격자) */
+export function drainCap(size = 1): THREE.Group {
+  const iron = new THREE.MeshStandardMaterial({ color: 0x6a6878, roughness: 0.35, metalness: 0.6 });
+  const slot = plastic(0x1e1a26, 0.8);
+  const g = group(cyl(0.3, 0.32, 0.07, iron, 32), at(torus(0.3, 0.035, iron), 0, 0.03, 0, Math.PI / 2));
+  for (const x of [-0.14, 0, 0.14]) g.add(at(rbox(0.05, 0.02, 0.38 - Math.abs(x) * 1.2, 0.01, slot), x, 0.04, 0));
+  g.scale.setScalar(size);
+  g.rotation.z = -0.25; // 살짝 삐딱하게
+  return g;
+}
