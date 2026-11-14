@@ -114,7 +114,9 @@ scripts/       balance.ts (밸런스 시뮬레이터), branches.ts (갈래 벤�
 - Phaser 캔버스를 투명하게 두고 그 뒤에 three.js 캔버스를 깐다. UI·이펙트·숫자는 Phaser, 보드·캐릭터·바닥 표시(사거리, 배치 칸, 후광)는 three.js
 - 카메라는 원근 카메라(`makeCamera`). 게임 좌표 ↔ 화면 좌표는 `Board3D.project / unproject`로 바꾼다
 - 게임 규칙(`src/core`)은 3D와 상관없다. 고지대는 보기만 다르고, 소품 칸은 `blocked`로 설치 불가
-- 3D 모델이 아직 없는 캐릭터는 기존 그림을 세운 판(빌보드)으로 그린다
+- 캐릭터 23종 모두 2등신 3D 모델(`src/view3d/models.ts`). 가전은 공통으로 **전원 플러그 꼬리**가 있고, 플러그가 레벨 색으로 빛난다 (Lv1 하양, Lv2 초록, Lv3 금색, Lv4 보라). 업그레이드하면 튀어 오르며 플러그가 번쩍인다
+- 상점 아이콘과 2D 맵 그림(`public/sprites/*.png`)도 같은 모델을 렌더링한 것 (`node scripts/render3d.cjs`)
+- 모델이 없는 키는 그림을 세운 판(빌보드)으로 대신 그린다
 - WebGL을 못 쓰면 2D 타일 화면으로 대신 그린다
 
 ## 그래픽 바꾸기
