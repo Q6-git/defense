@@ -190,6 +190,8 @@ export interface UnitLevel {
   shred?: number;
   /** 맵 전체 적 이동 속도 감소율 (0.1 = -10%) */
   globalSlow?: number;
+  /** 맵 전체 적이 받는 피해 증가율 (0.15 = +15%) */
+  globalVuln?: number;
   /** 대상 방향 일직선 위의 적을 모두 맞힌다 (선의 반폭) */
   line?: number;
   /** 세탁기 동전 분수: 반경 안에서 처치된 적 보상 배율 */

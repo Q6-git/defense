@@ -82,7 +82,8 @@ export type GameEvent =
   | { type: 'bolt'; points: Vec[] }
   | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
   | { type: 'income'; x: number; y: number; amount: number }
-  | { type: 'waveCleared'; wave: number; bonus: number }
+  /** bonus: 클리어 보너스, income: 세탁기 수입 합계 (개별 수입은 뒤따르는 income 이벤트) */
+  | { type: 'waveCleared'; wave: number; bonus: number; income: number }
   | { type: 'earlyBonus'; amount: number }
   | { type: 'gameOver' }
   | { type: 'cardOffer' }
@@ -168,6 +169,8 @@ export class Game {
   private modCache = new Map<number, WaveModDef | null>();
   /** 에어컨의 맵 전체 감속 배율 (1이면 없음) */
   globalSlow = 1;
+  /** 에어컨(제습): 모든 적이 받는 피해 배율 */
+  globalVuln = 1;
   private breakerUsed = false;
   private modVersion = 0;
   private statCache = new WeakMap<Unit, { key: number; stats: UnitLevel }>();
@@ -431,6 +434,37 @@ export class Game {
     return this.modCache.get(n) ?? null;
   }
 
+  /** n번째 웨이브를 깨면 받는 클리어 보너스 (카드 효과 포함) */
+  clearBonus(n: number): number {
+    return Math.round(this.cfg.waveBonus(n) * this.mods.waveBonus);
+  }
+
+  /** 가전 하나가 웨이브 끝에 버는 돈. 이자는 그 시점 보유금(money) 기준 */
+  private unitIncome(u: Unit, money: number): number {
+    const lv = this.stats(u);
+    let income = lv.income ?? 0;
+    if (lv.interest) income += Math.min(lv.interest.max, Math.floor(money * lv.interest.rate));
+    return income;
+  }
+
+  /**
+   * 다음에 깰 웨이브의 코인 보상 미리보기 (진행 중이면 지금 웨이브, 아니면 다음 웨이브).
+   * 세탁기 이자는 지금 보유금 + 클리어 보너스 기준 추정치라 웨이브 중 처치 보상에 따라 달라질 수 있다.
+   */
+  clearRewardPreview(): { wave: number; bonus: number; income: number } | null {
+    const wave = this.phase === 'wave' ? this.wave : this.wave + 1;
+    if (this.finished || !this.waveDef(wave)) return null;
+    const bonus = this.clearBonus(wave);
+    let money = this.money + bonus;
+    let income = 0;
+    for (const u of this.units) {
+      const v = this.unitIncome(u, money);
+      money += v;
+      income += v;
+    }
+    return { wave, bonus, income };
+  }
+
   /** n번째 웨이브에 나오는 적 종류별 마릿수 (미리보기용) */
   wavePreview(n: number): { id: EnemyId; count: number }[] {
     const def = this.waveDef(n);
@@ -557,17 +591,18 @@ export class Game {
   private clearWave(): void {
     this.activeMod = null;
     this.modVersion++;
-    const bonus = Math.round(this.cfg.waveBonus(this.wave) * this.mods.waveBonus);
+    const bonus = this.clearBonus(this.wave);
     this.money += bonus;
-    this.events.push({ type: 'waveCleared', wave: this.wave, bonus });
+    const incomes: GameEvent[] = [];
+    let total = 0;
     for (const u of this.units) {
-      const lv = this.stats(u);
-      let income = lv.income ?? 0;
-      if (lv.interest) income += Math.min(lv.interest.max, Math.floor(this.money * lv.interest.rate));
+      const income = this.unitIncome(u, this.money);
       if (!income) continue;
       this.money += income;
-      this.events.push({ type: 'income', x: u.x, y: u.y, amount: income });
+      total += income;
+      incomes.push({ type: 'income', x: u.x, y: u.y, amount: income });
     }
+    this.events.push({ type: 'waveCleared', wave: this.wave, bonus, income: total }, ...incomes);
     if (!this.waveDef(this.wave + 1)) {
       this.phase = 'won';
       this.events.push({ type: 'victory' });
@@ -638,9 +673,11 @@ export class Game {
     for (const u of this.units) u.dmgMul = 1;
     // 에어컨: 맵 전체 감속 (가장 센 것 하나)
     this.globalSlow = 1;
+    this.globalVuln = 1;
     for (const u of this.units) {
-      const gs = this.stats(u).globalSlow;
+      const { globalSlow: gs, globalVuln: gv } = this.stats(u);
       if (gs) this.globalSlow = Math.min(this.globalSlow, 1 - gs);
+      if (gv) this.globalVuln = Math.max(this.globalVuln, 1 + gv);
     }
     for (const b of this.units) {
       if (b.def.kind !== 'buff') continue;
@@ -713,24 +750,27 @@ export class Game {
           this.events.push({ type: 'blast', x: t.x, y: t.y, r, color: u.def.color });
           for (const e of this.enemies) if (e.hp > 0 && dist(e, t) <= r + e.def.radius) this.damage(e, dmg, opts);
           if (lv.burn) this.zones.push({ x: t.x, y: t.y, r: r * 0.8, dps: lv.burn.dps, time: lv.burn.duration });
-        } else if (lv.hitAll) {
-          this.events.push({ type: 'pulse', unit: u.uid, x: u.x, y: u.y, r: lv.range, color: u.def.color, branch });
-          for (const e of inRange) this.damage(e, dmg, opts);
         } else {
-          if (lv.line) {
+          // 맞힌 적 모두에게 방어력 깎기와 화상이 들어간다
+          const hits: Enemy[] = [];
+          if (lv.hitAll) {
+            this.events.push({ type: 'pulse', unit: u.uid, x: u.x, y: u.y, r: lv.range, color: u.def.color, branch });
+            hits.push(...inRange);
+          } else if (lv.line) {
             // 식기세척기: 대상 방향으로 사거리 끝까지 뻗는 물줄기 위의 적을 모두 맞힌다
             const d = Math.max(1, dist(u, t));
             const end = { x: u.x + ((t.x - u.x) / d) * lv.range, y: u.y + ((t.y - u.y) / d) * lv.range };
             this.events[this.events.length - 1] = { type: 'shot', unit: u.uid, kind: u.def.id, branch, from: { x: u.x, y: u.y }, to: end, color: u.def.color };
-            for (const e of this.enemies) {
-              if (e.hp > 0 && distToSegment(e, u, end) <= lv.line + e.def.radius) this.damage(e, dmg, opts);
-            }
+            for (const e of this.enemies) if (e.hp > 0 && distToSegment(e, u, end) <= lv.line + e.def.radius) hits.push(e);
           } else {
-            this.damage(t, dmg, opts, lv.shred);
+            hits.push(t);
           }
-          if (lv.dot && t.hp > 0 && t.shield <= 0) {
-            t.burnDps = Math.max(t.burnDps, lv.dot.dps * this.mods.damage[u.def.id] * this.mods.allDamage * u.dmgMul);
-            t.burnTime = lv.dot.duration;
+          for (const e of hits) {
+            this.damage(e, dmg, opts, lv.shred);
+            if (lv.dot && e.hp > 0 && e.shield <= 0) {
+              e.burnDps = Math.max(e.burnDps, lv.dot.dps * this.mods.damage[u.def.id] * this.mods.allDamage * u.dmgMul);
+              e.burnTime = lv.dot.duration;
+            }
           }
           if (lv.chainHits && lv.chainHits > 1) {
             // 멀티탭: 가까운 적으로 번개가 튕긴다
@@ -770,7 +810,7 @@ export class Game {
       return;
     }
     const frozen = e.stunTime > 0 ? e.frozenVuln : 1;
-    const amp = amount * e.hackMul * frozen;
+    const amp = amount * e.hackMul * frozen * this.globalVuln;
     // 방어력 무시 공격이거나 해킹당한 적은 방어력이 0
     const armor = opts.pierce || e.hackMul > 1 ? 0 : Math.max(0, e.def.armor + (this.activeMod?.armorAdd ?? 0) - e.shred);
     // 다리미: 맞힌 뒤 방어력을 깎는다 (다음 공격부터 적용)
