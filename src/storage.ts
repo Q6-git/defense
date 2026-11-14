@@ -1,6 +1,7 @@
 // 최고 기록과 마지막으로 고른 설정(난이도, 무한 모드, 맵)만 브라우저에 저장한다.
 // 저장소를 쓸 수 없는 환경(사생활 보호 모드 등)에서는 조용히 무시한다.
 import type { DifficultyId } from './core/types';
+import { MAP_ORDER } from './data/map';
 
 const PREFIX = 'appliance-defense.v2.';
 
@@ -51,7 +52,7 @@ export function loadSetup(): RunSetup {
   return {
     difficulty: DIFFS.includes(d as DifficultyId) ? (d as DifficultyId) : 'normal',
     endless: get('endless') === '1',
-    map: ['kitchen', 'bathroom', 'balcony'].includes(get('map') ?? '') ? get('map')! : 'kitchen',
+    map: (MAP_ORDER as readonly string[]).includes(get('map') ?? '') ? get('map')! : 'kitchen',
   };
 }
 

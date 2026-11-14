@@ -64,6 +64,36 @@ export const MAP_BALCONY: MapDef = {
   enemyHpMul: 1.08,
 };
 
-export const MAP_ORDER = ['kitchen', 'bathroom', 'balcony'] as const;
+/** 맵 4: 세탁실. 바깥에서 안쪽으로 빙글빙글 도는 긴 나선, 콘센트는 한가운데. 안쪽 자리는 여러 바퀴를 한꺼번에 덮는다 */
+export const MAP_LAUNDRY: MapDef = {
+  id: 'laundry',
+  width: 1280,
+  height: 720,
+  area: { x: 0, y: 56, w: 1040, h: 664 },
+  paths: [[
+    { x: -30, y: 110 }, { x: 960, y: 110 }, { x: 960, y: 660 }, { x: 80, y: 660 }, { x: 80, y: 240 },
+    { x: 830, y: 240 }, { x: 830, y: 530 }, { x: 210, y: 530 }, { x: 210, y: 385 }, { x: 650, y: 385 },
+  ]],
+  pathHalfWidth: 26,
+  enemyHpMul: 1.45,
+};
+
+/** 맵 5: 거실. 배수관이 자기 자신과 세 번 엇갈린다. 교차점 근처 가전은 같은 적을 두 번 만난다 */
+export const MAP_LIVING: MapDef = {
+  id: 'living',
+  width: 1280,
+  height: 720,
+  area: { x: 0, y: 56, w: 1040, h: 664 },
+  paths: [[
+    { x: -30, y: 210 }, { x: 760, y: 210 }, { x: 760, y: 570 }, { x: 380, y: 570 }, { x: 380, y: 110 },
+    { x: 920, y: 110 }, { x: 920, y: 400 }, { x: 560, y: 400 }, { x: 560, y: 682 }, { x: 980, y: 682 },
+  ]],
+  pathHalfWidth: 26,
+  enemyHpMul: 1.5,
+};
+
+export const MAP_ORDER = ['kitchen', 'bathroom', 'balcony', 'laundry', 'living'] as const;
 export type MapId = (typeof MAP_ORDER)[number];
-export const MAPS: Record<MapId, MapDef> = { kitchen: MAP_KITCHEN, bathroom: MAP_BATHROOM, balcony: MAP_BALCONY };
+export const MAPS: Record<MapId, MapDef> = {
+  kitchen: MAP_KITCHEN, bathroom: MAP_BATHROOM, balcony: MAP_BALCONY, laundry: MAP_LAUNDRY, living: MAP_LIVING,
+};

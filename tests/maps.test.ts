@@ -23,6 +23,37 @@ describe('맵', () => {
     }
   });
 
+  it('세탁실은 주방보다 훨씬 긴 길이고, 콘센트는 맵 가운데 쪽에 있다', () => {
+    const kitchen = new Game(defaultConfig('normal', false, 'kitchen')).paths[0].length;
+    const g = new Game(defaultConfig('normal', false, 'laundry'));
+    expect(g.paths[0].length).toBeGreaterThan(kitchen * 1.5);
+    const end = g.paths[0].pointAt(g.paths[0].length);
+    const { area } = g.cfg.map;
+    expect(Math.abs(end.x - (area.x + area.w / 2))).toBeLessThan(area.w * 0.25);
+    expect(Math.abs(end.y - (area.y + area.h / 2))).toBeLessThan(area.h * 0.25);
+  });
+
+  it('거실 배수관은 자기 자신과 세 번 엇갈린다', () => {
+    const pts = MAPS.living.paths[0];
+    const segs = pts.slice(1).map((p, i) => [pts[i], p] as const);
+    let crossings = 0;
+    for (let i = 0; i < segs.length; i++) {
+      for (let j = i + 2; j < segs.length; j++) {
+        const [a, b] = segs[i];
+        const [c, d] = segs[j];
+        // 가로·세로 선분끼리만 있으므로 하나는 가로, 하나는 세로일 때 교차를 본다
+        const h = a.y === b.y ? [a, b] : c.y === d.y ? [c, d] : null;
+        const v = a.x === b.x ? [a, b] : c.x === d.x ? [c, d] : null;
+        if (!h || !v || h[0] === v[0]) continue;
+        const x = v[0].x, y = h[0].y;
+        const inH = x > Math.min(h[0].x, h[1].x) && x < Math.max(h[0].x, h[1].x);
+        const inV = y > Math.min(v[0].y, v[1].y) && y < Math.max(v[0].y, v[1].y);
+        if (inH && inV) crossings++;
+      }
+    }
+    expect(crossings).toBe(3);
+  });
+
   it('길이 두 개인 욕실에서는 적이 번갈아 두 길로 나온다', () => {
     const g = new Game({ ...defaultConfig('normal', false, 'bathroom'), seed: 1 });
     expect(g.paths.length).toBe(2);

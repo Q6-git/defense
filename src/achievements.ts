@@ -58,6 +58,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'clear_kitchen', emoji: '🍳', reward: 50, check: (r) => won(r) && r.map === 'kitchen' },
   { id: 'clear_bathroom', emoji: '🛁', reward: 50, check: (r) => won(r) && r.map === 'bathroom' },
   { id: 'clear_balcony', emoji: '🪴', reward: 50, check: (r) => won(r) && r.map === 'balcony' },
+  { id: 'clear_laundry', emoji: '🌀', reward: 50, check: (r) => won(r) && r.map === 'laundry' },
+  { id: 'clear_living', emoji: '🛋️', reward: 50, check: (r) => won(r) && r.map === 'living' },
   { id: 'clear_hard', emoji: '🔥', reward: 100, check: (r) => won(r) && (r.difficulty === 'hard' || r.difficulty === 'hell') },
   { id: 'clear_hell', emoji: '💀', reward: 200, check: (r) => won(r) && r.difficulty === 'hell' },
   { id: 'endless_30', emoji: '♾️', reward: 150, check: (r) => r.endless && r.cleared >= 30 },

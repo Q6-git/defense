@@ -281,10 +281,12 @@ export class GameScene extends Phaser.Scene {
     const { width } = this.sim.cfg.map;
     layer.add(text(this, width / 2, 108, STR.chooseMap, 18, THEME.textSoft).setOrigin(0.5));
     MAP_ORDER.forEach((id, i) => {
-      const x = width / 2 + (i - 1) * 176;
-      const b = button(this, x, 160, 166, 66, '', () => this.changeSetup({ map: id }), id === this.setup.map ? 0xfff0c8 : THEME.white, 16);
+      // 맵 5개가 시작 창 폭에 들어가도록 버튼을 좁게 나란히
+      const gap = 124;
+      const x = width / 2 + (i - (MAP_ORDER.length - 1) / 2) * gap;
+      const b = button(this, x, 160, gap - 8, 66, '', () => this.changeSetup({ map: id }), id === this.setup.map ? 0xfff0c8 : THEME.white, 16);
       const m = STR.maps[id];
-      b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(15).setLineSpacing(2);
+      b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(14).setLineSpacing(2);
       b.bg.setStrokeStyle(id === this.setup.map ? 4 : 2, id === this.setup.map ? THEME.selected : THEME.cardLine);
       layer.add(b.container);
     });
@@ -1205,10 +1207,12 @@ export class GameScene extends Phaser.Scene {
     const close = button(this, width / 2 + 340, 40, 130, 44, STR.close, () => layer.destroy(), THEME.neutral, 18);
     layer.add([dim, box, title, parts, close.container]);
     ACHIEVEMENTS.forEach((a, i) => {
-      const y = 96 + i * 43;
+      // 업적 수에 맞춰 줄 간격을 줄인다 (창 높이 안에 다 들어가도록)
+      const step = Math.min(43, 590 / ACHIEVEMENTS.length);
+      const y = 96 + i * step;
       const done = p.done.includes(a.id);
       const info = STR.achievements[a.id];
-      const row = new RoundBox(this, width / 2, y, 820, 38, done ? 0xfff0c8 : THEME.white, 10).setStrokeStyle(2, done ? THEME.selected : THEME.cardLine);
+      const row = new RoundBox(this, width / 2, y, 820, step - 5, done ? 0xfff0c8 : THEME.white, 10).setStrokeStyle(2, done ? THEME.selected : THEME.cardLine);
       const name = text(this, width / 2 - 395, y, `${a.emoji} ${info?.name ?? a.id}`, 17, done ? THEME.text : THEME.textSoft).setOrigin(0, 0.5);
       const prog = a.progress && !done ? `  (${a.progress(p).join('/')})` : '';
       const desc = text(this, width / 2 - 170, y, `${info?.desc ?? ''}${prog}`, 15, THEME.textSoft).setOrigin(0, 0.5);
@@ -1378,6 +1382,24 @@ function drawFloor(g: Phaser.GameObjects.Graphics, id: string, a: { x: number; y
     g.lineStyle(2, 0xffffff, 0.9);
     for (let x = a.x; x <= a.x + a.w; x += s) g.lineBetween(x, a.y, x, a.y + a.h);
     for (let y = a.y; y <= a.y + a.h; y += s) g.lineBetween(a.x, y, a.x + a.w, y);
+    return;
+  }
+  if (id === 'laundry') {
+    // 세탁실: 연회색 타일에 물방울 무늬
+    const s = 56;
+    g.fillStyle(0xeef1f6).fillRect(a.x, a.y, a.w, a.h);
+    for (let y = a.y, row = 0; y < a.y + a.h; y += s, row++) {
+      for (let x = a.x + (row % 2) * (s / 2); x < a.x + a.w; x += s) g.fillStyle(0xdde3ee).fillCircle(x + s / 4, y + s / 2, 7);
+    }
+    g.lineStyle(2, 0xffffff, 0.8);
+    for (let y = a.y; y <= a.y + a.h; y += s) g.lineBetween(a.x, y, a.x + a.w, y);
+    return;
+  }
+  if (id === 'living') {
+    // 거실: 따뜻한 카펫 줄무늬
+    const h = 44;
+    for (let y = a.y, row = 0; y < a.y + a.h; y += h, row++) g.fillStyle(row % 2 ? 0xf3e2d3 : 0xf7ebdf).fillRect(a.x, y, a.w, h);
+    for (let x = a.x + 30; x < a.x + a.w; x += 60) g.fillStyle(0xe9d2bf, 0.5).fillRect(x, a.y, 3, a.h);
     return;
   }
   if (id === 'balcony') {
