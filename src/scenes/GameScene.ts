@@ -12,6 +12,7 @@ import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achieve
 import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, saveProgress, saveSetup, type RunSetup } from '../storage';
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
+import type { Grid } from '../core/types';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
 import { baseScale, button, card, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
@@ -228,7 +229,7 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on(Phaser.Core.Events.HIDDEN, onHidden);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off(Phaser.Core.Events.HIDDEN, onHidden));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.placing || this.aiming) this.ghost = { x: p.worldX, y: p.worldY };
+      if (this.placing || this.aiming) this.ghost = this.snap(p.worldX, p.worldY);
     });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onMapTap(p.worldX, p.worldY));
     if (!data.start) this.showDifficultyPicker();
@@ -316,6 +317,16 @@ export class GameScene extends Phaser.Scene {
 
   // ───────────────────────── 입력
 
+  /** 격자 맵에서 가전을 놓을 때는 칸 가운데로 맞춘다 */
+  private snap(x: number, y: number): { x: number; y: number } {
+    const g = this.sim.cfg.map.grid;
+    if (!g || !this.placing) return { x, y };
+    const c = Math.floor((x - g.x) / g.size);
+    const r = Math.floor((y - g.y) / g.size);
+    if (c < 0 || r < 0 || c >= g.cols || r >= g.rows) return { x, y };
+    return { x: g.x + (c + 0.5) * g.size, y: g.y + (r + 0.5) * g.size };
+  }
+
   private onMapTap(x: number, y: number): void {
     const { area } = this.sim.cfg.map;
     if (this.pauseLayer || this.sim.offer || this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
@@ -329,6 +340,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.placing) {
       const id = this.placing;
+      ({ x, y } = this.snap(x, y));
       const res = this.sim.apply({ type: 'place', unit: id, x, y });
       if (res.ok) {
         this.placing = null;
@@ -495,7 +507,8 @@ export class GameScene extends Phaser.Scene {
   private drawMap(): void {
     const { map } = this.sim.cfg;
     const g = this.add.graphics();
-    drawFloor(g, map.id, map.area);
+    if (map.grid) drawTiles(g, map.grid, map.area, (x, y) => this.sim.distanceToPath({ x, y }) < map.pathHalfWidth);
+    else drawFloor(g, map.id, map.area);
     // 장애물
     for (const b of map.blocked ?? []) {
       g.fillStyle(0x7a5a3a, 0.1).fillRoundedRect(b.x, b.y + 4, b.w, b.h, 12);
@@ -518,10 +531,15 @@ export class GameScene extends Phaser.Scene {
         for (const p of shifted) g.fillStyle(color, alpha).fillCircle(p.x, p.y, width / 2);
       }
     };
-    layer(hw * 2 + 10, 0x7a5a3a, 0.15, 6);
-    layer(hw * 2 + 8, 0x7fa7bf, 1);
-    layer(hw * 2, 0xcfe7f3, 1);
-    layer(hw * 0.7, 0xeaf6fc, 0.9, -hw * 0.35);
+    if (!map.grid) {
+      layer(hw * 2 + 10, 0x7a5a3a, 0.15, 6);
+      layer(hw * 2 + 8, 0x7fa7bf, 1);
+      layer(hw * 2, 0xcfe7f3, 1);
+      layer(hw * 0.7, 0xeaf6fc, 0.9, -hw * 0.35);
+    } else {
+      // 격자 맵: 수로 바닥에 흐르는 물빛 한 줄
+      layer(hw * 0.5, 0xeaf6fc, 0.55, 4);
+    }
     // 진행 방향 표시
     g.fillStyle(0x7fa7bf, 0.45);
     for (const path of this.sim.paths) {
@@ -612,7 +630,7 @@ export class GameScene extends Phaser.Scene {
     // 적: 통통 튀며 움직이고(떠오르면 길쭉, 내려앉으면 납작), 가는 방향을 보고, 맞으면 붉게 움찔한다
     const hop = (e: Enemy) => (e.stunTime <= 0 ? Math.abs(Math.sin(t * 9 + e.uid)) : 0);
     const pos = (e: Enemy) => ({ x: e.x, y: e.y - hop(e) * 5 });
-    syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), key: e.def.id, emoji: e.def.emoji, size: e.def.radius * (e.def.radius < 13 ? 3.2 : 2.6) })));
+    syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), key: e.def.id, emoji: e.def.emoji, size: e.def.radius * (e.def.radius < 13 ? 3.2 : 2.6) })), 2, true);
     for (const e of gm.enemies) {
       const p = pos(e);
       const flash = this.flashes.has(e.uid);
@@ -679,7 +697,14 @@ export class GameScene extends Phaser.Scene {
       const color = ok ? 0x3fae55 : 0xe5484d;
       const r = def.levels[0].range;
       if (r > 0) drawRange(o, this.ghost.x, this.ghost.y, r, color, t);
-      o.fillStyle(color, 0.35).fillCircle(this.ghost.x, this.ghost.y, def.radius + 4);
+      const grid = gm.cfg.map.grid;
+      if (grid) {
+        const h = grid.size / 2 - 2;
+        o.fillStyle(color, 0.4).fillRoundedRect(this.ghost.x - h, this.ghost.y - h, h * 2, h * 2, 8);
+        o.lineStyle(3, color, 0.9).strokeRoundedRect(this.ghost.x - h, this.ghost.y - h, h * 2, h * 2, 8);
+      } else {
+        o.fillStyle(color, 0.35).fillCircle(this.ghost.x, this.ghost.y, def.radius + 4);
+      }
       // 놓일 가전을 반투명하게 미리 보여 준다
       if (this.ghostIcon?.id !== this.placing) {
         this.ghostIcon?.icon.destroy();
@@ -988,7 +1013,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncUnits(): void {
-    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.9 })));
+    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.9 })), 2, true);
   }
 
   private popIn(u: Unit | undefined): void {
@@ -1345,11 +1370,15 @@ export class GameScene extends Phaser.Scene {
   }
 }
 
+/** 캐릭터 그림에서 발바닥 높이 (그림 위쪽 0 ~ 아래쪽 1) */
+const FEET = 0.82;
+
 function syncEmojis(
   scene: Phaser.Scene,
   pool: Map<number, Icon>,
   items: { uid: number; x: number; y: number; key?: string; emoji: string; size: number }[],
   depth = 2,
+  feet = false,
 ): void {
   const alive = new Set<number>();
   for (const it of items) {
@@ -1357,14 +1386,52 @@ function syncEmojis(
     let t = pool.get(it.uid);
     if (!t) {
       t = icon(scene, 0, 0, it.key, it.emoji, it.size).setDepth(depth);
+      // 캐릭터는 발바닥을 기준점으로 세운다 (늘였다 줄였다 해도 발은 바닥에 붙어 있게)
+      if (feet) t.setOrigin(0.5, FEET);
       pool.set(it.uid, t);
     }
-    t.setPosition(it.x, it.y);
+    if (feet) {
+      t.setPosition(it.x, it.y + it.size * (FEET - 0.5));
+      // 3/4 시점: 화면 아래쪽(앞)에 있는 캐릭터가 위쪽 캐릭터를 가린다
+      t.setDepth(depth + it.y / 10000);
+    } else t.setPosition(it.x, it.y);
   }
   for (const [uid, t] of pool) {
     if (!alive.has(uid)) {
       t.destroy();
       pool.delete(uid);
+    }
+  }
+}
+
+/**
+ * 격자 맵 바닥: 도톰한 타일 블록을 깔고, 배수관 칸은 한 단 낮은 수로로 그린다.
+ * 위에서 비스듬히 내려다보는 시점이라 수로 위쪽 칸의 앞면(벽)이 보인다.
+ */
+function drawTiles(g: Phaser.GameObjects.Graphics, grid: Grid, a: { x: number; y: number; w: number; h: number }, isPath: (x: number, y: number) => boolean): void {
+  const { size: s } = grid;
+  const LIP = 9; // 타일 앞면 두께
+  g.fillStyle(0xe2c9a6).fillRect(a.x, a.y, a.w, a.h); // 줄눈
+  const path = (c: number, r: number) => r >= 0 && r < grid.rows && c >= 0 && c < grid.cols && isPath(grid.x + (c + 0.5) * s, grid.y + (r + 0.5) * s);
+  // 맵 위아래 남는 줄은 줄눈 색 그대로 두고, 격자 칸만 그린다
+  for (let r = 0; r < grid.rows; r++) {
+    for (let c = 0; c < grid.cols; c++) {
+      const x = grid.x + c * s;
+      const y = grid.y + r * s;
+      if (path(c, r)) {
+        // 수로: 물 바닥 + 위쪽(북쪽) 칸이 바닥이면 그 칸의 앞면 벽이 보인다
+        g.fillStyle(0x9fd3ea).fillRect(x, y, s, s);
+        if (!path(c, r - 1)) {
+          g.fillStyle(0xc9a174).fillRect(x, y, s, LIP);
+          g.fillStyle(0x000000, 0.08).fillRect(x, y + LIP, s, 6);
+        }
+        continue;
+      }
+      // 바닥 타일: 앞면(아래쪽 두께) → 윗면 → 윗면 하이라이트
+      const light = (r + c) % 2 === 0;
+      g.fillStyle(light ? 0xe8cfa8 : 0xe0c39a).fillRoundedRect(x + 2, y + 2, s - 4, s - 2, 8);
+      g.fillStyle(light ? 0xfdf3e1 : 0xf6e2c4).fillRoundedRect(x + 2, y + 2, s - 4, s - 4 - LIP / 2, 8);
+      g.fillStyle(0xffffff, 0.5).fillRoundedRect(x + 7, y + 5, s - 14, 3, 2);
     }
   }
 }

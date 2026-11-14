@@ -1,4 +1,11 @@
-import type { MapDef } from '../core/types';
+import type { Grid, MapDef, Vec } from '../core/types';
+
+/** 타일 격자: 52px 칸 20×12. 배수관 폭(52)이 정확히 한 칸 */
+export const GRID: Grid = { size: 52, x: 0, y: 72, cols: 20, rows: 12 };
+/** c열 r행 칸의 가운데 좌표. c = -1이면 맵 왼쪽 바깥(배수구 입구) */
+export function tile(c: number, r: number): Vec {
+  return { x: c < 0 ? -30 : GRID.x + c * GRID.size + GRID.size / 2, y: GRID.y + r * GRID.size + GRID.size / 2 };
+}
 
 /** 맵 1: 주방 배수구 → 거실 콘센트(기지) */
 export const MAP_KITCHEN: MapDef = {
@@ -6,17 +13,9 @@ export const MAP_KITCHEN: MapDef = {
   width: 1280,
   height: 720,
   area: { x: 0, y: 56, w: 1040, h: 664 },
-  paths: [[
-    { x: -30, y: 150 },
-    { x: 860, y: 150 },
-    { x: 860, y: 330 },
-    { x: 170, y: 330 },
-    { x: 170, y: 530 },
-    { x: 700, y: 530 },
-    { x: 700, y: 650 },
-    { x: 960, y: 650 },
-  ]],
+  paths: [[tile(-1, 1), tile(16, 1), tile(16, 5), tile(3, 5), tile(3, 9), tile(13, 9), tile(13, 11), tile(18, 11)]],
   pathHalfWidth: 26,
+  grid: GRID,
 };
 
 /** 맵 2: 욕실. 위아래 배수구 두 곳에서 나온 적이 가운데서 합류한다 */

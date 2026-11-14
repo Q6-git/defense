@@ -72,6 +72,18 @@ export interface MapDef {
   blocked?: (Rect & { emoji: string })[];
   /** 맵별 적 체력 배율 (길 길이와 설치 공간 차이를 보정) */
   enemyHpMul?: number;
+  /** 타일 격자. 있으면 바닥을 칸으로 그리고 가전은 칸 가운데에 놓인다 (길은 칸 가운데를 지나야 한다) */
+  grid?: Grid;
+}
+
+export interface Grid {
+  /** 한 칸의 크기(px) */
+  size: number;
+  /** 왼쪽 위 칸의 왼쪽 위 모서리 */
+  x: number;
+  y: number;
+  cols: number;
+  rows: number;
 }
 
 export interface Enemy {
