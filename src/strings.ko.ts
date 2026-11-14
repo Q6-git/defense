@@ -179,10 +179,10 @@ export const STR = {
     overcharge: { name: '과충전', full: '과충전 보조배터리', desc: '좁은 범위 공격력 +90%' },
     steam: { name: '스팀', full: '스팀 다리미', desc: '증기 관통 + 방어 깎기' },
     press: { name: '프레스', full: '프레스 다리미', desc: '강한 한 방 + 방어 6 깎기' },
-    deepfreeze: { name: '급냉', full: '급냉 에어컨', desc: '맵 전체 적 속도 -30%' },
+    deepfreeze: { name: '급냉', full: '급냉 에어컨', desc: '맵 전체 적 속도 -45%' },
     dehumid: { name: '제습', full: '제습 에어컨', desc: '감속 + 모든 적이 더 아프게' },
     jet: { name: '고압 세척', full: '고압 세척기', desc: '굵은 물줄기로 관통' },
-    sterilize: { name: '살균', full: '살균 세척기', desc: '강한 물줄기, 방어 무시' },
+    sterilize: { name: '살균', full: '살균 세척기', desc: '한 마리에 강한 물줄기, 방어 무시' },
   } as Record<string, { name: string; full: string; desc: string }>,
   target: (m: TargetMode) => `🎯 ${TARGET_NAMES[m]}`,
   stats: {

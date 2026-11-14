@@ -87,7 +87,7 @@ describe('뽑기로 얻는 가전', () => {
     g.units = []; // 가전을 치워도 불은 계속 탄다
     const hp = e.hp;
     g.update(1);
-    expect(hp - e.hp).toBeCloseTo(14, 0);
+    expect(hp - e.hp).toBeCloseTo(g.cfg.units.stove.levels[0].dot!.dps, 0);
   });
 
   it('멀티탭: 번개가 가까운 적으로 튕기며 피해가 30%씩 줄어든다', () => {
@@ -121,7 +121,7 @@ describe('뽑기로 얻는 가전', () => {
     const e = still(g, 'roach', 560);
     const hp = e.hp;
     g.update(1 / 60);
-    expect(hp - e.hp).toBeCloseTo(90 - 8);
+    expect(hp - e.hp).toBeCloseTo(g.cfg.units.iron.levels[0].damage - 8);
     expect(e.shred).toBe(2);
   });
 
@@ -134,7 +134,7 @@ describe('뽑기로 얻는 가전', () => {
     expect(g.canPlace('aircon', 60, 400)).toBe('limit');
     const d = a.dist;
     g.update(1);
-    expect(a.dist - d).toBeCloseTo(plain * 0.9, 0);
+    expect(a.dist - d).toBeCloseTo(plain * (1 - g.cfg.units.aircon.levels[0].globalSlow!), 0);
   });
 
   it('식기세척기: 물줄기 위의 적을 모두 맞힌다', () => {
@@ -203,7 +203,7 @@ describe('뽑기 가전 Lv4 갈림길', () => {
     expect(near.shred).toBe(3);
   });
 
-  it('제습 에어컨: 모든 적이 받는 피해가 20% 늘어난다', () => {
+  it('제습 에어컨: 모든 적이 받는 피해가 늘어난다', () => {
     const g = game();
     g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
     const e = still(g, 'grease', 560);
@@ -214,7 +214,7 @@ describe('뽑기 가전 Lv4 갈림길', () => {
     g.units[0].cooldown = 0;
     hp = e.hp;
     g.update(1 / 60);
-    expect(hp - e.hp).toBeCloseTo(plain * 1.2);
+    expect(hp - e.hp).toBeCloseTo(plain * (1 + g.cfg.units.aircon.branches![1].globalVuln!));
   });
 
   it('강적용 갈래는 고르는 순간 타겟이 "가장 강한"이 된다', () => {
