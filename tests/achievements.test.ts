@@ -47,7 +47,7 @@ describe('업적', () => {
     expect(p.parts).toBe(50);
   });
 
-  it('업적은 14개이고 id가 겹치지 않는다', () => {
-    expect(new Set(ACHIEVEMENTS.map((a) => a.id)).size).toBe(14);
+  it('업적은 16개이고 id가 겹치지 않는다', () => {
+    expect(new Set(ACHIEVEMENTS.map((a) => a.id)).size).toBe(16);
   });
 });
