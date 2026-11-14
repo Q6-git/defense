@@ -76,11 +76,16 @@ export interface MapDef {
   grid?: Grid;
   /** 3D 화면의 고지대: c,r 칸부터 w×h 칸을 level 단 높인다 (보기만 다르고 규칙은 같다) */
   hills?: { c: number; r: number; w: number; h: number; level: number }[];
-  /** 칸 위의 소품 (화분, 책 더미 등). 소품이 있는 칸에는 설치할 수 없다 */
-  decor?: { kind: DecorKind; c: number; r: number; rot?: number }[];
+  /** 칸 위의 소품 (화분, 책 더미 등). c,r 칸부터 w×h 칸(기본 1×1)을 차지하고, 그 칸에는 설치할 수 없다 */
+  decor?: { kind: DecorKind; c: number; r: number; w?: number; h?: number; rot?: number }[];
 }
 
-export type DecorKind = 'herb' | 'herbTall' | 'books' | 'cereal' | 'shakers' | 'fruit';
+export type DecorKind =
+  | 'herb' | 'herbTall' | 'books' | 'cereal' | 'shakers' | 'fruit' // 주방
+  | 'bathtub' | 'duck' | 'shampoo' | 'toothCup' | 'soap' // 욕실
+  | 'plantPot' | 'basket' | 'shirts' // 베란다
+  | 'detergent' | 'clothesPile' // 세탁실
+  | 'lamp' | 'toyBlocks' | 'remote'; // 거실
 
 export interface Grid {
   /** 한 칸의 크기(px) */
