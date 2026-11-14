@@ -1,7 +1,7 @@
 // 가전과 적의 3D 모델. 게임의 3D 화면(src/view3d/board.ts)과 그림 렌더링(scripts/render3d.cjs)이 같이 쓴다.
 // 모델은 원점(발바닥 가운데)에 서 있고 앞(+z)을 본다.
 import * as THREE from 'three';
-import { at, cyl, drainCap, face, group, limbs, metal, plastic, plugTail, rbox, sphere, torus, tube } from './kit';
+import { at, cyl, face, group, limbs, metal, plastic, plugTail, rbox, sphere, torus, tube } from './kit';
 
 type Model = () => THREE.Object3D;
 
@@ -69,14 +69,13 @@ const goo: Model = () => {
     at(sphere(0.16, slime, 1, 0.7, 1), -0.62, 0.15, 0.25),
     at(sphere(0.13, slime, 1, 0.7, 1), 0.58, 0.12, 0.35),
     at(face(1.6, { mouth: 'o', spread: 0.24 }), 0.05, 0.62, 0.6),
-    at(drainCap(0.9), 0.05, 1.12, 0),
   );
 };
 
 const rat: Model = () => {
   const fur = plastic(0x9a8f86, 0.6);
   const pink = plastic(0xf5a3b3, 0.5);
-  const head = group(sphere(0.55, fur, 1.1, 1, 1), at(face(0.95, { mouth: 'grr' }), 0, 0.05, 0.52), at(sphere(0.09, pink), 0, -0.1, 0.57), at(drainCap(0.85), 0, 0.55, 0));
+  const head = group(sphere(0.55, fur, 1.1, 1, 1), at(face(0.95, { mouth: 'grr' }), 0, 0.05, 0.52), at(sphere(0.09, pink), 0, -0.1, 0.57));
   for (const side of [-1, 1]) {
     head.add(at(sphere(0.3, fur, 1, 1, 0.35), side * 0.45, 0.42, -0.05));
     head.add(at(sphere(0.2, pink, 1, 1, 0.3), side * 0.45, 0.42, 0.02));
@@ -92,7 +91,7 @@ const rat: Model = () => {
 const roach: Model = () => {
   const shell = new THREE.MeshStandardMaterial({ color: 0x7a4a24, roughness: 0.2, metalness: 0.15 });
   const dark = plastic(0x4a2c14, 0.4);
-  const head = group(sphere(0.58, dark, 1.1, 1, 1), at(face(1.15, { mouth: 'grr', light: true }), 0, 0.02, 0.56), at(drainCap(0.85), 0, 0.57, 0));
+  const head = group(sphere(0.58, dark, 1.1, 1, 1), at(face(1.15, { mouth: 'grr', light: true }), 0, 0.02, 0.56));
   for (const side of [-1, 1]) {
     head.add(tube([[side * 0.2, 0.45, 0.1], [side * 0.35, 0.85, 0.05], [side * 0.65, 1.0, -0.2]], 0.03, dark));
   }

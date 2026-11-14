@@ -553,7 +553,9 @@ export class GameScene extends Phaser.Scene {
     }
     sfx.play('upgrade');
     const color = branch !== undefined ? 0xc58aff : 0xffd35a;
-    const ring = this.add.circle(u.x, u.y, u.def.radius, color, 0).setStrokeStyle(4, color).setDepth(8);
+    this.board?.levelUp(u.uid, this.clock);
+    const center = this.sp(u.x, u.y, this.board ? u.def.radius : 0);
+    const ring = this.add.circle(center.x, center.y, u.def.radius, color, 0).setStrokeStyle(4, color).setDepth(8);
     this.tweens.add({ targets: ring, scale: branch !== undefined ? 3.5 : 2.4, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
     if (branch !== undefined) {
       const bid = u.def.branches![branch].id;

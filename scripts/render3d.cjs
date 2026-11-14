@@ -1,11 +1,12 @@
 // 3D 모델(scripts/art3d/models.ts)을 PNG로 렌더링해 public/sprites/ 에 저장한다.
-// 사용법: npx vite --port 5199 & 띄운 뒤  node scripts/render3d.cjs [--out=폴더]
+// 사용법: npx vite --port 5199 & 띄운 뒤  node scripts/render3d.cjs [--out=폴더] [--set=samples]
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 (async () => {
   const out = process.argv.find((a) => a.startsWith('--out='))?.slice(6) ?? path.join(__dirname, '../public/sprites');
-  const url = process.argv.find((a) => a.startsWith('http')) ?? 'http://localhost:5199/scripts/art3d/render.html';
+  const set = process.argv.find((a) => a.startsWith('--set='))?.slice(6);
+  const url = process.argv.find((a) => a.startsWith('http')) ?? `http://localhost:5199/scripts/art3d/render.html${set ? `?set=${set}` : ''}`;
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage();
   const errors = [];

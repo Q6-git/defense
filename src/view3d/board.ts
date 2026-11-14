@@ -69,7 +69,23 @@ function levelAt(map: MapDef, c: number, r: number): number {
 }
 
 /** base: 모델 배율(모델 1 = base px), 빌보드면 그림 한 변(px) */
-type Actor = { obj: THREE.Object3D; mats: THREE.MeshStandardMaterial[]; sprite: boolean; base: number; yaw: number; lastX: number; lastY: number };
+type Actor = {
+  obj: THREE.Object3D;
+  mats: THREE.MeshStandardMaterial[];
+  sprite: boolean;
+  base: number;
+  yaw: number;
+  lastX: number;
+  lastY: number;
+  /** 플러그 레벨 불빛 재질과 플러그 몸통 재질 (가전만) */
+  led?: THREE.MeshStandardMaterial;
+  plug?: THREE.MeshStandardMaterial;
+  /** 마지막으로 레벨이 오른 시각 */
+  levelUpAt?: number;
+};
+
+/** 플러그 불빛: Lv1 꺼짐, Lv2 초록, Lv3 금색, Lv4(갈림길) 보라 */
+const LED_COLORS = [0x55525e, 0x5cff7a, 0xffc93a, 0xc58aff];
 
 /** 모델 배율: 반지름(px) × 이 값. 가전은 한 칸을 거의 채우게 */
 const UNIT_SCALE = 1.9;
@@ -289,7 +305,15 @@ export class Board3D {
       sprite = true;
     }
     this.scene.add(obj);
-    return { obj, mats, sprite, base, yaw: 0, lastX: NaN, lastY: NaN };
+    // 인스턴스마다 따로 색을 바꾸도록 플러그 재질을 복제
+    const own = (name: string) => {
+      const m = obj.getObjectByName(name) as THREE.Mesh | undefined;
+      if (!m) return undefined;
+      const mat = (m.material as THREE.MeshStandardMaterial).clone();
+      m.material = mat;
+      return mat;
+    };
+    return { obj, mats, sprite, base, yaw: 0, lastX: NaN, lastY: NaN, led: own('plugLed'), plug: own('plugBody') };
   }
 
   /** 화면 좌표 (h: 칸 높이 위로 더 올릴 양) */
@@ -333,6 +357,12 @@ export class Board3D {
   }
   private ringCache = new Map<string, THREE.BufferGeometry>();
 
+  /** 레벨이 올랐다: 통 튀어 오르고 플러그 불빛이 번쩍인다 */
+  levelUp(uid: number, t: number): void {
+    const a = this.units.get(uid);
+    if (a) a.levelUpAt = t;
+  }
+
   /** 가전이 쐈다: 그쪽으로 몸을 돌린다 */
   onShot(uid: number, to: { x: number; y: number }): void {
     this.aim.set(uid, to);
@@ -353,7 +383,22 @@ export class Board3D {
         this.units.set(u.uid, a);
       }
       const h = this.heightAt(u.x, u.y);
-      a.obj.position.set(u.x, h, u.y);
+      // 레벨업 직후 0.6초: 위로 튀어 오른다
+      const since = a.levelUpAt === undefined ? 9 : t - a.levelUpAt;
+      const jump = since < 0.6 ? Math.sin((since / 0.6) * Math.PI) * 16 : 0;
+      a.obj.position.set(u.x, h + jump, u.y);
+      if (a.led) {
+        const lv = u.branch !== null ? 3 : Math.min(u.level, 2);
+        a.led.color.set(LED_COLORS[lv]);
+        a.led.emissive.set(lv === 0 ? 0x000000 : LED_COLORS[lv]);
+        const pulse = lv === 3 ? 0.9 + 0.6 * Math.sin(t * 8 + u.uid) : 1;
+        a.led.emissiveIntensity = since < 0.6 ? 4 : pulse;
+        // 플러그 몸통도 레벨 색으로 은은하게 (멀리서도 레벨이 보이게)
+        if (a.plug) {
+          a.plug.emissive.set(lv === 0 ? 0x000000 : LED_COLORS[lv]);
+          a.plug.emissiveIntensity = since < 0.6 ? 2 : 0.9 * pulse;
+        }
+      }
       const age = t - (fx.born.get(u.uid) ?? -1);
       const appear = age < 0.3 ? 0.2 + 0.8 * easeOutBack(age / 0.3) : 1;
       const breathe = 0.03 * Math.sin(t * 3 + u.uid);
