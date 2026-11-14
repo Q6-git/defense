@@ -86,3 +86,62 @@ export function limbs(mat: THREE.Material, opts: { width?: number; arms?: boolea
   }
   return g;
 }
+
+/**
+ * 가전 수비대 표식: 몸 뒤에서 나와 바닥에 늘어진 전선 꼬리 + 콘센트 플러그.
+ * 3/4 시점(오른쪽 앞에서 봄)에서 보이도록 오른쪽 뒤로 휘어진다. 플러그 위 작은 불(plugLed)이 레벨을 보여 준다
+ */
+export function plugTail(opts: { y?: number; z?: number; lit?: boolean } = {}): THREE.Group {
+  const y = opts.y ?? 0.42, z = opts.z ?? -0.22;
+  const cord = plastic(0x3a3440, 0.35);
+  const g = group(tube([[0, y, z], [0.12, y - 0.18, z - 0.25], [0.38, 0.07, z - 0.38], [0.62, 0.06, z - 0.22]], 0.045, cord));
+  const body = rbox(0.24, 0.17, 0.2, 0.06, plastic(0xffffff, 0.3));
+  body.name = 'plugBody';
+  const plug = group(
+    body,
+    at(rbox(0.04, 0.035, 0.12, 0.01, new THREE.MeshStandardMaterial({ color: 0xd8b04a, roughness: 0.25, metalness: 0.8 })), -0.05, 0, 0.14),
+    at(rbox(0.04, 0.035, 0.12, 0.01, new THREE.MeshStandardMaterial({ color: 0xd8b04a, roughness: 0.25, metalness: 0.8 })), 0.05, 0, 0.14),
+  );
+  // 레벨 불빛: 게임에서는 Board3D가 이름(plugLed)으로 찾아 레벨에 맞게 색을 바꾼다
+  const led = at(sphere(0.06, new THREE.MeshStandardMaterial({ color: opts.lit ? 0x6aff8a : 0x55525e, emissive: opts.lit ? 0x3aff6a : 0x000000, emissiveIntensity: 1.2, roughness: 0.3 })), 0, 0.1, 0);
+  led.name = 'plugLed';
+  plug.add(led);
+  plug.scale.setScalar(1.35);
+  g.add(at(plug, 0.74, 0.11, z - 0.12, 0, 1.2, 0));
+  return g;
+}
+
+export type Expression = 'normal' | 'happy' | 'angry' | 'surprised';
+
+/**
+ * 디지털 얼굴: 어두운 화면 위에 빛나는 픽셀 눈. 표정을 바꿔 끼울 수 있다.
+ * (가전 몸에 화면이 달린 느낌. face()와 같은 크기 기준으로 앞(+z)을 본다)
+ */
+export function screenFace(s = 1, expr: Expression = 'normal', color = 0x6ff2ff): THREE.Group {
+  const glow = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.1, roughness: 0.3 });
+  const panel = new THREE.MeshStandardMaterial({ color: 0x1f2633, roughness: 0.15, metalness: 0.3 });
+  const g = group(at(rbox(0.78 * s, 0.46 * s, 0.05 * s, 0.1 * s, panel), 0, 0, 0));
+  const z = 0.035 * s;
+  for (const side of [-1, 1]) {
+    const x = side * 0.19 * s;
+    if (expr === 'normal') g.add(at(rbox(0.11 * s, 0.17 * s, 0.03 * s, 0.04 * s, glow), x, 0.03 * s, z));
+    if (expr === 'surprised') g.add(at(torus(0.07 * s, 0.022 * s, glow), x, 0.03 * s, z));
+    if (expr === 'happy') g.add(at(torus(0.075 * s, 0.024 * s, glow, Math.PI), x, 0, z)); // ^ ^
+    if (expr === 'angry') g.add(at(rbox(0.16 * s, 0.05 * s, 0.03 * s, 0.02 * s, glow), x, 0.03 * s, z, 0, 0, side * 0.45)); // > <
+  }
+  // 입: 작은 픽셀 줄
+  if (expr === 'happy' || expr === 'normal') g.add(at(torus(0.06 * s, 0.018 * s, glow, Math.PI), 0, -0.1 * s, z, 0, 0, Math.PI));
+  if (expr === 'angry') g.add(at(rbox(0.14 * s, 0.03 * s, 0.03 * s, 0.01 * s, glow), 0, -0.13 * s, z));
+  if (expr === 'surprised') g.add(at(sphere(0.035 * s, glow, 1, 1, 0.4), 0, -0.13 * s, z));
+  return g;
+}
+
+/** 머리 위 안테나: 휘청한 줄기 + 빛나는 공. 레벨에 따라 색을 바꿀 수 있다 */
+export function antenna(color = 0xff5a7a, height = 0.45): THREE.Group {
+  const tip = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.6, roughness: 0.3 });
+  return group(
+    tube([[0, 0, 0], [0.03, height * 0.5, 0], [0.1, height, 0.02]], 0.025, plastic(0x3a3440, 0.35)),
+    at(sphere(0.09, tip), 0.1, height + 0.06, 0.02),
+    at(cyl(0.07, 0.09, 0.05, plastic(0x3a3440, 0.35)), 0, 0.02, 0),
+  );
+}

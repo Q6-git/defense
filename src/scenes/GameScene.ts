@@ -29,8 +29,6 @@ const PROJECTILE: Partial<Record<UnitId, { key: string; emoji: string }>> = {
 };
 /** 레벨별 가전 크기 배율 (Lv1~Lv4) */
 const LEVEL_SCALE = [1, 1.07, 1.14, 1.22];
-/** 그림이 왼쪽을 보고 있는 적 (오른쪽으로 갈 때 뒤집는다) */
-const FACES_LEFT = new Set(['rat']);
 
 function easeOutBack(x: number): number {
   const c1 = 1.70158;
@@ -553,7 +551,9 @@ export class GameScene extends Phaser.Scene {
     }
     sfx.play('upgrade');
     const color = branch !== undefined ? 0xc58aff : 0xffd35a;
-    const ring = this.add.circle(u.x, u.y, u.def.radius, color, 0).setStrokeStyle(4, color).setDepth(8);
+    this.board?.levelUp(u.uid, this.clock);
+    const center = this.sp(u.x, u.y, this.board ? u.def.radius : 0);
+    const ring = this.add.circle(center.x, center.y, u.def.radius, color, 0).setStrokeStyle(4, color).setDepth(8);
     this.tweens.add({ targets: ring, scale: branch !== undefined ? 3.5 : 2.4, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
     if (branch !== undefined) {
       const bid = u.def.branches![branch].id;
@@ -748,7 +748,7 @@ export class GameScene extends Phaser.Scene {
         const k = baseScale(em) * (this.punch.get(e.uid) ?? 1);
         em.setScale(k * (1 - squash), k * (1 + squash));
         const prev = this.lastX.get(e.uid);
-        if (prev !== undefined && Math.abs(e.x - prev) > 0.2) em.setFlipX((e.x < prev) !== FACES_LEFT.has(e.def.id));
+        if (prev !== undefined && Math.abs(e.x - prev) > 0.2) em.setFlipX(e.x > prev); // 3D로 렌더링한 그림은 모두 왼쪽 앞을 본다
         this.lastX.set(e.uid, e.x);
       }
       if (e.slowMul < 1) g.lineStyle(3, 0x4fb3e8, 0.9).strokeCircle(p.x, p.y, e.def.radius + 2);

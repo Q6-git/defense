@@ -11,7 +11,8 @@ import type { Game } from '../core/game';
 import type { Enemy, Grid, MapDef, Unit } from '../core/types';
 import { face, group, at, plastic, rbox, cyl } from './kit';
 import { MODELS } from './models';
-import { DECOR, KITCHEN_OUTER, OUTER } from './props';
+import { DECOR, OUTER } from './props';
+import { THEMES } from './themes';
 
 const W = 1280, H = 720;
 /** 맵 영역(가로 0~1040) 가운데에 보드가 오도록 화면 중심을 왼쪽으로 옮기는 양 */
@@ -69,7 +70,23 @@ function levelAt(map: MapDef, c: number, r: number): number {
 }
 
 /** base: 모델 배율(모델 1 = base px), 빌보드면 그림 한 변(px) */
-type Actor = { obj: THREE.Object3D; mats: THREE.MeshStandardMaterial[]; sprite: boolean; base: number; yaw: number; lastX: number; lastY: number };
+type Actor = {
+  obj: THREE.Object3D;
+  mats: THREE.MeshStandardMaterial[];
+  sprite: boolean;
+  base: number;
+  yaw: number;
+  lastX: number;
+  lastY: number;
+  /** 플러그 레벨 불빛 재질과 플러그 몸통 재질 (가전만) */
+  led?: THREE.MeshStandardMaterial;
+  plug?: THREE.MeshStandardMaterial;
+  /** 마지막으로 레벨이 오른 시각 */
+  levelUpAt?: number;
+};
+
+/** 플러그 불빛: Lv1 꺼짐, Lv2 초록, Lv3 금색, Lv4(갈림길) 보라 */
+const LED_COLORS = [0x55525e, 0x5cff7a, 0xffc93a, 0xc58aff];
 
 /** 모델 배율: 반지름(px) × 이 값. 가전은 한 칸을 거의 채우게 */
 const UNIT_SCALE = 1.9;
@@ -128,7 +145,8 @@ export class Board3D {
     const sc = this.scene;
     const g = this.grid;
     const S = g.size;
-    sc.background = new THREE.Color(0x3b3048);
+    const th = THEMES[this.map.id] ?? THEMES.kitchen;
+    sc.background = new THREE.Color(th.bg);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     sc.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     sc.environmentIntensity = 0.35;
@@ -152,50 +170,43 @@ export class Board3D {
     const W = g.cols * S, H = g.rows * S;
     const mid = (n: number, start: number) => start + n / 2;
 
-    // 조리대: 상판 두께 + 문짝 달린 하부장 + 바닥
-    const counterTop = -TILE_T;
-    sc.add(shadowed(at(rbox(W + 3.6 * S, 26, H + 3.6 * S, 10, plastic(0xb9784a, 0.6)), mid(W, g.x), counterTop - 13, mid(H, g.y))));
-    sc.add(at(new THREE.Mesh(new THREE.BoxGeometry(W, 4, H), plastic(0xa88a6a, 0.8)), mid(W, g.x), counterTop + 2, mid(H, g.y)));
-    const cab = at(rbox(W + 3.2 * S, 170, H + 3.2 * S, 6, plastic(0xf3e6d3, 0.5)), mid(W, g.x), counterTop - 26 - 85, mid(H, g.y));
-    sc.add(shadowed(cab));
+    // 보드 받침: 윗면 테두리 + 옆면 (주방은 문짝 달린 하부장) + 바닥
+    const baseTop = -TILE_T;
+    sc.add(shadowed(at(rbox(W + 3.6 * S, 26, H + 3.6 * S, 10, plastic(th.base.top, 0.6)), mid(W, g.x), baseTop - 13, mid(H, g.y))));
+    sc.add(at(new THREE.Mesh(new THREE.BoxGeometry(W, 4, H), plastic(0xa88a6a, 0.8)), mid(W, g.x), baseTop + 2, mid(H, g.y)));
+    sc.add(shadowed(at(rbox(W + 3.2 * S, 170, H + 3.2 * S, 6, plastic(th.base.side, 0.5)), mid(W, g.x), baseTop - 26 - 85, mid(H, g.y))));
     const frontZ = g.y + H + 1.6 * S;
-    for (let i = 0; i < 6; i++) {
-      const x = g.x - 1.4 * S + ((W + 2.8 * S) * (i + 0.5)) / 6;
-      sc.add(at(rbox((W + 2.6 * S) / 6 - 8, 140, 6, 6, plastic(0xe9d7bd, 0.45)), x, counterTop - 110, frontZ + 2));
-      sc.add(at(rbox(40, 7, 7, 3, plastic(0xb08a5a, 0.3)), x, counterTop - 52, frontZ + 6));
+    if (th.base.cabinets) {
+      for (let i = 0; i < 6; i++) {
+        const x = g.x - 1.4 * S + ((W + 2.8 * S) * (i + 0.5)) / 6;
+        sc.add(at(rbox((W + 2.6 * S) / 6 - 8, 140, 6, 6, plastic(0xe9d7bd, 0.45)), x, baseTop - 110, frontZ + 2));
+        sc.add(at(rbox(40, 7, 7, 3, plastic(0xb08a5a, 0.3)), x, baseTop - 52, frontZ + 6));
+      }
     }
-    const floor = at(new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), plastic(0x6b5a72, 0.9)), mid(W, g.x), counterTop - 200, mid(H, g.y), -Math.PI / 2);
+    const floor = at(new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), plastic(th.floor, 0.9)), mid(W, g.x), baseTop - 200, mid(H, g.y), -Math.PI / 2);
     floor.receiveShadow = true;
     sc.add(floor);
 
-    // 뒤쪽 벽: 벽돌 타일 무늬 + 창문
-    const wallTex = (() => {
-      const cv = document.createElement('canvas');
-      cv.width = 512;
-      cv.height = 256;
-      const x = cv.getContext('2d')!;
-      x.fillStyle = '#efe4d2';
-      x.fillRect(0, 0, 512, 256);
-      x.strokeStyle = '#d8c8ae';
-      x.lineWidth = 6;
-      for (let r = 0; r < 8; r++) for (let c = 0; c < 9; c++) x.strokeRect(c * 64 - (r % 2) * 32, r * 32, 64, 32);
-      const t = new THREE.CanvasTexture(cv);
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(8, 3);
-      t.colorSpace = THREE.SRGBColorSpace;
-      return t;
-    })();
+    // 뒤 배경
     const backZ = g.y - 2.6 * S;
-    const wall = at(new THREE.Mesh(new THREE.PlaneGeometry(3000, 900), new THREE.MeshStandardMaterial({ color: 0xd9ccb8, map: wallTex, roughness: 0.8 })), mid(W, g.x), 300, backZ);
+    const wall = at(new THREE.Mesh(new THREE.PlaneGeometry(3000, 900), new THREE.MeshStandardMaterial({ color: th.wall.kind === 'sky' ? 0xffffff : 0xd9ccb8, map: wallTexture(th.wall), roughness: 0.8, emissive: th.wall.kind === 'sky' ? 0x6fa8d0 : 0x000000, emissiveIntensity: 0.4 })), mid(W, g.x), 300, backZ);
     wall.receiveShadow = true;
     sc.add(wall);
-    sc.add(at(rbox(380, 170, 14, 6, plastic(0xffffff, 0.4)), g.x + W * 0.3, 150, backZ + 6));
-    sc.add(at(new THREE.Mesh(new THREE.PlaneGeometry(350, 140), new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0x9fd8ff, emissiveIntensity: 0.6 })), g.x + W * 0.3, 150, backZ + 14));
+    if (th.wall.kind === 'sky') {
+      // 베란다 난간: 흰 기둥과 손잡이
+      const rail = plastic(0xffffff, 0.4);
+      sc.add(shadowed(at(rbox(W + 3.4 * S, 14, 14, 6, rail), mid(W, g.x), 120, backZ + 30)));
+      for (let x = g.x - 1.6 * S; x <= g.x + W + 1.6 * S; x += 60) sc.add(at(cyl(4, 4, 140, rail), x, 50, backZ + 30));
+    }
+    if (th.window) {
+      sc.add(at(rbox(380, 170, 14, 6, plastic(0xffffff, 0.4)), g.x + W * 0.3, 150, backZ + 6));
+      sc.add(at(new THREE.Mesh(new THREE.PlaneGeometry(350, 140), new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0x9fd8ff, emissiveIntensity: 0.6 })), g.x + W * 0.3, 150, backZ + 14));
+    }
 
     // 타일
     const tileGeo = new RoundedBoxGeometry(S * 0.92, TILE_T, S * 0.92, 3, 5);
-    const light = plastic(0xfbe7c6, 0.5), dark = plastic(0xeec08a, 0.5);
-    const side = plastic(0x9a6438, 0.6), woodA = plastic(0xe0a868, 0.55), woodB = plastic(0xd09356, 0.55);
+    const light = plastic(th.tileA, 0.5), dark = plastic(th.tileB, 0.5);
+    const side = plastic(th.hillSide, 0.6), hillA = plastic(th.hillA, 0.55), hillB = plastic(th.hillB, 0.55);
     const water = new THREE.MeshStandardMaterial({ color: 0x3fa6d8, roughness: 0.1, metalness: 0.1, emissive: 0x1a5f80, emissiveIntensity: 0.25 });
     const trough = plastic(0xb5c7d3, 0.5);
     const waterGeo = new THREE.BoxGeometry(S, 3, S), troughGeo = new THREE.BoxGeometry(S, 4, S);
@@ -216,7 +227,7 @@ export class Board3D {
         }
         const lv = levelAt(this.map, c, r);
         for (let i = 0; i < lv; i++) put(tileGeo, side, x, -TILE_T / 2 + i * STEP, z);
-        const topMat = lv > 0 ? ((r + c) % 2 ? woodB : woodA) : (r + c) % 2 ? dark : light;
+        const topMat = lv > 0 ? ((r + c) % 2 ? hillB : hillA) : (r + c) % 2 ? dark : light;
         put(tileGeo, topMat, x, -TILE_T / 2 + lv * STEP, z);
       }
     }
@@ -229,26 +240,31 @@ export class Board3D {
       sc.add(inst);
     }
 
-    // 배수구와 콘센트
-    const path = sim.paths[0];
-    const start = path.pointAt(0), end = path.pointAt(path.length);
-    sc.add(shadowed(group(at(cyl(30, 32, 16, plastic(0x4a4458, 0.3)), g.x - 20, -8, start.y), at(cyl(21, 21, 17, plastic(0x1e1a26, 0.6)), g.x - 20, -7, start.y))));
+    // 배수구(길마다)와 콘센트
+    for (const path of sim.paths) {
+      const start = path.pointAt(0);
+      sc.add(shadowed(group(at(cyl(30, 32, 16, plastic(0x4a4458, 0.3)), g.x - 20, -8, start.y), at(cyl(21, 21, 17, plastic(0x1e1a26, 0.6)), g.x - 20, -7, start.y))));
+    }
+    const end = sim.paths[0].pointAt(sim.paths[0].length);
     const outlet = group(rbox(66, 66, 26, 13, plastic(0xffffff, 0.3)), at(face(78), 0, 0, 14));
     outlet.rotation.x = -0.25;
-    sc.add(shadowed(at(outlet, end.x + 56, 34, end.y)));
+    // 콘센트는 끝 칸 옆(길이 끝나는 방향)에 세운다
+    const before = sim.paths[0].pointAt(sim.paths[0].length - 10);
+    const dx = Math.sign(end.x - before.x), dz = Math.sign(end.y - before.y);
+    sc.add(shadowed(at(outlet, end.x + dx * 56, 34, end.y + dz * 56)));
 
-    // 칸 위 소품과 보드 둘레 장식
+    // 칸 위 소품 (여러 칸짜리는 차지하는 칸 가운데에)
     for (const d of this.map.decor ?? []) {
-      const o = DECOR[d.kind]();
+      const w = d.w ?? 1, h = d.h ?? 1;
+      const o = DECOR[d.kind](w, h);
       o.scale.multiplyScalar(S);
-      sc.add(shadowed(at(o, g.x + (d.c + 0.5) * S, levelAt(this.map, d.c, d.r) * STEP, g.y + (d.r + 0.5) * S, 0, d.rot ?? 0, 0)));
+      sc.add(shadowed(at(o, g.x + (d.c + w / 2) * S, levelAt(this.map, d.c, d.r) * STEP, g.y + (d.r + h / 2) * S, 0, d.rot ?? 0, 0)));
     }
-    if (this.map.id === 'kitchen') {
-      for (const [kind, c, r, ry] of KITCHEN_OUTER) {
-        const o = OUTER[kind]();
-        o.scale.multiplyScalar(S);
-        sc.add(shadowed(at(o, g.x + c * S, -TILE_T, g.y + r * S, 0, ry, 0)));
-      }
+    // 보드 둘레 장식
+    for (const [kind, c, r, ry] of th.outer) {
+      const o = OUTER[kind]();
+      o.scale.multiplyScalar(S);
+      sc.add(shadowed(at(o, g.x + c * S, -TILE_T, g.y + r * S, 0, ry, 0)));
     }
   }
 
@@ -289,7 +305,15 @@ export class Board3D {
       sprite = true;
     }
     this.scene.add(obj);
-    return { obj, mats, sprite, base, yaw: 0, lastX: NaN, lastY: NaN };
+    // 인스턴스마다 따로 색을 바꾸도록 플러그 재질을 복제
+    const own = (name: string) => {
+      const m = obj.getObjectByName(name) as THREE.Mesh | undefined;
+      if (!m) return undefined;
+      const mat = (m.material as THREE.MeshStandardMaterial).clone();
+      m.material = mat;
+      return mat;
+    };
+    return { obj, mats, sprite, base, yaw: 0, lastX: NaN, lastY: NaN, led: own('plugLed'), plug: own('plugBody') };
   }
 
   /** 화면 좌표 (h: 칸 높이 위로 더 올릴 양) */
@@ -333,6 +357,12 @@ export class Board3D {
   }
   private ringCache = new Map<string, THREE.BufferGeometry>();
 
+  /** 레벨이 올랐다: 통 튀어 오르고 플러그 불빛이 번쩍인다 */
+  levelUp(uid: number, t: number): void {
+    const a = this.units.get(uid);
+    if (a) a.levelUpAt = t;
+  }
+
   /** 가전이 쐈다: 그쪽으로 몸을 돌린다 */
   onShot(uid: number, to: { x: number; y: number }): void {
     this.aim.set(uid, to);
@@ -353,7 +383,22 @@ export class Board3D {
         this.units.set(u.uid, a);
       }
       const h = this.heightAt(u.x, u.y);
-      a.obj.position.set(u.x, h, u.y);
+      // 레벨업 직후 0.6초: 위로 튀어 오른다
+      const since = a.levelUpAt === undefined ? 9 : t - a.levelUpAt;
+      const jump = since < 0.6 ? Math.sin((since / 0.6) * Math.PI) * 16 : 0;
+      a.obj.position.set(u.x, h + jump, u.y);
+      if (a.led) {
+        const lv = u.branch !== null ? 3 : Math.min(u.level, 2);
+        a.led.color.set(LED_COLORS[lv]);
+        a.led.emissive.set(lv === 0 ? 0x000000 : LED_COLORS[lv]);
+        const pulse = lv === 3 ? 0.9 + 0.6 * Math.sin(t * 8 + u.uid) : 1;
+        a.led.emissiveIntensity = since < 0.6 ? 4 : pulse;
+        // 플러그 몸통도 레벨 색으로 은은하게 (멀리서도 레벨이 보이게)
+        if (a.plug) {
+          a.plug.emissive.set(lv === 0 ? 0x000000 : LED_COLORS[lv]);
+          a.plug.emissiveIntensity = since < 0.6 ? 2 : 0.9 * pulse;
+        }
+      }
       const age = t - (fx.born.get(u.uid) ?? -1);
       const appear = age < 0.3 ? 0.2 + 0.8 * easeOutBack(age / 0.3) : 1;
       const breathe = 0.03 * Math.sin(t * 3 + u.uid);
@@ -448,6 +493,35 @@ export class Board3D {
     this.renderer.dispose();
     this.canvas.remove();
   }
+}
+
+/** 뒤 배경 무늬: 벽돌 타일 / 정사각 타일 / 줄무늬 벽지 / 하늘과 구름 */
+function wallTexture(w: { kind: 'brick' | 'square' | 'wallpaper' | 'sky'; fill: string; line: string }): THREE.Texture {
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 256;
+  const x = cv.getContext('2d')!;
+  x.fillStyle = w.fill;
+  x.fillRect(0, 0, 512, 256);
+  x.strokeStyle = w.line;
+  x.fillStyle = w.line;
+  x.lineWidth = 6;
+  if (w.kind === 'brick') for (let r = 0; r < 8; r++) for (let c = 0; c < 9; c++) x.strokeRect(c * 64 - (r % 2) * 32, r * 32, 64, 32);
+  if (w.kind === 'square') for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) x.strokeRect(c * 64, r * 64, 64, 64);
+  if (w.kind === 'wallpaper') for (let c = 0; c < 16; c += 2) x.fillRect(c * 32, 0, 32, 256);
+  if (w.kind === 'sky') {
+    // 뭉게구름 몇 개
+    for (const [cx, cy, r] of [[80, 70, 26], [110, 60, 32], [140, 72, 24], [330, 110, 22], [360, 98, 30], [392, 112, 22]]) {
+      x.beginPath();
+      x.arc(cx, cy, r, 0, Math.PI * 2);
+      x.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(w.kind === 'sky' ? 3 : 8, w.kind === 'sky' ? 1 : 3);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 function easeOutBack(x: number): number {
