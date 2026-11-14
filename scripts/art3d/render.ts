@@ -1,7 +1,7 @@
 // 모델을 3/4 시점(위에서 비스듬히)으로 렌더링하고 굵은 외곽선을 둘러 PNG(data URL)로 만든다.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { MODELS } from './models';
+import { MODELS } from '../../src/view3d/models';
 
 const SIZE = 256;
 const OUTLINE = 7; // 외곽선 두께(px)

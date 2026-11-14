@@ -30,6 +30,8 @@ void Promise.all([prepareSprites(), loadFont()]).then(([urls]) => {
     type: Phaser.AUTO,
     parent: 'game',
     backgroundColor: '#3a3341',
+    // 투명: 격자 맵은 뒤에 깐 3D 캔버스가 보이게 한다
+    transparent: true,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 1280, height: 720 },
     scene: [GameScene],
   });

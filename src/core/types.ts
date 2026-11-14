@@ -74,7 +74,13 @@ export interface MapDef {
   enemyHpMul?: number;
   /** 타일 격자. 있으면 바닥을 칸으로 그리고 가전은 칸 가운데에 놓인다 (길은 칸 가운데를 지나야 한다) */
   grid?: Grid;
+  /** 3D 화면의 고지대: c,r 칸부터 w×h 칸을 level 단 높인다 (보기만 다르고 규칙은 같다) */
+  hills?: { c: number; r: number; w: number; h: number; level: number }[];
+  /** 칸 위의 소품 (화분, 책 더미 등). 소품이 있는 칸에는 설치할 수 없다 */
+  decor?: { kind: DecorKind; c: number; r: number; rot?: number }[];
 }
+
+export type DecorKind = 'herb' | 'herbTall' | 'books' | 'cereal' | 'shakers' | 'fruit';
 
 export interface Grid {
   /** 한 칸의 크기(px) */

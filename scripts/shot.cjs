@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 (async () => {
   const [url, out, stepsJson] = process.argv.slice(2);
   const steps = stepsJson ? JSON.parse(stepsJson) : [{ wait: 1000 }];
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

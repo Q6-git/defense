@@ -1,4 +1,4 @@
-// 가전과 적의 3D 모델. 렌더링: node scripts/render3d.cjs (결과는 public/sprites/<이름>.png)
+// 가전과 적의 3D 모델. 게임의 3D 화면(src/view3d/board.ts)과 그림 렌더링(scripts/render3d.cjs)이 같이 쓴다.
 // 모델은 원점(발바닥 가운데)에 서 있고 앞(+z)을 본다.
 import * as THREE from 'three';
 import { at, cyl, face, group, limbs, metal, plastic, rbox, sphere, torus, tube } from './kit';

@@ -4,8 +4,8 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { MAP_KITCHEN } from '../../src/data/map';
-import { at, cyl, face, group, metal, plastic, rbox, sphere } from './kit';
-import { MODELS } from './models';
+import { at, cyl, face, group, metal, plastic, rbox, sphere } from '../../src/view3d/kit';
+import { MODELS } from '../../src/view3d/models';
 
 const W = 1600, H = 900;
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
