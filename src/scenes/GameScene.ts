@@ -12,6 +12,8 @@ import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achieve
 import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, saveProgress, saveSetup, type RunSetup } from '../storage';
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
+import type { Grid } from '../core/types';
+import { Board3D, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
 import { baseScale, button, card, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
@@ -135,6 +137,8 @@ export class GameScene extends Phaser.Scene {
   /** 조준 중인 스킬 */
   private aiming: AbilityId | null = null;
   private ghost: { x: number; y: number } | null = null;
+  /** 격자 맵이면 3D 화면 (없으면 기존 2D) */
+  private board: Board3D | null = null;
   /** 정보 패널에 띄운 설치된 유닛 */
   private selected: Unit | null = null;
   private info!: {
@@ -165,7 +169,7 @@ export class GameScene extends Phaser.Scene {
     this.endScreen = [];
     this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId));
     // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
-    if (import.meta.env.DEV) (window as unknown as { sim: Game }).sim = this.sim;
+    if (import.meta.env.DEV) Object.assign(window, { sim: this.sim, scene: this });
     this.enemyEmojis.clear();
     this.unitEmojis.clear();
     this.badges.clear();
@@ -178,7 +182,10 @@ export class GameScene extends Phaser.Scene {
     this.selected = null;
     this.speed = 1;
 
+    this.board = null;
+    if (this.sim.cfg.map.grid) this.attachBoard();
     this.drawMap();
+
     this.world = this.add.graphics();
     this.overlay = this.add.graphics().setDepth(5);
     this.fx = new Fx(this);
@@ -228,7 +235,10 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on(Phaser.Core.Events.HIDDEN, onHidden);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off(Phaser.Core.Events.HIDDEN, onHidden));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.placing || this.aiming) this.ghost = { x: p.worldX, y: p.worldY };
+      if (this.placing || this.aiming) {
+        const q = this.toGame(p.worldX, p.worldY);
+        this.ghost = this.snap(q.x, q.y);
+      }
     });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onMapTap(p.worldX, p.worldY));
     if (!data.start) this.showDifficultyPicker();
@@ -312,13 +322,90 @@ export class GameScene extends Phaser.Scene {
       if (this.toastTimer <= 0) this.toast.setText('');
     }
     this.render();
+    if (this.board) {
+      this.board.fit(this.game.canvas);
+      this.board.render(this.sim, this.clock, dt, {
+        punch: this.punch,
+        flash: new Set(this.flashes.keys()),
+        born: this.born,
+        levelScale: (u) => LEVEL_SCALE[Math.min(u.level, LEVEL_SCALE.length - 1)],
+      });
+    }
   }
 
   // ───────────────────────── 입력
 
+  /** 격자 맵의 3D 화면을 Phaser 캔버스 뒤에 깐다. WebGL을 못 쓰면 2D 타일 화면으로 그린다 */
+  private attachBoard(): void {
+    let board: Board3D;
+    try {
+      board = new Board3D(this.sim.cfg.map, this.sim, (key) =>
+        this.textures.exists(key) ? (this.textures.get(key).getSourceImage() as CanvasImageSource) : null,
+      );
+    } catch {
+      return;
+    }
+    const canvas = this.game.canvas;
+    canvas.parentElement?.insertBefore(board.canvas, canvas);
+    canvas.style.position = 'relative';
+    canvas.style.zIndex = '1';
+    board.fit(canvas);
+    this.board = board;
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => board.dispose());
+  }
+
+  /** 게임 좌표(바닥 위 높이 lift) → 화면 좌표. 2D 맵은 그대로 */
+  private sp(x: number, y: number, lift = 0): { x: number; y: number } {
+    if (!this.board) return { x, y: y - lift };
+    return this.board.project(x, y, lift);
+  }
+
+  /** 화면 좌표 → 게임 좌표 (3D면 그 자리 칸 높이까지 고려해 바닥으로 되돌린다) */
+  private toGame(sx: number, sy: number): { x: number; y: number } {
+    return this.board ? this.board.unproject(sx, sy) : { x: sx, y: sy };
+  }
+
+  /** 3D 화면에서 쓰도록 이벤트 좌표를 화면 좌표로 바꾼 사본 */
+  private toScreen(ev: GameEvent): GameEvent {
+    const b = this.board;
+    if (!b) return ev;
+    const BODY = 18;
+    const P = (v: { x: number; y: number }, lift = BODY) => this.sp(v.x, v.y, lift);
+    const e = { ...ev } as Record<string, unknown>;
+    if (ev.type === 'shot') {
+      e.from = P(ev.from, 30);
+      e.to = P(ev.to);
+      return e as GameEvent;
+    }
+    if (ev.type === 'bolt') {
+      e.points = ev.points.map((q, i) => P(q, i === 0 ? 30 : BODY));
+      return e as GameEvent;
+    }
+    if ('x' in ev && 'y' in ev) Object.assign(e, P(ev as { x: number; y: number }, ev.type === 'leak' || ev.type === 'blast' || ev.type === 'pulse' ? 6 : BODY));
+    // 반지름은 그 자리의 원근 배율만큼 (옆으로 r만큼 떨어진 점까지의 화면 거리)
+    if ('r' in ev && 'x' in ev) {
+      const q = ev as { x: number; y: number; r: number };
+      const c = this.sp(q.x, q.y), side = this.sp(q.x + q.r, q.y);
+      e.r = Math.abs(side.x - c.x);
+    }
+    return e as GameEvent;
+  }
+
+  /** 격자 맵에서 가전을 놓을 때는 칸 가운데로 맞춘다 */
+  private snap(x: number, y: number): { x: number; y: number } {
+    const g = this.sim.cfg.map.grid;
+    if (!g || !this.placing) return { x, y };
+    const c = Math.floor((x - g.x) / g.size);
+    const r = Math.floor((y - g.y) / g.size);
+    if (c < 0 || r < 0 || c >= g.cols || r >= g.rows) return { x, y };
+    return { x: g.x + (c + 0.5) * g.size, y: g.y + (r + 0.5) * g.size };
+  }
+
   private onMapTap(x: number, y: number): void {
     const { area } = this.sim.cfg.map;
     if (this.pauseLayer || this.sim.offer || this.sim.finished || x >= area.x + area.w || y < area.y) return; // 패널/상단 바는 버튼이 처리
+    const screen = { x, y };
+    ({ x, y } = this.toGame(x, y));
     if (this.aiming) {
       const res = this.sim.apply({ type: 'ability', id: this.aiming, x, y });
       if (res.ok) {
@@ -329,6 +416,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.placing) {
       const id = this.placing;
+      ({ x, y } = this.snap(x, y));
       const res = this.sim.apply({ type: 'place', unit: id, x, y });
       if (res.ok) {
         this.placing = null;
@@ -345,7 +433,13 @@ export class GameScene extends Phaser.Scene {
       }
       return;
     }
-    const hit = this.sim.units.find((u) => Phaser.Math.Distance.Between(u.x, u.y, x, y) <= u.def.radius + 6);
+    // 3D에서는 화면에 보이는 모델 몸통을 누른 것으로 고른다
+    const hit = this.board
+      ? this.sim.units.find((u) => {
+          const c = this.sp(u.x, u.y, u.def.radius);
+          return Phaser.Math.Distance.Between(c.x, c.y, screen.x, screen.y) <= u.def.radius * 1.3;
+        })
+      : this.sim.units.find((u) => Phaser.Math.Distance.Between(u.x, u.y, x, y) <= u.def.radius + 6);
     this.select(hit ?? null);
   }
 
@@ -467,8 +561,9 @@ export class GameScene extends Phaser.Scene {
       this.checkAchievements();
     }
     const label = branch !== undefined ? `${u.def.branches![branch].emoji} ${STR.branches[u.def.branches![branch].id].full}!` : STR.levelUp;
-    this.floatText(u.x, u.y - 10, label, branch !== undefined ? THEME.pink : THEME.gold, 18);
-    if (branch !== undefined) this.burst(u.x, u.y, color, 12, 60);
+    const at = this.sp(u.x, u.y, 30);
+    this.floatText(at.x, at.y - 10, label, branch !== undefined ? THEME.pink : THEME.gold, 18);
+    if (branch !== undefined) this.burst(at.x, at.y, color, 12, 60);
     this.punch.set(u.uid, 1.5);
   }
 
@@ -485,8 +580,9 @@ export class GameScene extends Phaser.Scene {
     const value = this.sim.sellValue(u);
     this.sim.apply({ type: 'sell', uid: u.uid });
     sfx.play('sell');
-    this.floatText(u.x, u.y, `+💰${value}`, THEME.gold);
-    this.burst(u.x, u.y, u.def.color, 8);
+    const at = this.sp(u.x, u.y, 20);
+    this.floatText(at.x, at.y, `+💰${value}`, THEME.gold);
+    this.burst(at.x, at.y, u.def.color, 8);
     this.selected = null;
   }
 
@@ -495,7 +591,15 @@ export class GameScene extends Phaser.Scene {
   private drawMap(): void {
     const { map } = this.sim.cfg;
     const g = this.add.graphics();
-    drawFloor(g, map.id, map.area);
+    if (this.board) {
+      g.fillStyle(THEME.bar).fillRect(0, 0, map.width, map.area.y);
+      g.fillStyle(THEME.barLine).fillRect(0, map.area.y - 3, map.width, 3);
+      g.fillStyle(THEME.bar).fillRect(PANEL_X, map.area.y, PANEL_W, map.area.h);
+      g.fillStyle(THEME.barLine).fillRect(PANEL_X, map.area.y, 3, map.area.h);
+      return;
+    }
+    if (map.grid) drawTiles(g, map.grid, map.area, (x, y) => this.sim.distanceToPath({ x, y }) < map.pathHalfWidth);
+    else drawFloor(g, map.id, map.area);
     // 장애물
     for (const b of map.blocked ?? []) {
       g.fillStyle(0x7a5a3a, 0.1).fillRoundedRect(b.x, b.y + 4, b.w, b.h, 12);
@@ -518,10 +622,15 @@ export class GameScene extends Phaser.Scene {
         for (const p of shifted) g.fillStyle(color, alpha).fillCircle(p.x, p.y, width / 2);
       }
     };
-    layer(hw * 2 + 10, 0x7a5a3a, 0.15, 6);
-    layer(hw * 2 + 8, 0x7fa7bf, 1);
-    layer(hw * 2, 0xcfe7f3, 1);
-    layer(hw * 0.7, 0xeaf6fc, 0.9, -hw * 0.35);
+    if (!map.grid) {
+      layer(hw * 2 + 10, 0x7a5a3a, 0.15, 6);
+      layer(hw * 2 + 8, 0x7fa7bf, 1);
+      layer(hw * 2, 0xcfe7f3, 1);
+      layer(hw * 0.7, 0xeaf6fc, 0.9, -hw * 0.35);
+    } else {
+      // 격자 맵: 수로 바닥에 흐르는 물빛 한 줄
+      layer(hw * 0.5, 0xeaf6fc, 0.55, 4);
+    }
     // 진행 방향 표시
     g.fillStyle(0x7fa7bf, 0.45);
     for (const path of this.sim.paths) {
@@ -547,10 +656,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private render(): void {
+    this.world.clear();
+    if (this.board) this.render3d();
+    else this.render2d();
+    this.renderOverlay();
+    this.renderHud();
+  }
+
+  /** 2D 맵: 바닥 위 표시와 캐릭터 그림 */
+  private render2d(): void {
     const g = this.world;
     const gm = this.sim;
     const t = this.clock;
-    g.clear();
 
     // 선택한 유닛 사거리
     const sel = this.selected;
@@ -612,7 +729,7 @@ export class GameScene extends Phaser.Scene {
     // 적: 통통 튀며 움직이고(떠오르면 길쭉, 내려앉으면 납작), 가는 방향을 보고, 맞으면 붉게 움찔한다
     const hop = (e: Enemy) => (e.stunTime <= 0 ? Math.abs(Math.sin(t * 9 + e.uid)) : 0);
     const pos = (e: Enemy) => ({ x: e.x, y: e.y - hop(e) * 5 });
-    syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), key: e.def.id, emoji: e.def.emoji, size: e.def.radius * (e.def.radius < 13 ? 3.2 : 2.6) })));
+    syncEmojis(this, this.enemyEmojis, gm.enemies.map((e) => ({ uid: e.uid, ...pos(e), key: e.def.id, emoji: e.def.emoji, size: e.def.radius * (e.def.radius < 13 ? 3.2 : 2.6) })), 2, true);
     for (const e of gm.enemies) {
       const p = pos(e);
       const flash = this.flashes.has(e.uid);
@@ -661,7 +778,103 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(0xff5a5a).fillRect(p.x - w / 2, p.y - e.def.radius - 9, (w * Math.max(0, e.hp)) / e.maxHp, 4);
     }
 
-    // 보스 체력바
+  }
+
+  /** 3D 맵: 바닥 표시는 3D 안에(원근에 맞게), 체력바·레벨 점·배지는 화면 좌표로 */
+  private render3d(): void {
+    const b = this.board!;
+    const gm = this.sim;
+    const t = this.clock;
+    const g = this.world;
+    const marks: Mark[] = [];
+    const ring = (x: number, y: number, r: number, color: number, alpha: number, width = 3) => marks.push({ shape: 'ring', x, y, r, color, alpha, width });
+    const disc = (x: number, y: number, r: number, color: number, alpha: number) => marks.push({ shape: 'disc', x, y, r, color, alpha });
+    const range = (x: number, y: number, r: number, color: number) => {
+      disc(x, y, r, color, 0.12);
+      ring(x, y, r, color, 0.6 + 0.2 * Math.sin(t * 4), 4);
+    };
+
+    const sel = this.selected;
+    if (sel) {
+      const r = gm.stats(sel).range;
+      if (r > 0) range(sel.x, sel.y, r, 0x3d8fd6);
+    }
+    for (const z of gm.zones) disc(z.x, z.y, z.r, 0xff6a1a, 0.25 + 0.08 * Math.sin(t * 20 + z.x));
+    const overload = gm.overloadTime > 0;
+    for (const u of gm.units) {
+      const r = u.def.radius;
+      // Lv3은 금빛 후광, Lv4는 보라 후광 (발밑에)
+      if (u.branch !== null) disc(u.x, u.y, r + 12, 0xc58aff, 0.35 + 0.1 * Math.sin(t * 4 + u.uid));
+      else if (u.level >= 2) disc(u.x, u.y, r + 10, 0xffc020, 0.38 + 0.1 * Math.sin(t * 4 + u.uid));
+      if (u === sel) ring(u.x, u.y, r + 8, THEME.selected, 1, 4);
+      if (u.buffMul > 1) ring(u.x, u.y, r + 4, 0x3fbf8f, 0.9, 2);
+      if (overload && u.def.kind !== 'income' && u.def.kind !== 'buff') ring(u.x, u.y, r + 11, 0xffe14a, 0.5 + 0.4 * Math.sin(t * 20), 3);
+    }
+    for (const e of gm.enemies) {
+      if (e.slowMul < 1) ring(e.x, e.y, e.def.radius + 4, 0x4fb3e8, 0.9, 3);
+      if (e.stunTime > 0 && e.frozenVuln > 1) disc(e.x, e.y, e.def.radius + 5, 0xbfefff, 0.55);
+      if (e.hackMul > 1) ring(e.x, e.y, e.def.radius + 6, 0x5fff9f, 0.5 + 0.5 * Math.sin(t * 25), 2);
+      if (e.shield > 0) ring(e.x, e.y, e.def.radius + 6, 0x4f8fd0, 0.9, 3);
+    }
+    // 설치 / 조준 미리보기
+    if (this.placing && this.ghost) {
+      const ok = gm.canPlace(this.placing, this.ghost.x, this.ghost.y) === null;
+      const color = ok ? 0x3fae55 : 0xe5484d;
+      const r = gm.cfg.units[this.placing].levels[0].range;
+      if (r > 0) range(this.ghost.x, this.ghost.y, r, color);
+      const half = (gm.cfg.map.grid?.size ?? 52) / 2 - 3;
+      marks.push({ shape: 'square', x: this.ghost.x, y: this.ghost.y, r: half, color, alpha: 0.5 });
+    }
+    if (this.aiming && this.ghost) range(this.ghost.x, this.ghost.y, gm.abilityStats(this.aiming).radius ?? 0, 0xa57be0);
+    b.setMarks(marks);
+
+    // 화면 좌표 표시: 배지, 레벨 점
+    const badgeAt = (u: Unit) => this.sp(u.x + u.def.radius * 0.9, u.y, u.def.radius * 2.4);
+    syncEmojis(this, this.badges, gm.units.filter((u) => u.branch !== null).map((u) => ({
+      uid: u.uid, ...badgeAt(u), emoji: u.def.branches![u.branch!].emoji, size: 24,
+    })), 3);
+    this.chipG.clear();
+    for (const u of gm.units) {
+      if (u.branch !== null) {
+        const p = badgeAt(u);
+        this.chipG.fillStyle(0xffffff).fillCircle(p.x, p.y, 10).lineStyle(2, 0xa57be0).strokeCircle(p.x, p.y, 10);
+      }
+      const foot = this.sp(u.x, u.y + u.def.radius + 2);
+      for (let i = 0; i <= u.level; i++) {
+        const dx = foot.x - u.level * 4.5 + i * 9;
+        g.fillStyle(0xffffff).fillCircle(dx, foot.y, 4.5);
+        g.fillStyle(i === 3 ? 0xa57be0 : 0xf5a623).fillCircle(dx, foot.y, 3.2);
+      }
+    }
+    // 적: 머리 위 체력바, 방패 칸, 기절 별, 불꽃
+    for (const e of gm.enemies) {
+      const head = this.sp(e.x, e.y, e.def.radius * 2.3);
+      const w = Math.max(22, e.def.radius * 1.8);
+      for (let i = 0; i < e.shield; i++) {
+        const sx = head.x - (e.shield * 7) / 2 + i * 7;
+        g.fillStyle(0xffffff).fillRect(sx, head.y - 16, 6, 6);
+        g.fillStyle(0x4f8fd0).fillRect(sx + 1, head.y - 15, 4, 4);
+      }
+      g.fillStyle(0x000000, 0.6).fillRect(head.x - w / 2, head.y - 8, w, 4);
+      g.fillStyle(0xff5a5a).fillRect(head.x - w / 2, head.y - 8, (w * Math.max(0, e.hp)) / e.maxHp, 4);
+      if (e.stunTime > 0) {
+        for (let i = 0; i < 3; i++) {
+          const a = t * 6 + (i * Math.PI * 2) / 3;
+          g.fillStyle(0xffe14a).fillCircle(head.x + Math.cos(a) * e.def.radius, head.y + 2 + Math.sin(a) * 4, 3);
+        }
+      }
+      if (e.burnTime > 0) {
+        const f = 5 + 2 * Math.sin(t * 30 + e.uid);
+        g.fillStyle(0xff7a1a, 0.9).fillCircle(head.x, head.y - 14, f);
+        g.fillStyle(0xffe14a, 0.9).fillCircle(head.x, head.y - 13, f * 0.5);
+      }
+    }
+  }
+
+  /** 보스 체력바와 설치·조준 미리보기 */
+  private renderOverlay(): void {
+    const gm = this.sim;
+    const t = this.clock;
     const o = this.overlay;
     o.clear();
     const boss = gm.enemies.find((e) => e.def.boss);
@@ -672,29 +885,44 @@ export class GameScene extends Phaser.Scene {
       o.lineStyle(1, 0xffffff, 0.5).strokeRect(320, 66, 400, 14);
     }
 
-    // 설치 / 조준 미리보기
+    // 설치 / 조준 미리보기 (3D는 바닥 표시를 render3d가 그리고, 여기서는 반투명 가전 그림만)
     if (this.placing && this.ghost) {
       const def = gm.cfg.units[this.placing];
-      const ok = gm.canPlace(this.placing, this.ghost.x, this.ghost.y) === null;
-      const color = ok ? 0x3fae55 : 0xe5484d;
-      const r = def.levels[0].range;
-      if (r > 0) drawRange(o, this.ghost.x, this.ghost.y, r, color, t);
-      o.fillStyle(color, 0.35).fillCircle(this.ghost.x, this.ghost.y, def.radius + 4);
+      if (!this.board) {
+        const ok = gm.canPlace(this.placing, this.ghost.x, this.ghost.y) === null;
+        const color = ok ? 0x3fae55 : 0xe5484d;
+        const r = def.levels[0].range;
+        if (r > 0) drawRange(o, this.ghost.x, this.ghost.y, r, color, t);
+        const grid = gm.cfg.map.grid;
+        if (grid) {
+          const h = grid.size / 2 - 2;
+          o.fillStyle(color, 0.4).fillRoundedRect(this.ghost.x - h, this.ghost.y - h, h * 2, h * 2, 8);
+          o.lineStyle(3, color, 0.9).strokeRoundedRect(this.ghost.x - h, this.ghost.y - h, h * 2, h * 2, 8);
+        } else {
+          o.fillStyle(color, 0.35).fillCircle(this.ghost.x, this.ghost.y, def.radius + 4);
+        }
+      }
       // 놓일 가전을 반투명하게 미리 보여 준다
       if (this.ghostIcon?.id !== this.placing) {
         this.ghostIcon?.icon.destroy();
         this.ghostIcon = { id: this.placing, icon: icon(this, 0, 0, this.placing, def.emoji, def.radius * 2.9).setDepth(5.5).setAlpha(0.75) };
+        if (this.board) this.ghostIcon.icon.setOrigin(0.5, FEET);
       }
-      this.ghostIcon.icon.setPosition(this.ghost.x, this.ghost.y);
+      const at = this.board ? this.sp(this.ghost.x, this.ghost.y) : this.ghost;
+      this.ghostIcon.icon.setPosition(at.x, at.y);
     } else if (this.ghostIcon) {
       this.ghostIcon.icon.destroy();
       this.ghostIcon = null;
     }
-    if (this.aiming && this.ghost) {
+    if (this.aiming && this.ghost && !this.board) {
       const r = gm.abilityStats(this.aiming).radius ?? 0;
       drawRange(o, this.ghost.x, this.ghost.y, r, 0xa57be0, t);
     }
+  }
 
+  private renderHud(): void {
+    const gm = this.sim;
+    const t = this.clock;
     // HUD
     const waveText = gm.endless ? STR.waveEndless(gm.wave) : STR.wave(gm.wave, gm.totalWaves);
     this.hpText.setText(`${STR.hp} ${gm.hp}`);
@@ -815,7 +1043,9 @@ export class GameScene extends Phaser.Scene {
 
   // ───────────────────────── 이펙트
 
-  private playEvent(ev: GameEvent): void {
+  private playEvent(raw: GameEvent): void {
+    if (raw.type === 'shot') this.board?.onShot(raw.unit, raw.to);
+    const ev = this.toScreen(raw);
     switch (ev.type) {
       case 'shot': {
         this.recoil(ev.unit);
@@ -988,12 +1218,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncUnits(): void {
-    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.9 })));
+    syncEmojis(this, this.unitEmojis, this.sim.units.map((u) => ({ uid: u.uid, x: u.x, y: u.y, key: u.def.id, emoji: u.def.emoji, size: u.def.radius * 2.9 })), 2, true);
   }
 
   private popIn(u: Unit | undefined): void {
     if (!u) return;
-    this.burst(u.x, u.y, 0xffffff, 6);
+    const at = this.sp(u.x, u.y, 10);
+    this.burst(at.x, at.y, 0xffffff, 6);
     this.born.set(u.uid, this.clock);
   }
 
@@ -1345,11 +1576,15 @@ export class GameScene extends Phaser.Scene {
   }
 }
 
+/** 캐릭터 그림에서 발바닥 높이 (그림 위쪽 0 ~ 아래쪽 1) */
+const FEET = 0.82;
+
 function syncEmojis(
   scene: Phaser.Scene,
   pool: Map<number, Icon>,
   items: { uid: number; x: number; y: number; key?: string; emoji: string; size: number }[],
   depth = 2,
+  feet = false,
 ): void {
   const alive = new Set<number>();
   for (const it of items) {
@@ -1357,14 +1592,52 @@ function syncEmojis(
     let t = pool.get(it.uid);
     if (!t) {
       t = icon(scene, 0, 0, it.key, it.emoji, it.size).setDepth(depth);
+      // 캐릭터는 발바닥을 기준점으로 세운다 (늘였다 줄였다 해도 발은 바닥에 붙어 있게)
+      if (feet) t.setOrigin(0.5, FEET);
       pool.set(it.uid, t);
     }
-    t.setPosition(it.x, it.y);
+    if (feet) {
+      t.setPosition(it.x, it.y + it.size * (FEET - 0.5));
+      // 3/4 시점: 화면 아래쪽(앞)에 있는 캐릭터가 위쪽 캐릭터를 가린다
+      t.setDepth(depth + it.y / 10000);
+    } else t.setPosition(it.x, it.y);
   }
   for (const [uid, t] of pool) {
     if (!alive.has(uid)) {
       t.destroy();
       pool.delete(uid);
+    }
+  }
+}
+
+/**
+ * 격자 맵 바닥: 도톰한 타일 블록을 깔고, 배수관 칸은 한 단 낮은 수로로 그린다.
+ * 위에서 비스듬히 내려다보는 시점이라 수로 위쪽 칸의 앞면(벽)이 보인다.
+ */
+function drawTiles(g: Phaser.GameObjects.Graphics, grid: Grid, a: { x: number; y: number; w: number; h: number }, isPath: (x: number, y: number) => boolean): void {
+  const { size: s } = grid;
+  const LIP = 9; // 타일 앞면 두께
+  g.fillStyle(0xe2c9a6).fillRect(a.x, a.y, a.w, a.h); // 줄눈
+  const path = (c: number, r: number) => r >= 0 && r < grid.rows && c >= 0 && c < grid.cols && isPath(grid.x + (c + 0.5) * s, grid.y + (r + 0.5) * s);
+  // 맵 위아래 남는 줄은 줄눈 색 그대로 두고, 격자 칸만 그린다
+  for (let r = 0; r < grid.rows; r++) {
+    for (let c = 0; c < grid.cols; c++) {
+      const x = grid.x + c * s;
+      const y = grid.y + r * s;
+      if (path(c, r)) {
+        // 수로: 물 바닥 + 위쪽(북쪽) 칸이 바닥이면 그 칸의 앞면 벽이 보인다
+        g.fillStyle(0x9fd3ea).fillRect(x, y, s, s);
+        if (!path(c, r - 1)) {
+          g.fillStyle(0xc9a174).fillRect(x, y, s, LIP);
+          g.fillStyle(0x000000, 0.08).fillRect(x, y + LIP, s, 6);
+        }
+        continue;
+      }
+      // 바닥 타일: 앞면(아래쪽 두께) → 윗면 → 윗면 하이라이트
+      const light = (r + c) % 2 === 0;
+      g.fillStyle(light ? 0xe8cfa8 : 0xe0c39a).fillRoundedRect(x + 2, y + 2, s - 4, s - 2, 8);
+      g.fillStyle(light ? 0xfdf3e1 : 0xf6e2c4).fillRoundedRect(x + 2, y + 2, s - 4, s - 4 - LIP / 2, 8);
+      g.fillStyle(0xffffff, 0.5).fillRoundedRect(x + 7, y + 5, s - 14, 3, 2);
     }
   }
 }

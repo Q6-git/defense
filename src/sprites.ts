@@ -5,9 +5,9 @@
 // 파일이 없거나 못 읽으면 게임은 자동으로 이모지로 그린다.
 export const SPRITES: Record<string, string> = {
   // 가전 (유닛 id와 같은 이름)
-  toaster: 'toaster.svg',
-  fan: 'fan.svg',
-  microwave: 'microwave.svg',
+  toaster: 'toaster.png',
+  fan: 'fan.png',
+  microwave: 'microwave.png',
   vacuum: 'vacuum.svg',
   wifi: 'wifi.svg',
   washer: 'washer.svg',
@@ -19,10 +19,10 @@ export const SPRITES: Record<string, string> = {
   aircon: 'aircon.svg',
   dishwasher: 'dishwasher.svg',
   // 하수구 군단 (적 id와 같은 이름)
-  goo: 'goo.svg',
-  rat: 'rat.svg',
+  goo: 'goo.png',
+  rat: 'rat.png',
   grease: 'grease.svg',
-  roach: 'roach.svg',
+  roach: 'roach.png',
   splitter: 'splitter.svg',
   splitling: 'splitling.svg',
   boss: 'boss.svg',

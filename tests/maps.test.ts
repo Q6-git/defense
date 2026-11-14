@@ -92,3 +92,49 @@ describe('맵', () => {
     expect(g.canPlace('toaster', b.x + b.w / 2, b.y + b.h / 2)).toBe('bounds');
   });
 });
+
+describe('3D 주방', () => {
+  it('소품이 놓인 칸에는 설치할 수 없고, 바로 옆 칸에는 설치할 수 있다', () => {
+    const g = new Game({ ...defaultConfig('normal', false, 'kitchen'), startMoney: 1e4 });
+    const grid = MAPS.kitchen.grid!;
+    const center = (c: number, r: number) => ({ x: grid.x + (c + 0.5) * grid.size, y: grid.y + (r + 0.5) * grid.size });
+    for (const d of MAPS.kitchen.decor!) {
+      const p = center(d.c, d.r);
+      expect(g.canPlace('toaster', p.x, p.y), `${d.kind} ${d.c},${d.r}`).toBe('bounds');
+    }
+    const herb = MAPS.kitchen.decor!.find((d) => d.kind === 'herb' && d.c === 9)!;
+    const side = center(herb.c - 1, herb.r);
+    expect(g.canPlace('toaster', side.x, side.y)).toBeNull();
+  });
+
+  it('소품은 배수관 칸 위에 있지 않다', () => {
+    const g = new Game(defaultConfig('normal', false, 'kitchen'));
+    const grid = MAPS.kitchen.grid!;
+    for (const d of MAPS.kitchen.decor!) {
+      expect(g.distanceToPath({ x: grid.x + (d.c + 0.5) * grid.size, y: grid.y + (d.r + 0.5) * grid.size })).toBeGreaterThan(MAPS.kitchen.pathHalfWidth);
+    }
+  });
+
+  it('화면 투영과 역투영은 서로 되돌리고, 원근이라 앞쪽 칸이 더 크게 보인다', async () => {
+    const { makeCamera, project, unproject } = await import('../src/view3d/board');
+    const cam = makeCamera(MAPS.kitchen);
+    for (const [x, y, h] of [[100, 200, 0], [520, 400, 26], [990, 690, 52]]) {
+      const s = project(cam, x, y, h);
+      const back = unproject(cam, s.x, s.y, h);
+      expect(back.x).toBeCloseTo(x, 3);
+      expect(back.y).toBeCloseTo(y, 3);
+    }
+    // 보드 네 귀퉁이가 맵 영역(가로 0~1040, 세로 56~720) 안에 들어온다
+    const g = MAPS.kitchen.grid!;
+    for (const [x, y] of [[g.x, g.y], [g.x + g.cols * g.size, g.y], [g.x, g.y + g.rows * g.size], [g.x + g.cols * g.size, g.y + g.rows * g.size]]) {
+      const s = project(cam, x, y);
+      expect(s.x).toBeGreaterThan(0);
+      expect(s.x).toBeLessThan(1040);
+      expect(s.y).toBeGreaterThan(56);
+      expect(s.y).toBeLessThan(720);
+    }
+    // 원근: 맨 아랫줄 칸 너비가 맨 윗줄 칸 너비보다 넓다
+    const width = (r: number) => project(cam, g.x + 5 * g.size, g.y + r * g.size).x - project(cam, g.x + 4 * g.size, g.y + r * g.size).x;
+    expect(width(g.rows)).toBeGreaterThan(width(0) * 1.1);
+  });
+});

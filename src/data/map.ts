@@ -1,22 +1,38 @@
-import type { MapDef } from '../core/types';
+import type { Grid, MapDef, Rect, Vec } from '../core/types';
 
-/** 맵 1: 주방 배수구 → 거실 콘센트(기지) */
+/** 타일 격자: 52px 칸 20×12. 배수관 폭(52)이 정확히 한 칸 */
+export const GRID: Grid = { size: 52, x: 0, y: 72, cols: 20, rows: 12 };
+/** c열 r행 칸의 가운데 좌표. c = -1이면 맵 왼쪽 바깥(배수구 입구) */
+export function tile(c: number, r: number): Vec {
+  return { x: c < 0 ? -30 : GRID.x + c * GRID.size + GRID.size / 2, y: GRID.y + r * GRID.size + GRID.size / 2 };
+}
+
+/** 소품이 놓인 칸을 설치 불가 영역으로 */
+function decorBlocked(decor: NonNullable<MapDef['decor']>): (Rect & { emoji: string })[] {
+  return decor.map(({ c, r }) => ({ x: GRID.x + c * GRID.size, y: GRID.y + r * GRID.size, w: GRID.size, h: GRID.size, emoji: '' }));
+}
+
+const KITCHEN_DECOR: NonNullable<MapDef['decor']> = [
+  { kind: 'herbTall', c: 18, r: 0 }, { kind: 'shakers', c: 4, r: 0 }, { kind: 'books', c: 12, r: 7, rot: 0.3 },
+  { kind: 'cereal', c: 19, r: 4, rot: -0.3 }, { kind: 'herb', c: 9, r: 7, rot: 0.3 }, { kind: 'herb', c: 15, r: 8, rot: 0.5 },
+  { kind: 'books', c: 0, r: 8, rot: 0.2 }, { kind: 'herbTall', c: 19, r: 10 }, { kind: 'fruit', c: 6, r: 10 }, { kind: 'herb', c: 0, r: 11 },
+];
+
+/** 맵 1: 주방 배수구 → 거실 콘센트(기지). 조리대 위, 나무 도마 고지대와 허브 화분 */
 export const MAP_KITCHEN: MapDef = {
   id: 'kitchen',
   width: 1280,
   height: 720,
   area: { x: 0, y: 56, w: 1040, h: 664 },
-  paths: [[
-    { x: -30, y: 150 },
-    { x: 860, y: 150 },
-    { x: 860, y: 330 },
-    { x: 170, y: 330 },
-    { x: 170, y: 530 },
-    { x: 700, y: 530 },
-    { x: 700, y: 650 },
-    { x: 960, y: 650 },
-  ]],
+  paths: [[tile(-1, 1), tile(16, 1), tile(16, 5), tile(3, 5), tile(3, 9), tile(13, 9), tile(13, 11), tile(18, 11)]],
   pathHalfWidth: 26,
+  grid: GRID,
+  hills: [
+    { c: 17, r: 2, w: 3, h: 8, level: 1 }, { c: 18, r: 3, w: 2, h: 4, level: 2 }, { c: 0, r: 6, w: 3, h: 5, level: 1 },
+    { c: 7, r: 6, w: 4, h: 3, level: 1 }, { c: 8, r: 7, w: 2, h: 1, level: 2 }, { c: 11, r: 0, w: 4, h: 1, level: 1 },
+  ],
+  decor: KITCHEN_DECOR,
+  blocked: decorBlocked(KITCHEN_DECOR),
 };
 
 /** 맵 2: 욕실. 위아래 배수구 두 곳에서 나온 적이 가운데서 합류한다 */

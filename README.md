@@ -13,6 +13,7 @@ npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치�
 npx vite-node scripts/units.ts      # 가전별 떼거리/강적 상황 벤치마크 (Lv3 한 대와 Lv4 두 갈래, 1000💰당 효율)
 npx vite-node scripts/cc-stack.ts   # 선풍기 여러 대로 적을 영원히 묶을 수 없는지 확인
 npm run build      # dist/ 에 배포용 빌드
+npx vite --port 5199 & node scripts/render3d.cjs   # 3D 캐릭터(scripts/art3d/models.ts)를 public/sprites/*.png로 렌더링
 ```
 
 ## 플레이 방법
@@ -67,7 +68,7 @@ npm run build      # dist/ 에 배포용 빌드
   - 카드 목록은 `src/data/cards.ts`, 이름과 설명은 `src/strings.ko.ts`
 - 공격의 10%는 크리티컬(2.5배)
 - **맵 5개** (시작 화면에서 선택, 기록은 맵별로 따로)
-  - 🍳 주방: 길게 굽이치는 배수관 하나
+  - 🍳 주방: 길게 굽이치는 배수관 하나. **3D 화면**: 조리대 위 디오라마, 원근 카메라, 나무 도마 고지대(장식), 허브 화분·책 더미 같은 소품 칸(설치 불가), 보드 둘레 주방 소품
   - 🛁 욕실: 위아래 배수구 두 곳에서 나와 가운데서 합류
   - 🪴 베란다: 길은 길지만 화분·빨래 바구니 때문에 설치 자리가 귀함
   - 🌀 세탁실: 바깥에서 안쪽으로 도는 긴 나선, 콘센트는 한가운데. 안쪽 자리는 여러 바퀴를 한꺼번에 덮는 명당 (적 체력 ×1.45)
@@ -94,15 +95,27 @@ src/core/      게임 로직 (Phaser 의존 없음, 테스트 대상, 멀티플�
   game.ts      상태, 명령(Command) 처리, 시뮬레이션 스텝
   path.ts      경로 계산
   types.ts
-src/data/      밸런스 데이터: units.ts, enemies.ts, waves.ts, map.ts(맵 3개), difficulty.ts, abilities.ts
+src/data/      밸런스 데이터: units.ts, enemies.ts, waves.ts, map.ts(맵 5개, 주방은 52px 격자), difficulty.ts, abilities.ts
 src/config.ts  시작 자금, 기지 HP, 보너스 등 규칙 수치
 src/strings.ko.ts  화면 텍스트 (다른 언어는 같은 키로 파일 추가)
-src/scenes/    Phaser 렌더링과 입력
+src/scenes/    Phaser 렌더링과 입력 (UI, 이펙트, 2D 맵)
+src/view3d/    three.js 3D 화면 (격자 맵): board.ts(보드·카메라·캐릭터), models.ts(2등신 캐릭터), props.ts(소품), kit.ts(부품)
 tests/         Vitest
 scripts/       balance.ts (밸런스 시뮬레이터), branches.ts (갈래 벤치마크), shot.cjs (Playwright 스크린샷)
+               render3d.cjs + art3d/ (3D 모델을 PNG로 렌더링, 보드 시안 diorama.html)
 ```
 
 유저 조작은 모두 `game.apply(command)`를 거친다. 멀티플레이를 붙일 때는 이 명령을 서버로 보내고, 서버가 같은 `Game`을 돌리면 된다.
+
+## 3D 화면
+
+격자(`grid`)가 있는 맵은 three.js로 3D 보드를 그린다 (지금은 🍳 주방).
+
+- Phaser 캔버스를 투명하게 두고 그 뒤에 three.js 캔버스를 깐다. UI·이펙트·숫자는 Phaser, 보드·캐릭터·바닥 표시(사거리, 배치 칸, 후광)는 three.js
+- 카메라는 원근 카메라(`makeCamera`). 게임 좌표 ↔ 화면 좌표는 `Board3D.project / unproject`로 바꾼다
+- 게임 규칙(`src/core`)은 3D와 상관없다. 고지대는 보기만 다르고, 소품 칸은 `blocked`로 설치 불가
+- 3D 모델이 아직 없는 캐릭터는 기존 그림을 세운 판(빌보드)으로 그린다
+- WebGL을 못 쓰면 2D 타일 화면으로 대신 그린다
 
 ## 그래픽 바꾸기
 

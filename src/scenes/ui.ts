@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { SPRITES } from '../sprites';
 
 /** 둥근 한글 글꼴 '주아'. 못 불러오면 시스템 글꼴로 대신 그린다 */
 export const FONT = 'Jua, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", NanumSquareRound, sans-serif';
@@ -153,7 +154,9 @@ export type Icon = Phaser.GameObjects.Image | Phaser.GameObjects.Text;
 
 export function icon(scene: Phaser.Scene, x: number, y: number, key: string | undefined, emoji: string, size: number): Icon {
   if (key && scene.textures.exists(key)) {
-    const im = scene.add.image(x, y, key).setDisplaySize(size, size);
+    // 3D로 렌더링한 그림은 외곽선 여백이 있어서 조금 크게 그린다
+    const s = SPRITES[key]?.endsWith('.png') ? size * 1.3 : size;
+    const im = scene.add.image(x, y, key).setDisplaySize(s, s);
     im.setData('base', im.scaleX);
     return im;
   }
