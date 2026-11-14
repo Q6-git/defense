@@ -157,7 +157,7 @@ export const STR = {
   sell: (v: number) => `판매 +💰${v}`,
   level: (n: number) => `Lv.${n}`,
   branchPrompt: '⚡ 갈림길! 하나만 고르세요',
-  branchButton: (emoji: string, name: string, cost: number) => `${emoji} ${name}\n💰${cost}`,
+  branchButton: (emoji: string, name: string, cost: number, dps: number | null) => `${emoji} ${name}\n💰${cost}${dps ? ` ⚔️${dps}` : ''}`,
   branches: {
     rapid: { name: '연사', full: '연사 토스터', desc: '아주 빠르게 연사. 떼거리에 강함' },
     sniper: { name: '저격', full: '저격 토스터', desc: '긴 사거리, 강한 한 방, 방어 무시' },
@@ -186,9 +186,11 @@ export const STR = {
   } as Record<string, { name: string; full: string; desc: string }>,
   target: (m: TargetMode) => `🎯 ${TARGET_NAMES[m]}`,
   stats: {
+    dps: '⚔️ DPS',
+    perEnemy: '(적마다)',
+    hit: (dmg: string, sec: number) => `공격력 ${dmg} · ${sec}초마다`,
     damage: '공격력',
     range: '사거리',
-    rate: '공격 간격',
     splash: '폭발 범위',
     slow: '감속',
     buff: '공속 증가',

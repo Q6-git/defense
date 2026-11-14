@@ -37,6 +37,9 @@ function easeOutBack(x: number): number {
 }
 
 /** 갈래별 공격 모양: 빠른 공격은 투사체 대신 빛나는 탄도로 그린다 */
+/** DPS 표시: 오르는 가전(그릴)은 최대치도 */
+const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.max > d.dps + 0.5 ? `(최대 ${Math.round(d.max)})` : ''}`;
+
 /** 한 판에 들고 갈 수 있는 가전 수 */
 const DECK_SIZE = 6;
 const RARITY_COLOR: Record<string, number> = { rare: 0x5aa9e6, hero: 0xa57be0, legend: 0xf5a623 };
@@ -746,7 +749,7 @@ export class GameScene extends Phaser.Scene {
     if (!id) return;
     const def = this.sim.cfg.units[id];
     const level = u?.level ?? 0;
-    const lv = u ? this.sim.stats(u) : def.levels[0];
+    const lv = u ? this.sim.stats(u) : this.sim.levelStats(id, 0);
     const name = STR.units[id];
     const br = u && u.branch !== null ? def.branches![u.branch] : null;
     const title = br ? `${br.emoji} ${STR.branches[br.id].full}` : `${def.emoji} ${name.name}`;
@@ -761,9 +764,15 @@ export class GameScene extends Phaser.Scene {
       for (const b of def.branches!) lines.push(`${b.emoji} ${STR.branches[b.id].name}: ${STR.branches[b.id].desc}`);
     }
     const n1 = (v: number) => String(Math.round(v * 10) / 10);
-    if (!atFork && lv.damage) lines.push(`${s.damage} ${n1(lv.damage)}`);
     if (!atFork) {
-      if (lv.cooldown) lines.push(`${s.rate} ${Math.round(lv.cooldown * 100) / 100}초`);
+      const cur = this.sim.dps(id, lv, u ?? undefined);
+      if (cur.dps) {
+        // 업그레이드하면 얼마나 오르는지 같이 보여 준다
+        const next = u && opts.length === 1 ? this.sim.dps(id, this.sim.levelStats(id, level + 1), u) : null;
+        const area = def.kind === 'slow' || lv.hitAll || lv.line || lv.splash ? ` ${s.perEnemy}` : '';
+        lines.push(`${s.dps} ${dpsText(cur)}${next ? ` → ${dpsText(next)}` : ''}${area}`);
+      }
+      if (lv.damage) lines.push(lv.cooldown ? s.hit(n1(lv.damage), Math.round(lv.cooldown * 100) / 100) : `${s.damage} ${n1(lv.damage)}`);
       if (lv.range) lines.push(`${s.range} ${Math.round(lv.range)}`);
       if (lv.splash) lines.push(`${s.splash} ${Math.round(lv.splash)}`);
       if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
@@ -788,7 +797,9 @@ export class GameScene extends Phaser.Scene {
     if (atFork) {
       [this.info.branchA, this.info.branchB].forEach((b, i) => {
         const bd = def.branches![i];
-        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, bd.cost));
+        // 갈래 DPS는 버튼 안에 (설명 줄이 길어서 패널에는 자리가 없다)
+        const d = this.sim.dps(id, this.sim.levelStats(id, level, i as 0 | 1), u);
+        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, bd.cost, d.dps ? Math.round(d.dps) : null));
         b.setEnabled(this.sim.money >= bd.cost);
       });
     } else {
