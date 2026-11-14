@@ -82,13 +82,13 @@ export const UNITS: Record<UnitId, UnitDef> = {
   stove: {
     id: 'stove', kind: 'single', emoji: '🔥', color: 0xe8603a, radius: 19,
     levels: [
-      { cost: 180, damage: 6, range: 95, cooldown: 0.5, dot: { dps: 14, duration: 3 } },
-      { cost: 180, damage: 10, range: 100, cooldown: 0.5, dot: { dps: 26, duration: 3 } },
-      { cost: 300, damage: 16, range: 110, cooldown: 0.45, dot: { dps: 45, duration: 3 } },
+      { cost: 140, damage: 6, range: 100, cooldown: 0.5, dot: { dps: 18, duration: 3 } },
+      { cost: 160, damage: 10, range: 110, cooldown: 0.5, dot: { dps: 34, duration: 3 } },
+      { cost: 300, damage: 16, range: 120, cooldown: 0.45, dot: { dps: 58, duration: 3 } },
     ],
     branches: [
-      { id: 'flamer', emoji: '🌋', cost: 500, damage: 14, range: 120, cooldown: 0.5, hitAll: true, dot: { dps: 35, duration: 3 } },
-      { id: 'pressure', emoji: '🍲', cost: 500, damage: 40, range: 125, cooldown: 0.7, dot: { dps: 160, duration: 4 }, defaultTarget: 'strong' },
+      { id: 'flamer', emoji: '🌋', cost: 500, damage: 14, range: 130, cooldown: 0.5, hitAll: true, dot: { dps: 35, duration: 3 } },
+      { id: 'pressure', emoji: '🍲', cost: 500, damage: 60, range: 135, cooldown: 1.4, dot: { dps: 150, duration: 4 }, defaultTarget: 'strong' },
     ],
   },
   strip: {
@@ -99,7 +99,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 340, damage: 68, range: 170, cooldown: 0.8, chainHits: 5 },
     ],
     branches: [
-      { id: 'surge', emoji: '🌩️', cost: 500, damage: 90, range: 185, cooldown: 0.6, chainHits: 10 },
+      { id: 'surge', emoji: '🌩️', cost: 500, damage: 110, range: 185, cooldown: 0.5, chainHits: 10 },
       { id: 'highvolt', emoji: '🔌', cost: 500, damage: 280, range: 190, cooldown: 1.0, chainHits: 2, pierceArmor: true, defaultTarget: 'strong' },
     ],
   },
@@ -118,37 +118,37 @@ export const UNITS: Record<UnitId, UnitDef> = {
   iron: {
     id: 'iron', kind: 'single', emoji: '👔', color: 0x8c9ab0, radius: 19,
     levels: [
-      { cost: 260, damage: 90, range: 130, cooldown: 2.2, shred: 2 },
-      { cost: 260, damage: 180, range: 140, cooldown: 1.9, shred: 3 },
-      { cost: 420, damage: 340, range: 150, cooldown: 1.6, shred: 4 },
+      { cost: 200, damage: 80, range: 140, cooldown: 2.0, shred: 2 },
+      { cost: 220, damage: 170, range: 150, cooldown: 1.8, shred: 3 },
+      { cost: 380, damage: 340, range: 160, cooldown: 1.6, shred: 4 },
     ],
     branches: [
-      { id: 'steam', emoji: '💨', cost: 550, damage: 130, range: 230, cooldown: 1.1, line: 26, shred: 3 },
+      { id: 'steam', emoji: '💨', cost: 550, damage: 170, range: 230, cooldown: 1.0, line: 34, shred: 3 },
       { id: 'press', emoji: '🗜️', cost: 550, damage: 750, range: 165, cooldown: 1.7, shred: 6, defaultTarget: 'strong' },
     ],
   },
   aircon: {
     id: 'aircon', kind: 'aura', emoji: '❄️', color: 0x9fd8f0, radius: 20, maxCount: 1,
     levels: [
-      { cost: 250, damage: 0, range: 0, cooldown: 0, globalSlow: 0.1 },
-      { cost: 250, damage: 0, range: 0, cooldown: 0, globalSlow: 0.15 },
-      { cost: 400, damage: 0, range: 0, cooldown: 0, globalSlow: 0.2 },
+      { cost: 180, damage: 0, range: 0, cooldown: 0, globalSlow: 0.2 },
+      { cost: 200, damage: 0, range: 0, cooldown: 0, globalSlow: 0.3 },
+      { cost: 300, damage: 0, range: 0, cooldown: 0, globalSlow: 0.35 },
     ],
     branches: [
-      { id: 'deepfreeze', emoji: '🧊', cost: 500, damage: 0, range: 0, cooldown: 0, globalSlow: 0.3 },
-      { id: 'dehumid', emoji: '💧', cost: 500, damage: 0, range: 0, cooldown: 0, globalSlow: 0.2, globalVuln: 0.2 },
+      { id: 'deepfreeze', emoji: '🧊', cost: 450, damage: 0, range: 0, cooldown: 0, globalSlow: 0.45 },
+      { id: 'dehumid', emoji: '💧', cost: 450, damage: 0, range: 0, cooldown: 0, globalSlow: 0.35, globalVuln: 0.25 },
     ],
   },
   dishwasher: {
     id: 'dishwasher', kind: 'single', emoji: '🚿', color: 0x4f9fe0, radius: 20,
     levels: [
-      { cost: 350, damage: 36, range: 260, cooldown: 1.6, line: 22 },
-      { cost: 350, damage: 65, range: 280, cooldown: 1.5, line: 22 },
-      { cost: 550, damage: 115, range: 300, cooldown: 1.4, line: 24 },
+      { cost: 260, damage: 36, range: 260, cooldown: 1.5, line: 24 },
+      { cost: 280, damage: 65, range: 280, cooldown: 1.4, line: 24 },
+      { cost: 460, damage: 115, range: 300, cooldown: 1.3, line: 26 },
     ],
     branches: [
-      { id: 'jet', emoji: '🌊', cost: 650, damage: 210, range: 320, cooldown: 1.2, line: 40 },
-      { id: 'sterilize', emoji: '🧪', cost: 650, damage: 400, range: 340, cooldown: 1.5, line: 18, pierceArmor: true, defaultTarget: 'strong' },
+      { id: 'jet', emoji: '🌊', cost: 650, damage: 130, range: 300, cooldown: 1.0, line: 56 },
+      { id: 'sterilize', emoji: '🧪', cost: 650, damage: 600, range: 340, cooldown: 1.6, pierceArmor: true, defaultTarget: 'strong' },
     ],
   },
 };

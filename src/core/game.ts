@@ -272,9 +272,16 @@ export class Game {
     const key = this.modVersion * 100 + u.level * 10 + (u.branch ?? 9);
     const hit = this.statCache.get(u);
     if (hit && hit.key === key) return hit.stats;
-    const base = u.branch !== null && u.def.branches ? u.def.branches[u.branch] : u.def.levels[u.level];
+    const stats = this.levelStats(u.def.id, u.level, u.branch);
+    this.statCache.set(u, { key, stats });
+    return stats;
+  }
+
+  /** 가전 id의 레벨(0부터)·갈래 스탯에 카드 효과를 반영한 값. 설치 전이나 업그레이드 미리보기에도 쓴다 */
+  levelStats(id: UnitId, level: number, branch: 0 | 1 | null = null): UnitLevel {
+    const def = this.cfg.units[id];
+    const base = branch !== null && def.branches ? def.branches[branch] : def.levels[level];
     const m = this.mods;
-    const id = u.def.id;
     const stats: UnitLevel = {
       ...base,
       damage: base.damage * m.damage[id] * m.allDamage,
@@ -283,8 +290,27 @@ export class Game {
     };
     if (base.splash) stats.splash = base.splash * m.splash;
     if (base.buff) stats.buff = base.buff + m.wifiBuff;
-    this.statCache.set(u, { key, stats });
     return stats;
+  }
+
+  /**
+   * 한 적에게 주는 초당 피해(방어력 0 기준, 크리티컬은 평균, 화상 포함).
+   * u를 주면 지금 받고 있는 와이파이(공격 속도)·보조배터리(공격력) 버프도 반영한다. 과부하처럼 잠깐인 효과는 빼고.
+   * max: 그릴처럼 계속 지지면 오르는 가전의 최대치
+   */
+  dps(id: UnitId, lv: UnitLevel, u?: Unit): { dps: number; max: number } {
+    const def = this.cfg.units[id];
+    if (def.kind === 'buff' || def.kind === 'income' || def.kind === 'aura') return { dps: 0, max: 0 };
+    const m = this.mods;
+    const speed = u?.buffMul ?? 1;
+    // 선풍기 바람은 크리티컬과 공격력 버프를 받지 않는다
+    const pulse = def.kind === 'slow';
+    const dmgMul = pulse ? 1 : (u?.dmgMul ?? 1);
+    const critChance = pulse ? 0 : Math.min(1, (this.cfg.critChance + m.critChance) * m.critChanceMul);
+    const crit = 1 + critChance * (this.cfg.critMul + m.critDamage - 1);
+    const hit = (lv.damage * crit * dmgMul * speed) / lv.cooldown;
+    const burn = lv.dot ? lv.dot.dps * m.damage[id] * m.allDamage * dmgMul : 0;
+    return { dps: hit + burn, max: hit * (lv.ramp?.max ?? 1) + burn };
   }
 
   /** 스킬의 현재 수치 (카드 효과 반영) */

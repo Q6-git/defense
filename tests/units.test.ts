@@ -137,3 +137,59 @@ describe('타겟팅 모드', () => {
     expect(pickTarget(list, 'close', { x: 390, y: 0 }).uid).toBe(3);
   });
 });
+
+describe('DPS 표시', () => {
+  /** 1초 동안 실제로 준 피해를 재서 dps()와 비교한다 (크리티컬 0, 방어력 0인 적) */
+  function measured(unit: 'toaster' | 'stove' | 'microwave', setup?: (g: Game) => void) {
+    const g = new Game({ ...defaultConfig(), startMoney: 1e6, critChance: 0, seed: 1, cards: [] });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    g.apply({ type: 'place', unit, x: 560, y: 210 });
+    setup?.(g);
+    const e = g.spawnEnemy('grease', 560);
+    e.def = { ...e.def, speed: 0 };
+    e.hp = e.maxHp = 1e9;
+    const u = g.units[0];
+    g.update(1 / 60);
+    const shown = g.dps(unit, g.stats(u), u).dps;
+    let t = 0;
+    const start = e.hp;
+    for (; t < 20; t += 1 / 60) g.update(1 / 60);
+    return { shown, real: (start - e.hp) / t, buffed: u.buffMul > 1 && u.dmgMul > 1 };
+  }
+
+  it('토스터: 공격력 ÷ 공격 간격', () => {
+    const g = new Game({ ...defaultConfig(), critChance: 0 });
+    expect(g.dps('toaster', g.levelStats('toaster', 0)).dps).toBeCloseTo(12 / 0.7);
+  });
+
+  it('크리티컬은 평균으로 반영된다 (10% × 2.5배 → 1.15배)', () => {
+    const g = new Game(defaultConfig());
+    expect(g.dps('toaster', g.levelStats('toaster', 0)).dps).toBeCloseTo((12 / 0.7) * 1.15);
+  });
+
+  it('그릴은 최대치가 4배', () => {
+    const g = new Game({ ...defaultConfig(), critChance: 0 });
+    const d = g.dps('microwave', g.levelStats('microwave', 2, 1));
+    expect(d.max).toBeCloseTo(d.dps * 4);
+  });
+
+  it('지원형 가전은 DPS가 0', () => {
+    const g = new Game(defaultConfig());
+    expect(g.dps('wifi', g.levelStats('wifi', 0)).dps).toBe(0);
+    expect(g.dps('aircon', g.levelStats('aircon', 0)).dps).toBe(0);
+  });
+
+  it('표시한 DPS가 실제로 20초 동안 준 피해와 맞는다 (토스터, 화상 포함 가스레인지, 와이파이·배터리 버프)', () => {
+    const buffed = measured('toaster', (g) => {
+      expect(g.apply({ type: 'place', unit: 'wifi', x: 620, y: 240 }).ok).toBe(true);
+      expect(g.apply({ type: 'place', unit: 'battery', x: 500, y: 240 }).ok).toBe(true);
+    });
+    expect(buffed.buffed).toBe(true);
+    for (const r of [measured('toaster'), measured('stove'), buffed]) {
+      expect(r.real / r.shown).toBeGreaterThan(0.95);
+      expect(r.real / r.shown).toBeLessThan(1.05);
+    }
+  });
+});
