@@ -45,6 +45,12 @@ const BRANCH_SHOT: Record<string, { color: number; width: number; fade: number; 
   rapid: { color: 0xffc94d, width: 2, fade: 70, sound: 'shoot', big: false },
   sniper: { color: 0xffffff, width: 4, fade: 240, sound: 'snipe', big: true },
   crusher: { color: 0x9aa0b4, width: 5, fade: 120, sound: 'blast', big: true },
+  pressure: { color: 0xff5a1a, width: 6, fade: 160, sound: 'blast', big: true },
+  highvolt: { color: 0xfff27a, width: 5, fade: 160, sound: 'crit', big: true },
+  steam: { color: 0xe8eef5, width: 14, fade: 300, sound: 'pulse', big: false },
+  press: { color: 0xffffff, width: 9, fade: 260, sound: 'snipe', big: true },
+  jet: { color: 0x3f9fe8, width: 18, fade: 300, sound: 'pulse', big: false },
+  sterilize: { color: 0x7fe0c8, width: 10, fade: 280, sound: 'snipe', big: true },
 };
 
 /** 뽑기 가전의 공격 모양 */
@@ -768,6 +774,7 @@ export class GameScene extends Phaser.Scene {
       if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${Math.round(lv.dmgBuff * 100)}%`);
       if (lv.shred) lines.push(`${s.shred} ${lv.shred}`);
       if (lv.globalSlow) lines.push(`${s.globalSlow} ${Math.round(lv.globalSlow * 100)}%`);
+      if (lv.globalVuln) lines.push(`${s.globalVuln} +${Math.round(lv.globalVuln * 100)}%`);
     }
     this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
     const showControls = u !== null;
@@ -802,7 +809,8 @@ export class GameScene extends Phaser.Scene {
         const { from, to } = ev;
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const radius = this.sim.cfg.units[ev.kind].radius;
-        const style = ev.branch ? BRANCH_SHOT[ev.branch] : KIND_SHOT[ev.kind];
+        // 갈래 전용 모양이 없으면 가전 기본 모양을 쓴다 (뽑기 가전 갈래)
+        const style = (ev.branch ? BRANCH_SHOT[ev.branch] : undefined) ?? KIND_SHOT[ev.kind];
         const proj = ev.branch ? undefined : PROJECTILE[ev.kind];
         if (ev.branch === 'grill') {
           // 그릴: 지질수록 굵어지는 광선

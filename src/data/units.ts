@@ -78,7 +78,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { id: 'bounty', emoji: '⛲', cost: 400, damage: 0, range: 160, cooldown: 0, income: 120, bounty: { radius: 160, mul: 1.5 } },
     ],
   },
-  // ── 뽑기로 얻는 가전 (Lv3까지, 갈림길 없음)
+  // ── 뽑기로 얻는 가전 (Lv3 다음 갈림길: A 떼거리용 / B 강적용)
   stove: {
     id: 'stove', kind: 'single', emoji: '🔥', color: 0xe8603a, radius: 19,
     levels: [
@@ -86,13 +86,21 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 180, damage: 10, range: 100, cooldown: 0.5, dot: { dps: 26, duration: 3 } },
       { cost: 300, damage: 16, range: 110, cooldown: 0.45, dot: { dps: 45, duration: 3 } },
     ],
+    branches: [
+      { id: 'flamer', emoji: '🌋', cost: 500, damage: 14, range: 120, cooldown: 0.5, hitAll: true, dot: { dps: 35, duration: 3 } },
+      { id: 'pressure', emoji: '🍲', cost: 500, damage: 40, range: 125, cooldown: 0.7, dot: { dps: 160, duration: 4 }, defaultTarget: 'strong' },
+    ],
   },
   strip: {
     id: 'strip', kind: 'single', emoji: '⚡', color: 0xf2c230, radius: 18,
     levels: [
       { cost: 200, damage: 20, range: 150, cooldown: 1.0, chainHits: 4 },
-      { cost: 200, damage: 34, range: 160, cooldown: 0.9, chainHits: 4 },
-      { cost: 340, damage: 58, range: 170, cooldown: 0.8, chainHits: 5 },
+      { cost: 200, damage: 38, range: 160, cooldown: 0.9, chainHits: 4 },
+      { cost: 340, damage: 68, range: 170, cooldown: 0.8, chainHits: 5 },
+    ],
+    branches: [
+      { id: 'surge', emoji: '🌩️', cost: 500, damage: 90, range: 185, cooldown: 0.6, chainHits: 10 },
+      { id: 'highvolt', emoji: '🔌', cost: 500, damage: 280, range: 190, cooldown: 1.0, chainHits: 2, pierceArmor: true, defaultTarget: 'strong' },
     ],
   },
   battery: {
@@ -102,13 +110,21 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 220, damage: 0, range: 125, cooldown: 0, dmgBuff: 0.3 },
       { cost: 320, damage: 0, range: 140, cooldown: 0, dmgBuff: 0.4 },
     ],
+    branches: [
+      { id: 'bigcell', emoji: '🔆', cost: 450, damage: 0, range: 230, cooldown: 0, dmgBuff: 0.5 },
+      { id: 'overcharge', emoji: '💥', cost: 450, damage: 0, range: 150, cooldown: 0, dmgBuff: 0.9 },
+    ],
   },
   iron: {
     id: 'iron', kind: 'single', emoji: '👔', color: 0x8c9ab0, radius: 19,
     levels: [
       { cost: 260, damage: 90, range: 130, cooldown: 2.2, shred: 2 },
-      { cost: 260, damage: 160, range: 140, cooldown: 2.0, shred: 3 },
-      { cost: 420, damage: 280, range: 150, cooldown: 1.8, shred: 4 },
+      { cost: 260, damage: 180, range: 140, cooldown: 1.9, shred: 3 },
+      { cost: 420, damage: 340, range: 150, cooldown: 1.6, shred: 4 },
+    ],
+    branches: [
+      { id: 'steam', emoji: '💨', cost: 550, damage: 130, range: 230, cooldown: 1.1, line: 26, shred: 3 },
+      { id: 'press', emoji: '🗜️', cost: 550, damage: 750, range: 165, cooldown: 1.7, shred: 6, defaultTarget: 'strong' },
     ],
   },
   aircon: {
@@ -118,6 +134,10 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 250, damage: 0, range: 0, cooldown: 0, globalSlow: 0.15 },
       { cost: 400, damage: 0, range: 0, cooldown: 0, globalSlow: 0.2 },
     ],
+    branches: [
+      { id: 'deepfreeze', emoji: '🧊', cost: 500, damage: 0, range: 0, cooldown: 0, globalSlow: 0.3 },
+      { id: 'dehumid', emoji: '💧', cost: 500, damage: 0, range: 0, cooldown: 0, globalSlow: 0.2, globalVuln: 0.2 },
+    ],
   },
   dishwasher: {
     id: 'dishwasher', kind: 'single', emoji: '🚿', color: 0x4f9fe0, radius: 20,
@@ -125,6 +145,10 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 350, damage: 36, range: 260, cooldown: 1.6, line: 22 },
       { cost: 350, damage: 65, range: 280, cooldown: 1.5, line: 22 },
       { cost: 550, damage: 115, range: 300, cooldown: 1.4, line: 24 },
+    ],
+    branches: [
+      { id: 'jet', emoji: '🌊', cost: 650, damage: 210, range: 320, cooldown: 1.2, line: 40 },
+      { id: 'sterilize', emoji: '🧪', cost: 650, damage: 400, range: 340, cooldown: 1.5, line: 18, pierceArmor: true, defaultTarget: 'strong' },
     ],
   },
 };
