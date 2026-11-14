@@ -18,9 +18,9 @@ const { chromium } = require('playwright');
     if (s.move) await page.mouse.move(s.move[0], s.move[1]);
     if (s.eval) console.log(JSON.stringify(await page.evaluate(s.eval)));
     if (s.wait) await page.waitForTimeout(s.wait);
-    if (s.shot) await page.screenshot({ path: s.shot });
+    if (s.shot) await page.screenshot({ path: s.shot, timeout: 180000 });
   }
-  await page.screenshot({ path: out });
+  await page.screenshot({ path: out, timeout: 180000 });
   if (errors.length) console.log('ERRORS:', errors.join('\n'));
   await browser.close();
 })();

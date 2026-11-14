@@ -107,11 +107,44 @@ describe('3D 주방', () => {
     expect(g.canPlace('toaster', side.x, side.y)).toBeNull();
   });
 
-  it('소품은 배수관 칸 위에 있지 않다', () => {
-    const g = new Game(defaultConfig('normal', false, 'kitchen'));
-    const grid = MAPS.kitchen.grid!;
-    for (const d of MAPS.kitchen.decor!) {
-      expect(g.distanceToPath({ x: grid.x + (d.c + 0.5) * grid.size, y: grid.y + (d.r + 0.5) * grid.size })).toBeGreaterThan(MAPS.kitchen.pathHalfWidth);
+  it('모든 맵: 격자가 있고, 길 꼭짓점은 칸 가운데, 소품이 차지한 칸은 배수관 위에 있지 않다', () => {
+    for (const id of MAP_ORDER) {
+      const m = MAPS[id];
+      const grid = m.grid!;
+      expect(grid, id).toBeDefined();
+      for (const path of m.paths) {
+        for (const p of path.slice(1)) {
+          expect(((p.x - grid.x) / grid.size - 0.5) % 1, `${id} x`).toBeCloseTo(0);
+          expect(((p.y - grid.y) / grid.size - 0.5) % 1, `${id} y`).toBeCloseTo(0);
+        }
+      }
+      const g = new Game(defaultConfig('normal', false, id));
+      for (const d of m.decor ?? []) {
+        for (let c = d.c; c < d.c + (d.w ?? 1); c++) {
+          for (let r = d.r; r < d.r + (d.h ?? 1); r++) {
+            expect(g.distanceToPath({ x: grid.x + (c + 0.5) * grid.size, y: grid.y + (r + 0.5) * grid.size }), `${id} ${d.kind} ${c},${r}`).toBeGreaterThan(m.pathHalfWidth);
+          }
+        }
+      }
+    }
+  });
+
+  it('여러 칸 소품(욕조)은 차지한 칸 전체가 설치 불가', () => {
+    const g = new Game({ ...defaultConfig('normal', false, 'bathroom'), startMoney: 1e4 });
+    const tub = MAPS.bathroom.decor!.find((d) => d.kind === 'bathtub')!;
+    const grid = MAPS.bathroom.grid!;
+    for (let c = tub.c; c < tub.c + tub.w!; c++) {
+      for (let r = tub.r; r < tub.r + tub.h!; r++) expect(g.canPlace('toaster', grid.x + (c + 0.5) * grid.size, grid.y + (r + 0.5) * grid.size)).toBe('bounds');
+    }
+  });
+
+  it('콘센트가 서는 칸(길 끝 바로 다음 칸)에는 설치할 수 없다', () => {
+    for (const id of MAP_ORDER) {
+      const g = new Game({ ...defaultConfig('normal', false, id), startMoney: 1e4 });
+      const p = g.paths[0];
+      const end = p.pointAt(p.length), before = p.pointAt(p.length - 10);
+      const x = end.x + Math.sign(end.x - before.x) * 52, y = end.y + Math.sign(end.y - before.y) * 52;
+      expect(g.canPlace('toaster', x, y), id).not.toBeNull();
     }
   });
 

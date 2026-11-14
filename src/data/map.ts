@@ -56,7 +56,7 @@ export const MAP_BATHROOM: MapDef = {
   area: { x: 0, y: 56, w: 1040, h: 664 },
   paths: [MAP_BATHROOM_PATH, [tile(-1, 11), tile(8, 11), tile(8, 5), tile(12, 5), tile(12, 2), tile(16, 2), tile(16, 9), tile(18, 9)]],
   pathHalfWidth: 26,
-  enemyHpMul: 1,
+  enemyHpMul: 1.2,
   grid: GRID,
   hills: [{ c: 0, r: 3, w: 3, h: 4, level: 1 }, { c: 0, r: 4, w: 2, h: 2, level: 2 }, { c: 17, r: 3, w: 3, h: 4, level: 1 }, { c: 9, r: 0, w: 2, h: 2, level: 1 }],
   decor: BATH_DECOR,
@@ -81,7 +81,7 @@ export const MAP_BALCONY: MapDef = {
   hills: [{ c: 0, r: 11, w: 4, h: 1, level: 1 }, { c: 19, r: 2, w: 1, h: 4, level: 1 }, { c: 7, r: 3, w: 4, h: 1, level: 1 }],
   decor: BALCONY_DECOR,
   blocked: [...decorBlocked(BALCONY_DECOR), outletBlocked(MAP_BALCONY_PATH)],
-  enemyHpMul: 1.08,
+  enemyHpMul: 1,
 };
 
 /** 맵 4: 세탁실. 바깥에서 안쪽으로 빙글빙글 도는 긴 나선, 콘센트는 한가운데. 안쪽 자리는 여러 바퀴를 한꺼번에 덮는다 */
@@ -97,7 +97,7 @@ export const MAP_LAUNDRY: MapDef = {
   area: { x: 0, y: 56, w: 1040, h: 664 },
   paths: [MAP_LAUNDRY_PATH],
   pathHalfWidth: 26,
-  enemyHpMul: 1.45,
+  enemyHpMul: 1.6,
   grid: GRID,
   hills: [{ c: 5, r: 6, w: 9, h: 1, level: 1 }, { c: 8, r: 6, w: 3, h: 1, level: 2 }, { c: 16, r: 1, w: 2, h: 3, level: 1 }],
   decor: LAUNDRY_DECOR,
@@ -117,7 +117,7 @@ export const MAP_LIVING: MapDef = {
   area: { x: 0, y: 56, w: 1040, h: 664 },
   paths: [MAP_LIVING_PATH],
   pathHalfWidth: 26,
-  enemyHpMul: 1.5,
+  enemyHpMul: 1.75,
   grid: GRID,
   hills: [{ c: 0, r: 4, w: 3, h: 3, level: 1 }, { c: 8, r: 3, w: 3, h: 2, level: 1 }, { c: 18, r: 4, w: 2, h: 4, level: 1 }, { c: 11, r: 7, w: 2, h: 1, level: 1 }],
   decor: LIVING_DECOR,

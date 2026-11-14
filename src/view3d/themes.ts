@@ -57,8 +57,8 @@ export const THEMES: Record<string, Theme> = {
   },
   laundry: {
     // 연보라·회색 타일, 고지대는 빨래 더미 색
-    bg: 0x3a3a52, tileA: 0xf0eff8, tileB: 0xd8d6ea, hillA: 0xb8d8f8, hillB: 0xa8c8f0, hillSide: 0x7a98c8,
-    base: { top: 0xc8c4dc, side: 0xeeecf6 }, floor: 0x55556e,
+    bg: 0x3a3a52, tileA: 0xeeedf8, tileB: 0xc8c4e2, hillA: 0xb8d8f8, hillB: 0xa8c8f0, hillSide: 0x7a98c8,
+    base: { top: 0x9a96b8, side: 0xdcd9ec }, floor: 0x55556e,
     wall: { kind: 'square', fill: '#ecebf6', line: '#cfcde2' },
     outer: [
       ['bigBasket', -1.3, 2.2, 0.3], ['bigClothes', -1.3, 5.5, 0], ['shelf', -1.4, 9.0, 1.57], ['bigHerb', -1.3, 11.5, 0],
