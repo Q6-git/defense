@@ -171,3 +171,32 @@ describe('3D 주방', () => {
     expect(width(g.rows)).toBeGreaterThan(width(0) * 1.1);
   });
 });
+
+describe('3D 확대·이동', () => {
+  it('확대해도 커서 아래 바닥 지점은 그대로 있다', async () => {
+    const { cameraFor, zoomView, unproject, HOME } = await import('../src/view3d/board');
+    const map = MAPS.kitchen;
+    const before = unproject(cameraFor(map, HOME), 300, 400);
+    const v = zoomView(map, HOME, 300, 400, 1.8);
+    expect(v.zoom).toBeCloseTo(1.8);
+    const after = unproject(cameraFor(map, v), 300, 400);
+    expect(after.x).toBeCloseTo(before.x, 0);
+    expect(after.y).toBeCloseTo(before.y, 0);
+  });
+
+  it('끌면 끈 만큼 바닥이 따라오고, 전체 보기에서는 움직이지 않으며, 확대 범위는 1~최대', async () => {
+    const { cameraFor, panView, zoomView, unproject, HOME, ZOOM_MAX } = await import('../src/view3d/board');
+    const map = MAPS.kitchen;
+    // 전체 보기(zoom 1)에서는 끌어도 그대로
+    expect(panView(map, HOME, { x: 400, y: 400 }, { x: 300, y: 350 })).toEqual(HOME);
+    // 확대한 뒤 끌면, 처음 잡은 바닥 지점이 손가락 위치로 온다
+    const z = zoomView(map, HOME, 520, 400, 2);
+    const grabbed = unproject(cameraFor(map, z), 500, 400);
+    const v = panView(map, z, { x: 500, y: 400 }, { x: 450, y: 380 });
+    const now = unproject(cameraFor(map, v), 450, 380);
+    expect(now.x).toBeCloseTo(grabbed.x, 0);
+    expect(now.y).toBeCloseTo(grabbed.y, 0);
+    expect(zoomView(map, HOME, 520, 400, 10).zoom).toBe(ZOOM_MAX);
+    expect(zoomView(map, HOME, 520, 400, 0.2).zoom).toBe(1);
+  });
+});

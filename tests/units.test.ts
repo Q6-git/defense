@@ -40,17 +40,59 @@ describe('유닛 배치', () => {
 });
 
 describe('업그레이드와 판매', () => {
-  it('업그레이드는 Lv3 → 갈림길 → 끝', () => {
-    const g = game();
+  it('업그레이드는 Lv3 → 갈림길 → ★강화 10번 → 끝', () => {
+    const g = game(1e7);
     g.apply({ type: 'place', unit: 'toaster', ...FREE });
     const u = g.units[0];
     expect(g.apply({ type: 'upgrade', uid: u.uid }).ok).toBe(true);
     expect(g.apply({ type: 'upgrade', uid: u.uid }).ok).toBe(true);
     expect(u.level).toBe(2);
-    // Lv3 다음은 갈림길이라 갈래를 골라야 하고, 고른 뒤에는 더 올릴 수 없다
+    // Lv3 다음은 갈림길이라 갈래를 골라야 하고, 고른 뒤에는 ★강화를 10번까지 할 수 있다
     expect(g.apply({ type: 'upgrade', uid: u.uid })).toEqual({ ok: false, reason: 'branch' });
     expect(g.apply({ type: 'upgrade', uid: u.uid, branch: 0 }).ok).toBe(true);
-    expect(g.apply({ type: 'upgrade', uid: u.uid, branch: 0 })).toEqual({ ok: false, reason: 'maxLevel' });
+    for (let i = 0; i < 10; i++) expect(g.apply({ type: 'upgrade', uid: u.uid }).ok).toBe(true);
+    expect(u.stars).toBe(10);
+    expect(g.apply({ type: 'upgrade', uid: u.uid })).toEqual({ ok: false, reason: 'maxLevel' });
+  });
+
+  it('★강화: 별 하나당 공격력 +25%, 비용은 갈래 비용 × 1.5^n, 판매 금액에 반영', async () => {
+    const { STAR } = await import('../src/core/game');
+    const g = game(1e7);
+    g.apply({ type: 'place', unit: 'toaster', ...FREE });
+    const u = g.units[0];
+    g.apply({ type: 'upgrade', uid: u.uid });
+    g.apply({ type: 'upgrade', uid: u.uid });
+    g.apply({ type: 'upgrade', uid: u.uid, branch: 1 });
+    const base = g.stats(u).damage;
+    const branchCost = u.def.branches![1].cost;
+    expect(g.upgradeOptions(u)).toEqual([{ branch: null, cost: Math.round((branchCost * 1.5) / 10) * 10, star: true }]);
+    const invested = u.invested;
+    const cost = g.upgradeOptions(u)[0].cost;
+    g.apply({ type: 'upgrade', uid: u.uid });
+    g.apply({ type: 'upgrade', uid: u.uid });
+    expect(g.stats(u).damage).toBeCloseTo(base * (1 + STAR.power * 2));
+    expect(u.invested).toBe(invested + cost + Math.round((branchCost * 1.5 ** 2) / 10) * 10);
+  });
+
+  it('★강화: 세탁기 수입과 와이파이 버프도 오른다 (지원형은 +10%)', () => {
+    const g = game(1e7);
+    const lv4 = (unit: 'washer' | 'wifi', x: number, y: number) => {
+      g.apply({ type: 'place', unit, x, y });
+      const u = g.units[g.units.length - 1];
+      g.apply({ type: 'upgrade', uid: u.uid });
+      g.apply({ type: 'upgrade', uid: u.uid });
+      g.apply({ type: 'upgrade', uid: u.uid, branch: 0 });
+      return u;
+    };
+    const w = lv4('washer', 500, 240);
+    const f = lv4('wifi', 620, 240);
+    const income = g.stats(w).income!, buff = g.stats(f).buff!;
+    for (let i = 0; i < 4; i++) {
+      g.apply({ type: 'upgrade', uid: w.uid });
+      g.apply({ type: 'upgrade', uid: f.uid });
+    }
+    expect(g.stats(w).income).toBe(Math.round(income * 2));
+    expect(g.stats(f).buff).toBeCloseTo(buff * 1.4);
   });
 
   it('판매하면 투자금의 60%를 돌려받는다', () => {

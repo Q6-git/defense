@@ -72,6 +72,23 @@ describe('새로운 적', () => {
     expect(boss.hp).toBe(boss.maxHp * 0.5);
   });
 
+  it('치유사가 여럿이어도 회복은 겹치지 않고, 치유사끼리는 서로 고치지 않는다', () => {
+    const g = game();
+    const healers = [500, 505, 510, 515].map((d) => g.spawnEnemy('healer', d));
+    const near = g.spawnEnemy('grease', 520);
+    for (const e of [...healers, near]) {
+      e.def = { ...e.def, speed: 0 };
+      e.hp = e.maxHp * 0.5;
+    }
+    g.update(2.05);
+    // 치유사 넷이 같이 있어도 한 번(4%)만
+    expect(near.hp).toBeCloseTo(near.maxHp * 0.54);
+    for (const h of healers) expect(h.hp).toBe(h.maxHp * 0.5);
+    // 2초 뒤에는 다시 회복받는다
+    g.update(2.05);
+    expect(near.hp).toBeCloseTo(near.maxHp * 0.58);
+  });
+
   it('돌격병: 체력이 절반 이하가 되면 2배로 빨라진다', () => {
     const g = game();
     const a = g.spawnEnemy('charger', 100);

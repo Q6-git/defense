@@ -13,7 +13,7 @@ import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, savePr
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
-import { Board3D, type Mark } from '../view3d/board';
+import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
 import { baseScale, button, card, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
@@ -84,6 +84,8 @@ export class GameScene extends Phaser.Scene {
   private unitEmojis = new Map<number, Icon>();
   /** 갈림길을 고른 가전 위의 작은 배지 */
   private badges = new Map<number, Icon>();
+  /** ★강화 개수 표시 (레벨 점 아래 '★3') */
+  private starTags = new Map<number, Icon>();
   private fx!: Fx;
   /** 업적: 판을 넘어 쌓이는 진행 상황과 이번 판 기록 */
   private progress: Progress = loadProgress();
@@ -116,6 +118,8 @@ export class GameScene extends Phaser.Scene {
   private rewardText!: Phaser.GameObjects.Text;
   private waveBtn!: Button;
   private speedBtn!: Button;
+  /** 확대했을 때 전체 보기로 되돌리는 버튼 (3D 맵) */
+  private viewBtn!: Button;
   private muteBtn!: Button;
   private pauseBtn!: Button;
   /** 일시정지 중이면 일시정지 화면의 오브젝트들 */
@@ -144,6 +148,7 @@ export class GameScene extends Phaser.Scene {
     title: Phaser.GameObjects.Text;
     stats: Phaser.GameObjects.Text;
     upgrade: Button;
+    upgradeAll: Button;
     branchA: Button;
     branchB: Button;
     sell: Button;
@@ -171,6 +176,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyEmojis.clear();
     this.unitEmojis.clear();
     this.badges.clear();
+    this.starTags.clear();
     this.flashes.clear();
     this.punch.clear();
     this.born.clear();
@@ -217,6 +223,8 @@ export class GameScene extends Phaser.Scene {
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), THEME.neutral, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), THEME.neutral, 17);
+    this.viewBtn = button(this, PANEL_X - 62, 108, 108, 34, STR.resetView, () => this.board?.setView({ ...HOME }), THEME.neutral, 15);
+    this.viewBtn.container.setDepth(6).setVisible(false);
     this.waveBtn = button(this, 1124, 28, 300, 40, STR.startWave, () => this.sim.apply({ type: 'startWave' }), THEME.green, 18);
     this.buildShop();
     this.buildAbilities();
@@ -227,7 +235,8 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', () => sfx.unlock());
     // Esc / P 로 일시정지, 탭을 벗어나거나 화면이 꺼지면 자동 일시정지
     const onKey = () => this.setPaused(!this.pauseLayer);
-    this.input.keyboard?.on('keydown-ESC', onKey);
+    // Esc: 설치·조준 중이면 그것부터 취소, 아니면 일시정지
+    this.input.keyboard?.on('keydown-ESC', () => (this.placing || this.aiming ? this.cancelPlacing() : onKey()));
     this.input.keyboard?.on('keydown-P', onKey);
     const onHidden = () => this.setPaused(true);
     this.game.events.on(Phaser.Core.Events.HIDDEN, onHidden);
@@ -238,7 +247,7 @@ export class GameScene extends Phaser.Scene {
         this.ghost = this.snap(q.x, q.y);
       }
     });
-    this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.onMapTap(p.worldX, p.worldY));
+    this.setupCameraInput();
     if (!data.start) this.showDifficultyPicker();
   }
 
@@ -417,8 +426,12 @@ export class GameScene extends Phaser.Scene {
       ({ x, y } = this.snap(x, y));
       const res = this.sim.apply({ type: 'place', unit: id, x, y });
       if (res.ok) {
-        this.placing = null;
-        this.ghost = null;
+        // 연속 설치: 한 대 더 살 수 있고 최대 대수가 아니면 설치 모드를 유지한다 (Esc·우클릭으로 끝)
+        const more = this.sim.money >= this.sim.placeCost(id) && this.sim.units.filter((u) => u.def.id === id).length < this.sim.maxCount(id);
+        if (!more) {
+          this.placing = null;
+          this.ghost = null;
+        }
         sfx.play('place');
         if (!this.run.placed.includes(id)) this.run.placed.push(id);
         const u = this.sim.units[this.sim.units.length - 1];
@@ -439,6 +452,67 @@ export class GameScene extends Phaser.Scene {
         })
       : this.sim.units.find((u) => Phaser.Math.Distance.Between(u.x, u.y, x, y) <= u.def.radius + 6);
     this.select(hit ?? null);
+  }
+
+  /**
+   * 맵 위 입력: 짧게 누르면 설치·선택(onMapTap), 끌면 맵 이동, 휠·두 손가락이면 확대·축소 (3D 맵).
+   * 우클릭은 설치·조준 취소.
+   */
+  private setupCameraInput(): void {
+    const { area } = this.sim.cfg.map;
+    const inMap = (p: { x: number; y: number }) => p.x < area.x + area.w && p.y > area.y;
+    const blocked = () => !!this.pauseLayer || !!this.sim.offer || this.picking || this.endScreen.length > 0;
+    let drag: { x: number; y: number; moved: boolean } | null = null;
+    let pinch: number | null = null;
+    this.input.addPointer(1);
+    this.input.mouse?.disableContextMenu();
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown()) {
+        this.cancelPlacing();
+        return;
+      }
+      drag = inMap(p) && !blocked() ? { x: p.x, y: p.y, moved: false } : null;
+    });
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      const b = this.board;
+      if (!b || blocked()) return;
+      const p1 = this.input.pointer1, p2 = this.input.pointer2;
+      if (p1.isDown && p2.isDown) {
+        // 두 손가락: 벌리면 확대, 가운데를 끌면 이동
+        const d = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+        if (pinch) b.setView(zoomView(this.sim.cfg.map, b.view, mid.x, mid.y, d / pinch));
+        pinch = d;
+        if (drag) drag.moved = true;
+        return;
+      }
+      if (!drag || !p.isDown) return;
+      if (!drag.moved && Phaser.Math.Distance.Between(drag.x, drag.y, p.x, p.y) < 8) return;
+      drag.moved = true;
+      b.setView(panView(this.sim.cfg.map, b.view, { x: drag.x, y: drag.y }, { x: p.x, y: p.y }));
+      drag.x = p.x;
+      drag.y = p.y;
+    });
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonReleased()) return;
+      const wasDrag = drag?.moved || pinch !== null;
+      if (!this.input.pointer1.isDown && !this.input.pointer2.isDown) {
+        drag = null;
+        pinch = null;
+      }
+      if (!wasDrag) this.onMapTap(p.worldX, p.worldY);
+    });
+    this.input.on('wheel', (p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
+      if (!this.board || blocked() || !inMap(p)) return;
+      this.board.setView(zoomView(this.sim.cfg.map, this.board.view, p.x, p.y, Math.exp(-dy * 0.0015)));
+    });
+  }
+
+  /** 설치·조준 모드 끝내기 */
+  private cancelPlacing(): void {
+    this.placing = null;
+    this.aiming = null;
+    this.ghost = null;
   }
 
   private choosePlacing(id: UnitId): void {
@@ -528,7 +602,9 @@ export class GameScene extends Phaser.Scene {
     const bg = card(this, 0, 0, w, 318);
     const title = text(this, 12, 10, '', 20);
     const stats = text(this, 12, 44, '', 15, THEME.text).setLineSpacing(4);
-    const upgrade = button(this, w / 2, 204, w - 24, 40, '', () => this.upgradeSelected(), THEME.blue, 17);
+    // 업그레이드 버튼 오른쪽에 '모두' (같은 가전을 돈이 되는 만큼 싼 것부터 올린다)
+    const upgrade = button(this, (w - 66) / 2 + 2, 204, w - 24 - 66, 40, '', () => this.upgradeSelected(), THEME.blue, 17);
+    const upgradeAll = button(this, w - 12 - 30, 204, 60, 40, STR.upgradeAll, () => this.upgradeAllSame(), THEME.blue, 15);
     const half = (w - 24) / 2 - 3;
     const branchA = button(this, 12 + half / 2, 200, half, 46, '', () => this.upgradeSelected(0), THEME.purple, 15);
     const branchB = button(this, w - 12 - half / 2, 200, half, 46, '', () => this.upgradeSelected(1), THEME.purple, 15);
@@ -537,19 +613,50 @@ export class GameScene extends Phaser.Scene {
     const target = button(this, w / 2, 248, w - 24, 32, '', () => this.cycleTarget(), THEME.neutral, 15);
     const sell = button(this, w / 2, 290, w - 24, 32, '', () => this.sellSelected(), THEME.red, 15);
     const root = this.add.container(x, y, [
-      bg, title, stats, upgrade.container, branchA.container, branchB.container, target.container, sell.container,
+      bg, title, stats, upgrade.container, upgradeAll.container, branchA.container, branchB.container, target.container, sell.container,
     ]);
-    this.info = { root, title, stats, upgrade, branchA, branchB, sell, target };
+    this.info = { root, title, stats, upgrade, upgradeAll, branchA, branchB, sell, target };
+  }
+
+  /** 고른 가전과 같은 종류를, 갈림길이 아닌 것 중 가장 싼 업그레이드부터 돈이 되는 만큼 올린다 */
+  private upgradeAllSame(): void {
+    const u = this.selected;
+    if (!u) return;
+    let n = 0;
+    for (let guard = 0; guard < 500; guard++) {
+      const cands = this.sim.units
+        .filter((x) => x.def.id === u.def.id)
+        .map((x) => ({ x, opt: this.sim.upgradeOptions(x) }))
+        .filter((c) => c.opt.length === 1 && c.opt[0].cost <= this.sim.money)
+        .sort((a, b) => a.opt[0].cost - b.opt[0].cost);
+      if (!cands.length) break;
+      const { x, opt } = cands[0];
+      if (!this.sim.apply({ type: 'upgrade', uid: x.uid }).ok) break;
+      this.upgradeFx(x, undefined, !!opt[0].star);
+      n++;
+    }
+    if (n === 0) {
+      sfx.play('error');
+      return;
+    }
+    sfx.play('upgrade');
+    this.showToast(STR.upgradedAll(STR.units[u.def.id]?.name ?? u.def.id, n));
   }
 
   private upgradeSelected(branch?: 0 | 1): void {
     const u = this.selected;
     if (!u) return;
+    const star = !!this.sim.upgradeOptions(u)[0]?.star;
     if (!this.sim.apply({ type: 'upgrade', uid: u.uid, branch }).ok) {
       sfx.play('error');
       return;
     }
     sfx.play('upgrade');
+    this.upgradeFx(u, branch, star);
+  }
+
+  /** 업그레이드 연출: 고리, 글자, 3D 가전 튀어 오름 */
+  private upgradeFx(u: Unit, branch: 0 | 1 | undefined, star: boolean): void {
     const color = branch !== undefined ? 0xc58aff : 0xffd35a;
     this.board?.levelUp(u.uid, this.clock);
     const center = this.sp(u.x, u.y, this.board ? u.def.radius : 0);
@@ -560,7 +667,7 @@ export class GameScene extends Phaser.Scene {
       if (!this.progress.branches.includes(bid)) this.progress.branches.push(bid);
       this.checkAchievements();
     }
-    const label = branch !== undefined ? `${u.def.branches![branch].emoji} ${STR.branches[u.def.branches![branch].id].full}!` : STR.levelUp;
+    const label = branch !== undefined ? `${u.def.branches![branch].emoji} ${STR.branches[u.def.branches![branch].id].full}!` : star ? STR.starLabel(u.stars) : STR.levelUp;
     const at = this.sp(u.x, u.y, 30);
     this.floatText(at.x, at.y - 10, label, branch !== undefined ? THEME.pink : THEME.gold, 18);
     if (branch !== undefined) this.burst(at.x, at.y, color, 12, 60);
@@ -725,6 +832,7 @@ export class GameScene extends Phaser.Scene {
         g.fillStyle(i === 3 ? 0xa57be0 : 0xf5a623).fillCircle(dx, dy, 3.2);
       }
     }
+    this.syncStarTags((u) => ({ x: u.x, y: u.y + u.def.radius * LEVEL_SCALE[Math.min(u.level, 3)] + 19 }));
 
     // 적: 통통 튀며 움직이고(떠오르면 길쭉, 내려앉으면 납작), 가는 방향을 보고, 맞으면 붉게 움찔한다
     const hop = (e: Enemy) => (e.stunTime <= 0 ? Math.abs(Math.sin(t * 9 + e.uid)) : 0);
@@ -778,6 +886,18 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(0xff5a5a).fillRect(p.x - w / 2, p.y - e.def.radius - 9, (w * Math.max(0, e.hp)) / e.maxHp, 4);
     }
 
+  }
+
+  /** ★강화한 가전 아래 금색 '★n' 글자 */
+  private syncStarTags(at: (u: Unit) => { x: number; y: number }): void {
+    const list = this.sim.units.filter((u) => u.stars > 0);
+    syncEmojis(this, this.starTags, list.map((u) => ({ uid: u.uid, ...at(u), emoji: STR.stars(u.stars), size: 26 })), 3);
+    for (const u of list) {
+      const t = this.starTags.get(u.uid) as Phaser.GameObjects.Text | undefined;
+      // 별 개수가 바뀌면 글자를 새로 쓴다
+      if (t && t.text !== STR.stars(u.stars)) t.setText(STR.stars(u.stars));
+      t?.setColor?.(THEME.gold).setStroke?.('#ffffff', 4);
+    }
   }
 
   /** 3D 맵: 바닥 표시는 3D 안에(원근에 맞게), 체력바·레벨 점·배지는 화면 좌표로 */
@@ -846,6 +966,10 @@ export class GameScene extends Phaser.Scene {
         g.fillStyle(i === 3 ? 0xa57be0 : 0xf5a623).fillCircle(dx, foot.y, 3.2);
       }
     }
+    this.syncStarTags((u) => {
+      const p = this.sp(u.x, u.y + u.def.radius + 2);
+      return { x: p.x, y: p.y + 12 };
+    });
     // 적: 머리 위 체력바, 방패 칸, 기절 별, 불꽃
     for (const e of gm.enemies) {
       const head = this.sp(e.x, e.y, e.def.radius * 2.3);
@@ -941,6 +1065,7 @@ export class GameScene extends Phaser.Scene {
     const am = gm.activeMod;
     this.modLabel.setText(am ? `${am.emoji} ${STR.waveMods[am.id].name}: ${STR.waveMods[am.id].desc}` : '');
     this.pauseBtn.setEnabled(!gm.finished && !this.picking);
+    this.viewBtn.container.setVisible(!!this.board && this.board.view.zoom > 1.01);
     this.waveBtn.setEnabled((gm.phase === 'ready' || gm.phase === 'intermission') && !gm.offer);
     this.waveBtn.setText(
       gm.phase === 'intermission' ? STR.nextWave(Math.ceil(gm.timer), gm.earlyBonus)
@@ -983,7 +1108,7 @@ export class GameScene extends Phaser.Scene {
     const name = STR.units[id];
     const br = u && u.branch !== null ? def.branches![u.branch] : null;
     const title = br ? `${br.emoji} ${STR.branches[br.id].full}` : `${def.emoji} ${name.name}`;
-    this.info.title.setText(`${title}${u ? `  ${STR.level(level + 1)}` : ''}`);
+    this.info.title.setText(`${title}${u ? `  ${STR.level(level + 1)}${u.stars ? ` ${STR.stars(u.stars)}` : ''}` : ''}`);
     const s = STR.stats;
     const opts = u ? this.sim.upgradeOptions(u) : [];
     const atFork = opts.length === 2;
@@ -998,7 +1123,9 @@ export class GameScene extends Phaser.Scene {
       const cur = this.sim.dps(id, lv, u ?? undefined);
       if (cur.dps) {
         // 업그레이드하면 얼마나 오르는지 같이 보여 준다
-        const next = u && opts.length === 1 ? this.sim.dps(id, this.sim.levelStats(id, level + 1), u) : null;
+        const next = u && opts.length === 1
+          ? this.sim.dps(id, opts[0].star ? this.sim.levelStats(id, level, u.branch, u.stars + 1) : this.sim.levelStats(id, level + 1), u)
+          : null;
         const area = def.kind === 'slow' || lv.hitAll || lv.line || lv.splash ? ` ${s.perEnemy}` : '';
         lines.push(`${s.dps} ${dpsText(cur)}${next ? ` → ${dpsText(next)}` : ''}${area}`);
       }
@@ -1018,6 +1145,10 @@ export class GameScene extends Phaser.Scene {
     this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
     const showControls = u !== null;
     this.info.upgrade.container.setVisible(showControls && !atFork);
+    // '모두'는 같은 종류가 2대 이상일 때만
+    const same = u ? this.sim.units.filter((x) => x.def.id === u.def.id).length : 0;
+    this.info.upgradeAll.container.setVisible(showControls && !atFork && same >= 2);
+    if (u) this.info.upgradeAll.setEnabled(this.sim.units.some((x) => x.def.id === u.def.id && this.sim.upgradeOptions(x).length === 1 && this.sim.upgradeOptions(x)[0].cost <= this.sim.money));
     this.info.branchA.container.setVisible(showControls && atFork);
     this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
@@ -1034,7 +1165,7 @@ export class GameScene extends Phaser.Scene {
       });
     } else {
       const cost = opts[0]?.cost ?? null;
-      this.info.upgrade.setText(cost === null ? STR.maxLevel : STR.upgrade(cost));
+      this.info.upgrade.setText(cost === null ? STR.maxLevel : opts[0].star ? STR.starUp(cost) : STR.upgrade(cost));
       this.info.upgrade.setEnabled(cost !== null && this.sim.money >= cost);
     }
     this.info.sell.setText(STR.sell(this.sim.sellValue(u)));
