@@ -233,6 +233,8 @@ export const STR = {
   maxLevel: '최대 레벨',
   sell: (v: number) => `판매 +💰${v}`,
   level: (n: number) => `Lv.${n}`,
+  nowStats: '📊 지금',
+  rangeShort: '사거리',
   branchPrompt: '⚡ 갈림길! 하나만 고르세요',
   branchButton: (emoji: string, name: string, cost: number, dps: number | null) => `${emoji} ${name}\n💰${cost}${dps ? ` ⚔️${dps}` : ''}`,
   branches: {

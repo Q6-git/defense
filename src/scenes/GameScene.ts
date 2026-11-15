@@ -1149,7 +1149,15 @@ export class GameScene extends Phaser.Scene {
     // 갈림길에서는 설명과 스탯 대신 두 갈래 설명만 보여 준다 (패널 공간이 좁다)
     const lines = atFork ? [] : [br ? STR.branches[br.id].desc : name.desc, ''];
     if (atFork) {
-      lines.push(STR.branchPrompt);
+      // 지금 능력을 짧은 한 줄로 (갈래 버튼의 DPS와 비교할 수 있게). 보라색 갈래 버튼이 고르라는 표시를 대신한다
+      const cur = this.sim.dps(id, lv, u ?? undefined);
+      const now: string[] = [];
+      if (cur.dps) now.push(`DPS ${dpsText(cur)}`);
+      else if (lv.slow) now.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
+      else if (lv.buff) now.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
+      else if (lv.income) now.push(`💰${lv.income}`);
+      if (lv.range) now.push(`${STR.rangeShort} ${Math.round(lv.range)}`);
+      lines.push(now.length ? `${STR.nowStats} ${now.join(' · ')}` : STR.branchPrompt);
       for (const b of def.branches!) lines.push(`${b.emoji} ${STR.branches[b.id].name}: ${STR.branches[b.id].desc}`);
     }
     const n1 = (v: number) => String(Math.round(v * 10) / 10);
