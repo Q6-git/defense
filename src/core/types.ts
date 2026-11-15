@@ -10,7 +10,7 @@ export const TARGET_MODES: readonly TargetMode[] = ['first', 'last', 'strong', '
 
 export type EnemyId =
   | 'goo' | 'rat' | 'grease' | 'roach' | 'splitter' | 'splitling' | 'boss'
-  | 'shield' | 'ghost' | 'healer' | 'charger';
+  | 'shield' | 'ghost' | 'healer' | 'charger' | 'dancer' | 'sixseven';
 
 export interface EnemyDef {
   id: EnemyId;
@@ -34,6 +34,15 @@ export interface EnemyDef {
   heal?: { interval: number; pct: number; radius: number };
   /** 돌격병: 체력 비율이 below 이하가 되면 속도가 speedMul배 */
   enrage?: { below: number; speedMul: number };
+  /** 춤추며 걷기: beat초 박자로 속도가 1±swing배로 오르내린다 (평균 속도는 그대로) */
+  dance?: { beat: number; swing: number };
+  /**
+   * 식스세븐(저울질): every초마다 6 또는 7을 고른다 (어느 쪽일지 모른다).
+   * 6이면 방어력 +six.armor·속도 ×six.speed (단단), 7이면 방어력 0·속도 ×seven.speed (빠름)
+   */
+  weigh?: { every: number; six: { armor: number; speed: number }; seven: { speed: number } };
+  /** 약 올리기(L 포즈): every초마다 반경 안 가전의 공격 속도를 duration초 동안 slow만큼 늦춘다 */
+  taunt?: { every: number; radius: number; slow: number; duration: number };
 }
 
 export type WaveModId = 'rush' | 'fog' | 'haste' | 'steel' | 'gold';
@@ -120,6 +129,8 @@ export interface Enemy {
   hackMul: number;
   /** 밀려난 뒤 다시 밀리지 않는 남은 시간. 태풍 여러 대로 적을 영원히 붙잡지 못하게 한다 */
   knockImmune: number;
+  /** 밀려난 횟수: 밀 때마다 거리가 절반으로 줄어든다 */
+  knocks: number;
   /** 얼었다 풀린 뒤 다시 얼지 않는 남은 시간 (얼어 있는 시간 포함). 냉풍 여러 대로 영원히 얼려 두지 못하게 한다 */
   freezeImmune: number;
   /** 불붙은 상태: 초당 피해와 남은 시간 */
@@ -134,6 +145,11 @@ export interface Enemy {
   hidden: boolean;
   phaseTimer: number;
   healTimer: number;
+  /** 다음 약 올리기까지 남은 시간 */
+  tauntTimer: number;
+  /** 식스세븐: 지금 고른 숫자 (6 단단 / 7 빠름, 처음엔 0) 와 다음 저울질까지 남은 시간 */
+  weighMode: 0 | 6 | 7;
+  weighTimer: number;
   /** 치유사에게 회복을 받은 뒤 다시 받을 수 있을 때까지 남은 시간 (여러 치유사의 회복이 겹치지 않게) */
   healCd: number;
 }
@@ -264,6 +280,9 @@ export interface Unit {
   buffMul: number;
   /** 이번 스텝에 받은 공격력 버프 배율 */
   dmgMul: number;
+  /** 약이 올라(까불이 왕자의 L 포즈) 공격이 느려지는 남은 시간과 느려지는 정도 */
+  tauntTime: number;
+  tauntSlow: number;
 }
 
 export type DifficultyId = 'easy' | 'normal' | 'hard' | 'hell';

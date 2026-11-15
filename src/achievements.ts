@@ -31,10 +31,16 @@ export interface Progress {
   owned: string[];
   /** 마지막 전설 이후 뽑은 횟수 (확정 뽑기 계산용) */
   pity: number;
+  /** 처치한 식스세븐 수 (누적) */
+  sixseven: number;
+  /** 소개 카드를 본(만난) 몬스터 */
+  seen: string[];
+  /** 몬스터별 누적 처치 수 (도감) */
+  killsBy: Record<string, number>;
 }
 
 export function emptyProgress(): Progress {
-  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0 };
+  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0, seen: [], killsBy: {} };
 }
 
 export interface AchievementDef {
@@ -72,6 +78,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   // 누적형
   { id: 'kills_1000', emoji: '⚔️', reward: 100, check: (_r, p) => p.kills >= 1000, progress: (p) => [Math.min(p.kills, 1000), 1000] },
   { id: 'legends_5', emoji: '🌟', reward: 100, check: (_r, p) => p.legends.length >= 5, progress: (p) => [Math.min(p.legends.length, 5), 5] },
+  { id: 'sixseven', emoji: '🤷', reward: 67, check: (_r, p) => p.sixseven >= 67, progress: (p) => [Math.min(p.sixseven, 67), 67] },
   { id: 'branches_12', emoji: '🛤️', reward: 150, check: (_r, p) => p.branches.length >= 12, progress: (p) => [Math.min(p.branches.length, 12), 12] },
 ];
 

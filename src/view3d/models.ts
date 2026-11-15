@@ -242,15 +242,17 @@ const roach: Model = () => {
 const slimeMat = (color: number, opacity = 0.95) => new THREE.MeshStandardMaterial({ color, roughness: 0.18, metalness: 0, transparent: opacity < 1, opacity });
 
 const grease: Model = () => {
-  // 기름때 덩어리: 크고 묵직한 갈색 방울, 번들번들 + 흘러내린 자국
-  const oil = new THREE.MeshStandardMaterial({ color: 0x7a4a22, roughness: 0.08, metalness: 0.25 });
+  // 기름때: 거무튀튀한 올리브색으로 번들거리는 넓고 납작한 덩어리 + 위에 노란 식용유 방울 + 바닥에 번진 기름
+  const gloss = (color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.06, metalness: 0.3, ...opts });
+  const body = gloss(0x4a4a2e);
+  const drop = gloss(0xffc93a, { transparent: true, opacity: 0.85, emissive: 0x8a5a00, emissiveIntensity: 0.25 });
   return group(
-    at(sphere(0.72, oil, 1.15, 0.8, 1), 0, 0.55, 0),
-    at(sphere(0.3, oil, 1, 1.4, 1), 0, 1.05, -0.05), // 위로 솟은 방울
-    at(sphere(0.18, oil, 1, 0.6, 1.3), -0.7, 0.12, 0.25),
-    at(sphere(0.15, oil, 1, 0.6, 1.3), 0.66, 0.1, 0.35),
-    at(sphere(0.12, new THREE.MeshStandardMaterial({ color: 0xd8f0ff, roughness: 0.05, transparent: true, opacity: 0.8 }), 0.7, 1, 0.5), 0.45, 0.85, 0.5), // 땀방울
-    at(face(1.5, { mouth: 'grr', light: true, spread: 0.25 }), 0, 0.62, 0.66),
+    at(sphere(1.0, gloss(0x2f2f1e, { transparent: true, opacity: 0.8 }), 1.25, 0.08, 1.05), 0, 0.03, 0.05),
+    at(sphere(0.78, body, 1.25, 0.62, 1.05), 0, 0.42, 0),
+    at(sphere(0.2, body, 1.4, 0.5, 1.2), -0.82, 0.12, 0.3),
+    at(sphere(0.16, body, 1.4, 0.5, 1.2), 0.8, 0.1, 0.4),
+    at(sphere(0.2, drop, 1.3, 0.45, 1), -0.28, 0.85, -0.12), at(sphere(0.15, drop, 1.3, 0.45, 1), 0.3, 0.82, 0.02), at(sphere(0.11, drop, 1.3, 0.45, 1), 0.05, 0.86, -0.38),
+    at(face(1.75, { mouth: 'grr', light: true, spread: 0.3 }), 0, 0.52, 0.76),
   );
 };
 
@@ -338,7 +340,140 @@ const charger: Model = () => {
   return g;
 };
 
+const dancer: Model = () => {
+  // 까불이 왕자: 팔다리 달린 청록 점액 왕자. 한 손을 이마에 대고 L자를 만든 채 몸을 흔들며 걷는다
+  const slime = slimeMat(0x5fd0b0);
+  const dark = slimeMat(0x3aa88a);
+  const glove = plastic(0xffffff, 0.4);
+  const finger = plastic(0xff4f8b, 0.35);
+  const gold = metal(0xffc93a);
+
+  // 몸과 머리 (body 그룹을 흔든다)
+  const head = group(
+    at(sphere(0.55, slime, 1.05, 0.95, 1), 0, 0, 0),
+    at(sphere(0.14, slime, 1, 1.6, 1), 0.3, -0.42, 0.25), // 흘러내리는 방울
+    at(face(1.25, { mouth: 'smile', spread: 0.23 }), 0, -0.02, 0.52),
+  );
+  // 삐딱한 왕관
+  const crown = group(at(cyl(0.26, 0.28, 0.16, gold, 6), 0, 0, 0));
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    crown.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), gold), Math.cos(a) * 0.22, 0.14, Math.sin(a) * 0.22));
+  }
+  head.add(at(crown, -0.1, 0.55, 0, 0, 0, 0.25));
+
+  // L 손: 이마 앞에 댄 장갑 + 노란 손가락 두 개(세로 검지 + 가로 엄지) → 보는 쪽에서 L자로 읽힌다
+  const lHand = group(
+    at(sphere(0.13, glove), 0.02, -0.02, -0.04),
+    at(rbox(0.11, 0.46, 0.09, 0.045, finger), -0.07, 0.24, 0.02), // 검지 (세로)
+    at(rbox(0.34, 0.11, 0.09, 0.045, finger), 0.08, 0.0, 0.03), // 엄지 (가로)
+  );
+  head.add(at(lHand, 0.16, 0.36, 0.6, 0, 0.35, 0));
+  // 이마로 올린 팔 (어깨 → L 손)
+  const armUp = group(tube([[0.42, -0.55, 0.05], [0.56, -0.1, 0.35], [0.26, 0.3, 0.58]], 0.07, slime));
+  head.add(armUp);
+
+  // 반대 팔: 흔든다
+  const armSwing = group(tube([[0, 0, 0], [-0.2, -0.25, 0.05], [-0.3, -0.5, 0.1]], 0.07, slime), at(sphere(0.11, glove), -0.3, -0.52, 0.1));
+  armSwing.name = 'armSwing';
+
+  const body = group(
+    at(sphere(0.42, slime, 1, 1.05, 0.9), 0, 0, 0),
+    at(rbox(0.5, 0.08, 0.5, 0.04, dark), 0, -0.05, 0), // 허리띠
+    at(sphere(0.05, gold), 0, -0.05, 0.27),
+    at(head, 0, 0.8, 0.02),
+    at(armSwing, -0.38, 0.2, 0),
+  );
+  body.name = 'body';
+
+  // 다리: 엉덩이에서 축을 잡고 번갈아 찬다
+  const leg = (side: number) => {
+    const g = group(at(cyl(0.09, 0.1, 0.4, slime), 0, -0.2, 0), at(sphere(0.15, dark, 1, 0.6, 1.4), 0, -0.42, 0.06));
+    g.name = side < 0 ? 'legL' : 'legR';
+    return at(g, side * 0.2, 0.5, 0);
+  };
+  // rig: 춤으로 움직이는 부분. root의 위치·회전은 게임이 정하므로 건드리지 않는다
+  const rig = group(at(body, 0, 0.9, 0), leg(-1), leg(1));
+  const root = group(rig);
+  const legL = root.getObjectByName('legL')!, legR = root.getObjectByName('legR')!;
+  const baseY = body.position.y;
+
+  // 매 프레임 춤: 다리를 양옆으로 높이 번갈아 차고(최대 약 70°), 찬 반대쪽으로 몸을 기울이며 통통 뛴다.
+  // L 포즈 직후 1.2초는 크게 뛰며 L을 내민다
+  root.userData.animate = (t: number, sinceTaunt: number) => {
+    const beat = t * Math.PI * 2 / 0.8;
+    const s = Math.sin(beat);
+    const big = sinceTaunt >= 0 && sinceTaunt < 1.2 ? Math.sin((sinceTaunt / 1.2) * Math.PI) : 0;
+    const kick = 1.5; // 옆차기 높이(라디안, 약 85°)
+    legR.rotation.z = Math.max(0, s) * kick; // 오른다리를 오른쪽(+x)으로
+    legL.rotation.z = -Math.max(0, -s) * kick; // 왼다리를 왼쪽(-x)으로
+    rig.position.x = -s * 0.12; // 찬 반대쪽으로 무게 중심 이동
+    body.rotation.z = s * 0.25; // 찬 반대쪽으로 몸을 기울임
+    body.position.y = baseY + Math.abs(s) * 0.12 + big * 0.35;
+    armSwing.rotation.z = Math.sin(beat + 1) * 0.6;
+    lHand.scale.setScalar(1 + big * 0.6);
+    lHand.position.z = 0.6 + big * 0.25;
+  };
+  return root;
+};
+
+/** 관으로 그린 숫자 6과 7 (높이 약 0.5, 앞(+z)에서 읽힌다) */
+function digit(n: 6 | 7, mat: THREE.Material): THREE.Group {
+  const r = 0.05;
+  if (n === 7) return group(tube([[-0.16, 0.25, 0], [0.16, 0.25, 0]], r, mat), tube([[0.16, 0.25, 0], [0.02, 0.0, 0], [-0.06, -0.25, 0]], r, mat));
+  return group(
+    tube([[0.14, 0.24, 0], [0.0, 0.2, 0], [-0.12, 0.02, 0], [-0.12, -0.12, 0]], r, mat), // 위쪽 갈고리
+    at(torus(0.12, r, mat), 0, -0.13, 0), // 아래 동그라미
+  );
+}
+
+const sixseven: Model = () => {
+  // 식스세븐: 통통한 살구색 점액이 양손 바닥을 위로 펴고 저울질한다. 왼손 위엔 6(파랑), 오른손 위엔 7(빨강)
+  const slime = slimeMat(0xff9a4a);
+  const palm = plastic(0xffe0c0, 0.5);
+  const glow = (color: number) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.3 });
+  const sixMat = glow(0x4f8fd0), sevenMat = glow(0xff4a4a);
+  // 맞았을 때 붉게 물드는 처리(Board3D.tintEnemy)가 숫자의 빛을 끄지 않도록
+  sixMat.userData.keepEmissive = sevenMat.userData.keepEmissive = true;
+  const body = group(
+    at(sphere(0.55, slime, 1.1, 0.95, 1), 0, 0, 0),
+    at(face(1.3, { mouth: 'o', spread: 0.24 }), 0, 0.05, 0.53), // 멍한 표정
+  );
+  // 한쪽 팔: 어깨에서 옆으로 뻗어 손바닥을 위로, 그 위에 숫자
+  const arm = (side: -1 | 1, n: 6 | 7, mat: THREE.Material) => {
+    const num = digit(n, mat);
+    num.name = `num${n}`;
+    const g = group(
+      tube([[0, 0, 0], [side * 0.3, -0.05, 0.1], [side * 0.5, 0.0, 0.2]], 0.07, slime),
+      at(cyl(0.16, 0.14, 0.05, palm, 20), side * 0.52, 0.02, 0.22), // 위로 편 손바닥
+      at(num, side * 0.52, 0.42, 0.22),
+    );
+    g.name = side < 0 ? 'armL' : 'armR';
+    return at(g, side * 0.42, 0.02, 0);
+  };
+  body.add(arm(-1, 6, sixMat), arm(1, 7, sevenMat));
+  const rig = group(at(body, 0, 0.75, 0), limbs(slime, { width: 0.2, arms: false }));
+  const root = group(rig);
+  const armL = rig.getObjectByName('armL')!, armR = rig.getObjectByName('armR')!;
+  const num6 = rig.getObjectByName('num6')!, num7 = rig.getObjectByName('num7')!;
+  const bodyY = body.position.y;
+  // 매 프레임: 걷는 동안은 두 손을 번갈아 위아래로 저울질, 6이나 7을 고르면 그쪽 손이 올라가고 숫자가 커지며 빛난다
+  root.userData.animate = (t: number, _since: number, e?: { weighMode: number }) => {
+    const mode = e?.weighMode ?? 0;
+    const w = Math.sin(t * Math.PI * 2 / 0.6) * 0.22;
+    const lift = (m: number) => (mode === m ? 0.25 : mode ? -0.12 : 0);
+    armL.position.y = 0.02 + (mode ? lift(6) : w);
+    armR.position.y = 0.02 + (mode ? lift(7) : -w);
+    num6.scale.setScalar(mode === 6 ? 1.6 : mode ? 0.8 : 1);
+    num7.scale.setScalar(mode === 7 ? 1.6 : mode ? 0.8 : 1);
+    sixMat.emissiveIntensity = mode === 6 ? 1.2 + 0.4 * Math.sin(t * 10) : 0.35;
+    sevenMat.emissiveIntensity = mode === 7 ? 1.2 + 0.4 * Math.sin(t * 10) : 0.35;
+    body.position.y = bodyY + Math.abs(Math.sin(t * Math.PI * 2 / 0.6)) * 0.05;
+  };
+  return root;
+};
+
 export const MODELS: Record<string, Model> = {
   toaster, fan, microwave, vacuum, wifi, washer, stove, strip, battery, iron, aircon, dishwasher,
-  goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger,
+  goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger, dancer, sixseven,
 };

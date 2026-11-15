@@ -412,6 +412,12 @@ export class Board3D {
     this.camera = cameraFor(this.map, v);
   }
 
+  /** 까불이 왕자가 L 포즈를 취했다: 모델 애니메이션을 크게 */
+  taunt(enemyUid: number, t: number): void {
+    const a = this.enemies.get(enemyUid);
+    if (a) a.obj.userData.tauntAt = t;
+  }
+
   /** 레벨이 올랐다: 통 튀어 오르고 플러그 불빛이 번쩍인다 */
   levelUp(uid: number, t: number): void {
     const a = this.units.get(uid);
@@ -485,6 +491,9 @@ export class Board3D {
       }
       a.lastX = e.x;
       a.lastY = e.y;
+      // 춤 같은 모델 자체 애니메이션 (까불이 왕자)
+      const anim = a.obj.userData.animate as ((t: number, sinceTaunt: number, e: Enemy) => void) | undefined;
+      anim?.(t + e.uid * 0.37, t - ((a.obj.userData.tauntAt as number | undefined) ?? -99), e);
       a.obj.rotation.y = a.yaw;
       this.tintEnemy(a, e, fx.flash.has(e.uid));
     }
@@ -509,8 +518,10 @@ export class Board3D {
       return;
     }
     for (const m of a.mats) {
-      m.emissive.set(color);
-      m.emissiveIntensity = strength;
+      if (!m.userData.keepEmissive) {
+        m.emissive.set(color);
+        m.emissiveIntensity = strength;
+      }
       if (alpha < 1 || m.userData.fade) {
         m.userData.fade = true;
         m.transparent = true;

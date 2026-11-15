@@ -104,14 +104,14 @@ describe('특수 웨이브', () => {
     const g = new Game({ ...defaultConfig('normal', true), seed: 11 });
     expect(g.waveMod(4)).toBeNull();
     expect(g.waveMod(5)).toBeNull(); // 초반은 제외 (10웨이브부터)
-    expect(g.waveMod(15)).not.toBeNull();
+    expect(g.waveMod(15)).toBeNull(); // 까불이 왕자 (중간 보스)
     expect(g.waveMod(10)).not.toBeNull();
     expect(g.waveMod(20)).toBeNull(); // 보스 웨이브
     expect(g.waveMod(25)).not.toBeNull();
     expect(g.waveMod(30)).toBeNull();
     expect(g.waveMod(10)).toBe(g.waveMod(10));
     // 같은 시드면 같은 변칙
-    expect(new Game({ ...defaultConfig('normal', true), seed: 11 }).waveMod(15)).toBe(g.waveMod(15));
+    expect(new Game({ ...defaultConfig('normal', true), seed: 11 }).waveMod(25)).toBe(g.waveMod(25));
   });
 
   it('판(시드)마다 변칙이 달라진다', () => {
@@ -184,5 +184,156 @@ describe('특수 웨이브', () => {
     const money = gold.money;
     gold.update(1 / 60);
     expect(gold.money - money).toBe(Math.round(g0.def.reward * gold.cfg.rewardMul * 2));
+  });
+});
+
+describe('군중 제어 겹치기', () => {
+  /** 입구 근처 태풍 선풍기 8대 + 급냉 에어컨 ★5 아래에서 20초 동안 전진한 거리 / 방해 없이 간 거리 */
+  function advanceRatio(enemy: 'grease' | 'boss'): number {
+    const g = new Game({ ...defaultConfig('hell'), seed: 3, startMoney: 1e9, cards: [] });
+    const T = (c: number, r: number) => ({ x: c * 52 + 26, y: 72 + r * 52 + 26 });
+    const lv4 = (unit: 'fan' | 'aircon', c: number, r: number, stars: number) => {
+      expect(g.apply({ type: 'place', unit, ...T(c, r) }).ok).toBe(true);
+      const u = g.units[g.units.length - 1];
+      g.apply({ type: 'upgrade', uid: u.uid });
+      g.apply({ type: 'upgrade', uid: u.uid });
+      g.apply({ type: 'upgrade', uid: u.uid, branch: 0 });
+      for (let i = 0; i < stars; i++) g.apply({ type: 'upgrade', uid: u.uid });
+    };
+    for (const [c, r] of [[1, 0], [2, 0], [3, 0], [5, 0], [6, 0], [2, 2], [4, 2], [6, 2]]) lv4('fan', c, r, 0);
+    lv4('aircon', 19, 6, 5);
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    const e = g.spawnEnemy(enemy, 100);
+    e.hp = e.maxHp = 1e12;
+    for (let t = 0; t < 20; t += 0.05) g.update(0.05);
+    return (e.dist - 100) / (e.def.speed * g.cfg.enemySpeedMul * 20);
+  }
+
+  it('느린 적(기름때)도 감속·밀어내기에 갇히지 않고 계속 전진한다', () => {
+    expect(advanceRatio('grease')).toBeGreaterThan(0.2);
+  });
+
+  it('보스는 더 덜 묶인다', () => {
+    expect(advanceRatio('boss')).toBeGreaterThan(0.35);
+  });
+});
+
+describe('까불이 왕자 (춤추는 보스)', () => {
+  function setup() {
+    const g = new Game({ ...defaultConfig('normal'), seed: 1, startMoney: 1e6, critChance: 0, cards: [] });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    return g;
+  }
+
+  it('15웨이브에 중간 보스로 나오고, 무한 모드에서는 하수구 대왕과 번갈아 나온다', async () => {
+    const { WAVES, endlessWave } = await import('../src/data/waves');
+    expect(WAVES[14].groups.some((gr) => gr.enemy === 'dancer')).toBe(true);
+    const bossOf = (n: number) => endlessWave(n).groups.find((gr) => gr.enemy === 'boss' || gr.enemy === 'dancer')?.enemy;
+    expect([bossOf(30), bossOf(40), bossOf(50)]).toEqual(['dancer', 'boss', 'dancer']);
+  });
+
+  it('L 포즈: 8초마다 반경 안 가전이 3초 동안 공격 속도 -40%', () => {
+    const g = setup();
+    expect(g.apply({ type: 'place', unit: 'toaster', x: 500, y: 240 }).ok).toBe(true);
+    expect(g.apply({ type: 'place', unit: 'toaster', x: 858, y: 410 }).ok).toBe(true);
+    const [near, far] = g.units;
+    const d = g.spawnEnemy('dancer', 420);
+    d.def = { ...d.def, speed: 0 };
+    d.hp = d.maxHp = 1e9;
+    g.update(7.9);
+    expect(near.tauntTime).toBe(0);
+    g.drainEvents();
+    g.update(0.2);
+    const ev = g.drainEvents().find((e) => e.type === 'taunt');
+    expect(ev).toBeDefined();
+    expect(near.tauntTime).toBeGreaterThan(2.5);
+    expect(near.tauntSlow).toBe(0.4);
+    expect(far.tauntTime).toBe(0);
+    g.update(3.1);
+    expect(near.tauntTime).toBeLessThanOrEqual(0);
+  });
+
+  it('춤추며 걷기: 속도가 오르내려도 평균 속도는 그대로', () => {
+    const g = setup();
+    const d = g.spawnEnemy('dancer', 0);
+    d.hp = d.maxHp = 1e9;
+    for (let t = 0; t < 8; t += 1 / 60) g.update(1 / 60);
+    const expected = d.def.speed * g.cfg.enemySpeedMul * 8;
+    expect(d.dist / expected).toBeGreaterThan(0.9);
+    expect(d.dist / expected).toBeLessThan(1.1);
+  });
+});
+
+describe('식스세븐 (67)', () => {
+  function setup() {
+    const g = new Game({ ...defaultConfig('normal'), seed: 5, startMoney: 1e6, critChance: 0, cards: [] });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    return g;
+  }
+
+  it('6.7초마다 6 또는 7을 고르고, 6은 방어 +6, 7은 방어 0', () => {
+    const g = setup();
+    const e = g.spawnEnemy('sixseven', 300);
+    e.def = { ...e.def, speed: 0 };
+    expect(e.weighMode).toBe(0);
+    g.update(3.4); // 처음 고르는 건 반 주기 뒤
+    expect([6, 7]).toContain(e.weighMode);
+    const seen = new Set<number>();
+    for (let i = 0; i < 20; i++) {
+      g.update(6.7);
+      seen.add(e.weighMode);
+    }
+    expect([...seen].sort()).toEqual([6, 7]); // 어느 쪽일지 모른다: 둘 다 나온다
+    // 방어력: 같은 피해를 6일 때와 7일 때 비교
+    const hitAs = (mode: 6 | 7) => {
+      e.weighMode = mode;
+      e.hp = e.maxHp = 1e6;
+      (g as unknown as { damage: (e: unknown, n: number) => void }).damage(e, 20);
+      return 1e6 - e.hp;
+    };
+    expect(hitAs(7)).toBe(20); // 방어 0
+    expect(hitAs(6)).toBe(20 - (e.def.armor + 6)); // 방어 2 + 6
+  });
+
+  it('7이면 빠르고 6이면 느리다', () => {
+    const run = (mode: 6 | 7) => {
+      const g = setup();
+      const e = g.spawnEnemy('sixseven', 0);
+      e.hp = e.maxHp = 1e9;
+      e.weighTimer = 1e9; // 고른 상태를 고정
+      e.weighMode = mode;
+      g.update(2);
+      return e.dist;
+    };
+    expect(run(7) / run(6)).toBeCloseTo(1.7 / 0.75, 1);
+  });
+
+  it('한 판 처치 수가 67, 167 …이면 💰67', () => {
+    const g = setup();
+    let bonus = 0;
+    for (let i = 0; i < 170; i++) {
+      const e = g.spawnEnemy('goo', 300);
+      const before = g.money;
+      e.hp = 0;
+      g.update(1 / 60);
+      const got = g.drainEvents().find((ev) => ev.type === 'sixtySeven');
+      if (got) {
+        bonus++;
+        expect(g.money - before).toBeGreaterThanOrEqual(67);
+      }
+    }
+    expect(bonus).toBe(2);
+    expect(g.kills).toBe(170);
+  });
+
+  it('7·12·16웨이브와 무한 모드에 나온다', async () => {
+    const { WAVES } = await import('../src/data/waves');
+    for (const n of [7, 12, 16]) expect(WAVES[n - 1].groups.some((gr) => gr.enemy === 'sixseven'), `${n}`).toBe(true);
   });
 });

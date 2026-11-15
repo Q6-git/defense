@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
 import { Game, type GameEvent } from '../core/game';
-import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type Unit, type UnitId } from '../core/types';
+import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { MAP_ORDER, type MapId } from '../data/map';
@@ -13,6 +13,7 @@ import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, savePr
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
+import { BESTIARY, firstWave } from '../bestiary';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
@@ -92,6 +93,9 @@ export class GameScene extends Phaser.Scene {
   private run!: RunStats;
   /** 지금 떠 있는 업적 알림 수 (겹치지 않게 아래로 쌓는다) */
   private popups = 0;
+  /** 이번 판에 보여 준 L 포즈 안내 횟수 (처음 몇 번만) */
+  private tauntHints = 0;
+  private weighHints = 0;
   /** 이번 판에 들고 온 가전 (상점에 나오는 순서) */
   private deck: UnitId[] = [...UNIT_ORDER];
   /** 이번 판에 번 부품 */
@@ -124,6 +128,9 @@ export class GameScene extends Phaser.Scene {
   private pauseBtn!: Button;
   /** 일시정지 중이면 일시정지 화면의 오브젝트들 */
   private pauseLayer: Phaser.GameObjects.Container | null = null;
+  /** 처음 만난 몬스터 소개 카드 (떠 있는 동안 게임이 멈춘다) */
+  private introLayer: Phaser.GameObjects.Container | null = null;
+  private introQueue: EnemyId[] = [];
   /** 시작 화면(맵·난이도 선택)이 떠 있는지 */
   private picking = false;
   private speed = 1;
@@ -220,6 +227,8 @@ export class GameScene extends Phaser.Scene {
       cleared: 0, placed: [], usedSkill: false, leaked: false, cards: 0,
     };
     this.popups = 0;
+    this.tauntHints = 0;
+    this.weighHints = 0;
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), THEME.neutral, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), THEME.neutral, 17);
@@ -265,6 +274,8 @@ export class GameScene extends Phaser.Scene {
     const box = card(this, width / 2, height / 2, 640, 700, 'center', THEME.bar);
     const title = text(this, width / 2, 58, `🔌 ${STR.title}`, 36).setOrigin(0.5);
     layer.add([dim, box, title]);
+    const bestiaryBtn = button(this, 1120, 252, 230, 52, STR.bestiaryButton(this.progress.seen.length, BESTIARY.length), () => this.showBestiary(), THEME.green, 19);
+    layer.add(bestiaryBtn.container);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
     const deckBtn = button(this, 1120, 124, 230, 52, STR.deckButton, () => this.showDeck(), THEME.blue, 19);
@@ -310,11 +321,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_t: number, deltaMs: number): void {
-    if (this.pauseLayer) return;
+    if (this.pauseLayer || this.introLayer) return;
     const dt = Math.min(deltaMs / 1000, 0.25);
     this.clock += dt;
     this.sim.update(dt * this.speed);
     for (const ev of this.sim.drainEvents()) this.playEvent(ev);
+    this.checkNewEnemies();
     for (const [uid, v] of this.punch) {
       const next = 1 + (v - 1) * Math.exp(-dt * 16);
       if (Math.abs(next - 1) < 0.005) this.punch.delete(uid);
@@ -1004,6 +1016,8 @@ export class GameScene extends Phaser.Scene {
     const boss = gm.enemies.find((e) => e.def.boss);
     this.bossLabel.setVisible(!!boss);
     if (boss) {
+      const name = STR.bossNames[boss.def.id] ?? STR.bossName;
+      if (this.bossLabel.text !== name) this.bossLabel.setText(name);
       o.fillStyle(0x000000, 0.6).fillRect(320, 66, 400, 14);
       o.fillStyle(0xb04ae0).fillRect(320, 66, (400 * Math.max(0, boss.hp)) / boss.maxHp, 14);
       o.lineStyle(1, 0xffffff, 0.5).strokeRect(320, 66, 400, 14);
@@ -1243,6 +1257,8 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'kill': {
         this.progress.kills++;
+        this.progress.killsBy[ev.enemy] = (this.progress.killsBy[ev.enemy] ?? 0) + 1;
+        if (ev.enemy === 'sixseven') this.progress.sixseven++;
         const def = this.sim.cfg.enemies[ev.enemy];
         const ghost = icon(this, ev.x, ev.y, def.id, def.emoji, def.radius * 2.6).setDepth(8);
         const s0 = baseScale(ghost);
@@ -1290,9 +1306,45 @@ export class GameScene extends Phaser.Scene {
       case 'heal':
         this.fx.heal(ev.x, ev.y, ev.r);
         break;
+      case 'weigh': {
+        // 식스세븐이 6 또는 7을 골랐다: 머리 위에 큰 숫자
+        this.floatText(ev.x, ev.y - 26, STR.weigh(ev.mode), ev.mode === 6 ? '#4f8fd0' : THEME.danger, 26);
+        if (this.weighHints < 1) {
+          this.showToast(STR.weighHint, 3);
+          this.weighHints++;
+        }
+        break;
+      }
+      case 'sixtySeven':
+        this.floatText(ev.x, ev.y - 30, STR.sixtySeven(ev.kills), THEME.gold, 26);
+        this.cameras.main.flash(200, 255, 220, 120);
+        sfx.play('coin');
+        break;
+      case 'taunt': {
+        // L 포즈: 보스 위에 글자, 약 오른 가전마다 💢
+        this.floatText(ev.x, ev.y - 30, STR.taunt, THEME.pink, 26);
+        this.board?.taunt(ev.enemy, this.clock);
+        for (const uid of ev.units) {
+          const u = this.sim.findUnit(uid);
+          if (!u) continue;
+          const at = this.sp(u.x, u.y, u.def.radius * 2.4);
+          this.floatText(at.x, at.y, '💢', THEME.danger, 22);
+        }
+        if (ev.units.length && this.tauntHints < 2) {
+          this.showToast(STR.tauntHint);
+          this.tauntHints++;
+        }
+        sfx.play('error');
+        break;
+      }
       case 'waveStart':
         if (ev.mod) this.banner(STR.modBanner(ev.mod.emoji, STR.waveMods[ev.mod.id].name), '#ffd35a');
-        else this.banner(ev.boss ? STR.bossBanner : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
+        else {
+          // 보스마다 등장 문구가 다르다
+          const bossId = this.sim.waveDef(ev.wave)?.groups.map((g) => g.enemy).find((id) => this.sim.cfg.enemies[id].boss);
+          const bossText = (bossId && STR.bossBanners[bossId]) || STR.bossBanner;
+          this.banner(ev.boss ? bossText : ev.wave === 67 ? STR.wave67 : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : ev.wave === 67 ? '#ffd35a' : '#ffffff');
+        }
         if (ev.boss) {
           this.cameras.main.shake(800, 0.006);
           sfx.play('boss');
@@ -1558,6 +1610,135 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 업적 목록 화면 (시작 화면에서 연다) */
+  // ───────────────────────── 몬스터 소개 카드와 도감
+
+  /** 맵에 처음 보는 몬스터가 나오면 소개 카드를 띄운다 (한 번 본 몬스터는 저장해서 다시 안 띄움) */
+  private checkNewEnemies(): void {
+    for (const e of this.sim.enemies) {
+      const id = e.def.id;
+      if (this.progress.seen.includes(id)) continue;
+      this.progress.seen.push(id);
+      saveProgress(this.progress);
+      this.introQueue.push(id);
+    }
+    if (!this.introLayer && this.introQueue.length && !this.pauseLayer && !this.sim.finished) this.showIntro(this.introQueue.shift()!);
+  }
+
+  /** 체력·속도·방어 막대 (보스처럼 큰 값도 비교되게 제곱근 눈금) */
+  private statBars(layer: Phaser.GameObjects.Container, id: EnemyId, x: number, y: number, w: number): void {
+    const all = BESTIARY.map((k) => this.sim.cfg.enemies[k]);
+    const def = this.sim.cfg.enemies[id];
+    const rows: [string, number, number, number][] = [
+      [STR.statHp, Math.sqrt(def.hp), Math.max(...all.map((d) => Math.sqrt(d.hp))), 0xff6b6b],
+      [STR.statSpeed, def.speed, Math.max(...all.map((d) => d.speed)), 0x4fb3e8],
+      [STR.statArmor, def.armor, Math.max(...all.map((d) => d.armor)), 0x9aa0b4],
+    ];
+    rows.forEach(([label, v, max, color], i) => {
+      const yy = y + i * 26;
+      const g = this.add.graphics();
+      g.fillStyle(0xe8dccb).fillRoundedRect(x + 56, yy - 7, w - 56, 14, 7);
+      if (v > 0) g.fillStyle(color).fillRoundedRect(x + 56, yy - 7, Math.max(14, ((w - 56) * v) / max), 14, 7);
+      layer.add([text(this, x, yy, label, 15, THEME.textSoft).setOrigin(0, 0.5), g]);
+    });
+  }
+
+  /** 첫 등장 소개 카드: 그림, 이름, 특징, 대응 팁. 누르면 게임 계속 */
+  private showIntro(id: EnemyId): void {
+    const { width, height } = this.sim.cfg.map;
+    const def = this.sim.cfg.enemies[id];
+    const info = STR.enemies[id];
+    const boss = !!def.boss;
+    const cx = width / 2 - 120, cy = height / 2 + 10;
+    const layer = this.add.container(0, 0).setDepth(85);
+    this.introLayer = layer;
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.45).setOrigin(0).setInteractive();
+    const box = card(this, cx, cy, 560, 470, 'center', THEME.bar).setStrokeStyle(4, boss ? 0xff6b6b : THEME.selected);
+    const tag = text(this, cx, cy - 205, boss ? STR.introBoss : STR.introNew, 22, boss ? THEME.danger : THEME.gold).setOrigin(0.5);
+    const pic = icon(this, cx - 160, cy - 80, id, def.emoji, 150);
+    const name = text(this, cx - 60, cy - 140, `${def.emoji} ${info.name}`, 30).setOrigin(0, 0.5);
+    const desc = text(this, cx - 60, cy - 110, info.desc, 17, THEME.text).setWordWrapWidth(300, true).setLineSpacing(4);
+    layer.add([dim, box, tag, pic, name, desc]);
+    this.statBars(layer, id, cx - 240, cy + 30, 220);
+    const tipBox = new RoundBox(this, cx, cy + 135, 500, 76, 0xfff6d8, 12, 0, 'center').setStrokeStyle(2, 0xf0d890);
+    const tip = text(this, cx - 235, cy + 112, `${STR.tipLabel}
+${info.tip}`, 16, THEME.text).setWordWrapWidth(470, true).setLineSpacing(3);
+    const saved = text(this, cx + 150, cy + 72, STR.introSaved, 14, THEME.textSoft).setOrigin(0.5);
+    const ok = button(this, cx + 150, cy + 30, 160, 48, STR.introOk, () => close(), THEME.green, 19);
+    layer.add([tipBox, tip, saved, ok.container]);
+    // 살짝 커지며 등장
+    layer.setScale(0.9).setAlpha(0);
+    this.tweens.add({ targets: layer, scale: 1, alpha: 1, duration: 180, ease: 'Back.easeOut' });
+    sfx.play(boss ? 'boss' : 'wave');
+    const close = () => {
+      layer.destroy();
+      this.introLayer = null;
+      if (this.introQueue.length) this.showIntro(this.introQueue.shift()!);
+    };
+  }
+
+  /** 도감: 만난 몬스터는 그림과 이름, 못 만난 몬스터는 실루엣과 ???. 누르면 오른쪽에 자세한 정보 */
+  private showBestiary(): void {
+    const { width, height } = this.sim.cfg.map;
+    const p = this.progress;
+    const layer = this.add.container(0, 0).setDepth(80);
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 1000, 690, 'center', THEME.bar);
+    const title = text(this, width / 2 - 470, 40, STR.bestiaryTitle, 30).setOrigin(0, 0.5);
+    const count = text(this, width / 2 + 290, 40, `${p.seen.length}/${BESTIARY.length}`, 20, THEME.gold).setOrigin(1, 0.5);
+    const close = button(this, width / 2 + 410, 40, 130, 44, STR.close, () => layer.destroy(), THEME.neutral, 18);
+    layer.add([dim, box, title, count, close.container]);
+    // 오른쪽 자세히 보기
+    const detail = this.add.container(0, 0);
+    layer.add(detail);
+    const dx = width / 2 + 120;
+    const show = (id: EnemyId) => {
+      detail.removeAll(true);
+      const def = this.sim.cfg.enemies[id];
+      const panel = new RoundBox(this, dx, 90, 360, 590, THEME.white, 14, 0, 'topleft').setStrokeStyle(2, THEME.cardLine);
+      detail.add(panel);
+      if (!p.seen.includes(id)) {
+        const shadow = icon(this, dx + 180, 230, id, def.emoji, 170);
+        if ('setTintFill' in shadow) shadow.setTintFill(0x3a3341);
+        shadow.setAlpha(0.35);
+        detail.add([shadow, text(this, dx + 180, 370, STR.unknown, 34, THEME.textSoft).setOrigin(0.5), text(this, dx + 180, 410, STR.bestiaryLocked, 17, THEME.textSoft).setOrigin(0.5)]);
+        return;
+      }
+      const info = STR.enemies[id];
+      detail.add([
+        icon(this, dx + 180, 200, id, def.emoji, 150),
+        text(this, dx + 180, 300, `${def.emoji} ${info.name}${def.boss ? '  ⚠' : ''}`, 26).setOrigin(0.5),
+        text(this, dx + 20, 330, info.desc, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
+      ]);
+      this.statBars(detail, id, dx + 20, 450, 320);
+      detail.add([
+        text(this, dx + 20, 535, `${STR.tipLabel}
+${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
+        text(this, dx + 20, 640, `${STR.firstWave(firstWave(id))}   ${STR.killCount(p.killsBy[id] ?? 0)}`, 15, THEME.textSoft),
+      ]);
+    };
+    // 왼쪽 격자 (4열)
+    BESTIARY.forEach((id, i) => {
+      const x = width / 2 - 420 + (i % 4) * 130;
+      const y = 140 + Math.floor(i / 4) * 140;
+      const def = this.sim.cfg.enemies[id];
+      const seen = p.seen.includes(id);
+      const cell = new RoundBox(this, x, y, 118, 128, seen ? THEME.white : 0xeee6da, 12, 0, 'center').setStrokeStyle(2, def.boss && seen ? 0xff9a9a : THEME.cardLine);
+      // 둥근 상자는 클릭 영역을 따로 줘야 해서, 같은 크기의 투명한 사각형으로 누른다
+      const hit = this.add.rectangle(x, y, 118, 128, 0xffffff, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => show(id));
+      const pic = icon(this, x, y - 14, id, def.emoji, 78);
+      if (!seen) {
+        if ('setTintFill' in pic) pic.setTintFill(0x3a3341);
+        pic.setAlpha(0.35);
+      }
+      const label = text(this, x, y + 46, seen ? STR.enemies[id].name : STR.unknown, 15, seen ? THEME.text : THEME.textSoft).setOrigin(0.5);
+      layer.add([cell, pic, label, hit]);
+    });
+    const firstSeen = BESTIARY.find((id) => p.seen.includes(id));
+    if (firstSeen) show(firstSeen);
+    else detail.add(text(this, dx + 180, 380, STR.bestiaryPick, 18, THEME.textSoft).setOrigin(0.5));
+  }
+
   private showAchievements(): void {
     const { width, height } = this.sim.cfg.map;
     const p = this.progress;

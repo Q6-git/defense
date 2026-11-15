@@ -79,6 +79,12 @@ export type GameEvent =
   | { type: 'waveStart'; wave: number; boss: boolean; mod: WaveModDef | null }
   | { type: 'shieldHit'; enemy: number; x: number; y: number; left: number }
   | { type: 'heal'; x: number; y: number; r: number }
+  /** 식스세븐이 6 또는 7을 골랐다 */
+  | { type: 'weigh'; enemy: number; mode: 6 | 7; x: number; y: number }
+  /** 한 판 처치 수가 67, 167, 267 …: 💰67 보너스 */
+  | { type: 'sixtySeven'; x: number; y: number; kills: number }
+  /** 까불이 왕자의 L 포즈: units는 약 오른 가전 uid */
+  | { type: 'taunt'; enemy: number; x: number; y: number; r: number; units: number[] }
   | { type: 'bolt'; points: Vec[] }
   | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
   | { type: 'income'; x: number; y: number; amount: number }
@@ -135,6 +141,12 @@ export interface Zone {
 const MAX_STEP = 1 / 60;
 /** 밀려난 적이 다시 밀리지 않는 시간(초) */
 const KNOCK_IMMUNE = 3;
+/**
+ * 감속 하한: 선풍기·에어컨 감속이 아무리 겹쳐도 원래 속도의 이만큼은 간다 (보스는 BOSS_SLOW_FLOOR).
+ * 느린 적(기름때, 보스)이 감속 + 밀어내기에 갇혀 영원히 전진하지 못하는 것을 막는다
+ */
+const SLOW_FLOOR = 0.35;
+const BOSS_SLOW_FLOOR = 0.5;
 /** 연쇄 폭발 카드의 폭발 반경 */
 const CHAIN_RADIUS = 70;
 /** 멀티탭 번개가 튕길 수 있는 거리 */
@@ -178,6 +190,8 @@ export class Game {
   /** 에어컨의 맵 전체 감속 배율 (1이면 없음) */
   globalSlow = 1;
   /** 에어컨(제습): 모든 적이 받는 피해 배율 */
+  /** 이번 판 처치 수 (67 이스터에그) */
+  kills = 0;
   globalVuln = 1;
   private breakerUsed = false;
   private modVersion = 0;
@@ -431,7 +445,7 @@ export class Game {
     const cost = this.placeCost(id);
     this.money -= cost;
     this.units.push({
-      uid: this.nextUid++, def, level: 0, branch: null, stars: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1,
+      uid: this.nextUid++, def, level: 0, branch: null, stars: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1, tauntTime: 0, tauntSlow: 0,
       rampTarget: 0, rampMul: 1, dmgMul: 1,
     });
     return { ok: true };
@@ -616,8 +630,8 @@ export class Game {
     const p = path.pointAt(dist);
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
-      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
-      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0,
+      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, knocks: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
+      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0, tauntTimer: def.taunt?.every ?? 0, weighMode: 0, weighTimer: def.weigh ? def.weigh.every * 0.5 : 0,
       burnDps: 0, burnTime: 0, shred: 0,
     };
     this.enemies.push(e);
@@ -692,6 +706,30 @@ export class Game {
       }
       // 치유사: 주변 적을 회복시킨다 (자기 자신과 보스는 제외)
       if (e.healCd > 0) e.healCd -= dt;
+      // 식스세븐: 6.7초마다 6 또는 7을 고른다 (처음 고르는 건 반 주기 뒤)
+      const wg = e.def.weigh;
+      if (wg) {
+        e.weighTimer -= dt;
+        if (e.weighTimer <= 0) {
+          e.weighTimer = wg.every;
+          e.weighMode = this.rng() < 0.5 ? 6 : 7;
+          this.events.push({ type: 'weigh', enemy: e.uid, mode: e.weighMode, x: e.x, y: e.y });
+        }
+      }
+      // 까불이 왕자: L 포즈로 주변 가전을 약 올린다
+      const tt = e.def.taunt;
+      if (tt) {
+        e.tauntTimer -= dt;
+        if (e.tauntTimer <= 0) {
+          e.tauntTimer = tt.every;
+          const hit = this.units.filter((u) => dist(u, e) <= tt.radius + u.def.radius && u.def.kind !== 'income' && u.def.kind !== 'aura');
+          for (const u of hit) {
+            u.tauntTime = Math.max(u.tauntTime, tt.duration);
+            u.tauntSlow = tt.slow;
+          }
+          this.events.push({ type: 'taunt', enemy: e.uid, x: e.x, y: e.y, r: tt.radius, units: hit.map((u) => u.uid) });
+        }
+      }
       const h = e.def.heal;
       if (h) {
         e.healTimer -= dt;
@@ -758,7 +796,10 @@ export class Game {
       const lv = this.stats(u);
       const branch = u.branch !== null ? u.def.branches![u.branch].id : null;
       if (u.def.kind === 'buff' || u.def.kind === 'income' || u.def.kind === 'aura') continue;
-      u.cooldown -= dt * u.buffMul * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
+      // 약 오른 가전은 공격이 느려진다 (까불이 왕자의 L 포즈)
+      const taunted = u.tauntTime > 0 ? 1 - u.tauntSlow : 1;
+      if (u.tauntTime > 0) u.tauntTime -= dt;
+      u.cooldown -= dt * u.buffMul * taunted * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
       if (u.cooldown > 0) continue;
       const inRange = this.enemies.filter((e) => e.hp > 0 && dist(u, e) <= lv.range + e.def.radius);
       // 투명한 유령은 조준할 수 없다. 범위형(선풍기, 흡입)은 조준이 필요 없어서 그대로 맞힌다
@@ -777,7 +818,9 @@ export class Game {
           e.slowTime = Math.max(e.slowTime, lv.slowDuration ?? 0);
           if (lv.knockback && e.knockImmune <= 0) {
             e.knockImmune = KNOCK_IMMUNE;
-            e.dist = Math.max(0, e.dist - lv.knockback * resist);
+            // 같은 적을 밀 때마다 절반씩 (45 → 22 → 11 …): 한 적이 밀리는 총거리는 처음의 2배를 넘지 않는다
+            e.dist = Math.max(0, e.dist - lv.knockback * resist * Math.pow(0.5, e.knocks));
+            e.knocks++;
             const p = this.paths[e.lane].pointAt(e.dist);
             e.left = this.paths[e.lane].length - e.dist;
             e.x = p.x;
@@ -874,7 +917,9 @@ export class Game {
     const frozen = e.stunTime > 0 ? e.frozenVuln : 1;
     const amp = amount * e.hackMul * frozen * this.globalVuln;
     // 방어력 무시 공격이거나 해킹당한 적은 방어력이 0
-    const armor = opts.pierce || e.hackMul > 1 ? 0 : Math.max(0, e.def.armor + (this.activeMod?.armorAdd ?? 0) - e.shred);
+    // 식스세븐: 6이면 방어 +6, 7이면 방어 0
+    const weighArmor = e.weighMode === 6 ? (e.def.weigh?.six.armor ?? 0) : e.weighMode === 7 ? -e.def.armor : 0;
+    const armor = opts.pierce || e.hackMul > 1 ? 0 : Math.max(0, e.def.armor + weighArmor + (this.activeMod?.armorAdd ?? 0) - e.shred);
     // 다리미: 맞힌 뒤 방어력을 깎는다 (다음 공격부터 적용)
     if (shred) e.shred = Math.min(MAX_SHRED, e.shred + shred);
     const dealt = Math.max(amp * 0.25, amp - armor);
@@ -904,6 +949,12 @@ export class Game {
         ));
         this.money += reward;
         this.events.push({ type: 'kill', enemy: e.def.id, x: e.x, y: e.y, reward });
+        // 67 이스터에그: 이번 판 처치 수가 67, 167, 267 … 이면 💰67
+        this.kills++;
+        if (this.kills % 100 === 67) {
+          this.money += 67;
+          this.events.push({ type: 'sixtySeven', x: e.x, y: e.y, kills: this.kills });
+        }
         const sp = e.def.splitInto;
         if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14), e.lane);
         if (this.mods.chain > 0) {
@@ -941,7 +992,11 @@ export class Game {
         continue;
       }
       const enrage = e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below ? e.def.enrage.speedMul : 1;
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * e.slowMul * this.globalSlow * dt;
+      const slowed = Math.max(e.def.boss ? BOSS_SLOW_FLOOR : SLOW_FLOOR, e.slowMul * this.globalSlow);
+      // 춤추며 걷기: 박자에 맞춰 빨라졌다 느려졌다 (평균 속도는 그대로)
+      const weigh = e.weighMode === 6 ? (e.def.weigh?.six.speed ?? 1) : e.weighMode === 7 ? (e.def.weigh?.seven.speed ?? 1) : 1;
+      const dance = e.def.dance ? 1 + e.def.dance.swing * Math.sin(((this.waveTime + e.uid * 0.37) / e.def.dance.beat) * Math.PI * 2) : 1;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * slowed * dance * weigh * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {
