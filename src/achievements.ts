@@ -37,10 +37,12 @@ export interface Progress {
   seen: string[];
   /** 몬스터별 누적 처치 수 (도감) */
   killsBy: Record<string, number>;
+  /** 가전별 누적 설치 수 (가전 도감) */
+  placedBy: Record<string, number>;
 }
 
 export function emptyProgress(): Progress {
-  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0, seen: [], killsBy: {} };
+  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0, seen: [], killsBy: {}, placedBy: {} };
 }
 
 export interface AchievementDef {

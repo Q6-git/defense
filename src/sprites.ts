@@ -32,6 +32,9 @@ export const SPRITES: Record<string, string> = {
   charger: 'charger.png',
   dancer: 'dancer.png',
   sixseven: 'sixseven.png',
+  // 움직이는 몬스터의 동작 시트 (도감·소개 카드, src/view3d/anims.ts)
+  dancer_anim: 'dancer_anim.png',
+  sixseven_anim: 'sixseven_anim.png',
   // 지형
   outlet: 'outlet.svg',
   drain: 'drain.svg',
