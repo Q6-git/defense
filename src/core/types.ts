@@ -10,7 +10,7 @@ export const TARGET_MODES: readonly TargetMode[] = ['first', 'last', 'strong', '
 
 export type EnemyId =
   | 'goo' | 'rat' | 'grease' | 'roach' | 'splitter' | 'splitling' | 'boss'
-  | 'shield' | 'ghost' | 'healer' | 'charger' | 'dancer';
+  | 'shield' | 'ghost' | 'healer' | 'charger' | 'dancer' | 'sixseven';
 
 export interface EnemyDef {
   id: EnemyId;
@@ -36,6 +36,11 @@ export interface EnemyDef {
   enrage?: { below: number; speedMul: number };
   /** 춤추며 걷기: beat초 박자로 속도가 1±swing배로 오르내린다 (평균 속도는 그대로) */
   dance?: { beat: number; swing: number };
+  /**
+   * 식스세븐(저울질): every초마다 6 또는 7을 고른다 (어느 쪽일지 모른다).
+   * 6이면 방어력 +six.armor·속도 ×six.speed (단단), 7이면 방어력 0·속도 ×seven.speed (빠름)
+   */
+  weigh?: { every: number; six: { armor: number; speed: number }; seven: { speed: number } };
   /** 약 올리기(L 포즈): every초마다 반경 안 가전의 공격 속도를 duration초 동안 slow만큼 늦춘다 */
   taunt?: { every: number; radius: number; slow: number; duration: number };
 }
@@ -142,6 +147,9 @@ export interface Enemy {
   healTimer: number;
   /** 다음 약 올리기까지 남은 시간 */
   tauntTimer: number;
+  /** 식스세븐: 지금 고른 숫자 (6 단단 / 7 빠름, 처음엔 0) 와 다음 저울질까지 남은 시간 */
+  weighMode: 0 | 6 | 7;
+  weighTimer: number;
   /** 치유사에게 회복을 받은 뒤 다시 받을 수 있을 때까지 남은 시간 (여러 치유사의 회복이 겹치지 않게) */
   healCd: number;
 }

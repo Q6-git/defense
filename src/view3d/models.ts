@@ -417,7 +417,63 @@ const dancer: Model = () => {
   return root;
 };
 
+/** 관으로 그린 숫자 6과 7 (높이 약 0.5, 앞(+z)에서 읽힌다) */
+function digit(n: 6 | 7, mat: THREE.Material): THREE.Group {
+  const r = 0.05;
+  if (n === 7) return group(tube([[-0.16, 0.25, 0], [0.16, 0.25, 0]], r, mat), tube([[0.16, 0.25, 0], [0.02, 0.0, 0], [-0.06, -0.25, 0]], r, mat));
+  return group(
+    tube([[0.14, 0.24, 0], [0.0, 0.2, 0], [-0.12, 0.02, 0], [-0.12, -0.12, 0]], r, mat), // 위쪽 갈고리
+    at(torus(0.12, r, mat), 0, -0.13, 0), // 아래 동그라미
+  );
+}
+
+const sixseven: Model = () => {
+  // 식스세븐: 통통한 살구색 점액이 양손 바닥을 위로 펴고 저울질한다. 왼손 위엔 6(파랑), 오른손 위엔 7(빨강)
+  const slime = slimeMat(0xff9a4a);
+  const palm = plastic(0xffe0c0, 0.5);
+  const glow = (color: number) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.3 });
+  const sixMat = glow(0x4f8fd0), sevenMat = glow(0xff4a4a);
+  // 맞았을 때 붉게 물드는 처리(Board3D.tintEnemy)가 숫자의 빛을 끄지 않도록
+  sixMat.userData.keepEmissive = sevenMat.userData.keepEmissive = true;
+  const body = group(
+    at(sphere(0.55, slime, 1.1, 0.95, 1), 0, 0, 0),
+    at(face(1.3, { mouth: 'o', spread: 0.24 }), 0, 0.05, 0.53), // 멍한 표정
+  );
+  // 한쪽 팔: 어깨에서 옆으로 뻗어 손바닥을 위로, 그 위에 숫자
+  const arm = (side: -1 | 1, n: 6 | 7, mat: THREE.Material) => {
+    const num = digit(n, mat);
+    num.name = `num${n}`;
+    const g = group(
+      tube([[0, 0, 0], [side * 0.3, -0.05, 0.1], [side * 0.5, 0.0, 0.2]], 0.07, slime),
+      at(cyl(0.16, 0.14, 0.05, palm, 20), side * 0.52, 0.02, 0.22), // 위로 편 손바닥
+      at(num, side * 0.52, 0.42, 0.22),
+    );
+    g.name = side < 0 ? 'armL' : 'armR';
+    return at(g, side * 0.42, 0.02, 0);
+  };
+  body.add(arm(-1, 6, sixMat), arm(1, 7, sevenMat));
+  const rig = group(at(body, 0, 0.75, 0), limbs(slime, { width: 0.2, arms: false }));
+  const root = group(rig);
+  const armL = rig.getObjectByName('armL')!, armR = rig.getObjectByName('armR')!;
+  const num6 = rig.getObjectByName('num6')!, num7 = rig.getObjectByName('num7')!;
+  const bodyY = body.position.y;
+  // 매 프레임: 걷는 동안은 두 손을 번갈아 위아래로 저울질, 6이나 7을 고르면 그쪽 손이 올라가고 숫자가 커지며 빛난다
+  root.userData.animate = (t: number, _since: number, e?: { weighMode: number }) => {
+    const mode = e?.weighMode ?? 0;
+    const w = Math.sin(t * Math.PI * 2 / 0.6) * 0.22;
+    const lift = (m: number) => (mode === m ? 0.25 : mode ? -0.12 : 0);
+    armL.position.y = 0.02 + (mode ? lift(6) : w);
+    armR.position.y = 0.02 + (mode ? lift(7) : -w);
+    num6.scale.setScalar(mode === 6 ? 1.6 : mode ? 0.8 : 1);
+    num7.scale.setScalar(mode === 7 ? 1.6 : mode ? 0.8 : 1);
+    sixMat.emissiveIntensity = mode === 6 ? 1.2 + 0.4 * Math.sin(t * 10) : 0.35;
+    sevenMat.emissiveIntensity = mode === 7 ? 1.2 + 0.4 * Math.sin(t * 10) : 0.35;
+    body.position.y = bodyY + Math.abs(Math.sin(t * Math.PI * 2 / 0.6)) * 0.05;
+  };
+  return root;
+};
+
 export const MODELS: Record<string, Model> = {
   toaster, fan, microwave, vacuum, wifi, washer, stove, strip, battery, iron, aircon, dishwasher,
-  goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger, dancer,
+  goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger, dancer, sixseven,
 };

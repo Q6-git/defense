@@ -94,6 +94,7 @@ export class GameScene extends Phaser.Scene {
   private popups = 0;
   /** 이번 판에 보여 준 L 포즈 안내 횟수 (처음 몇 번만) */
   private tauntHints = 0;
+  private weighHints = 0;
   /** 이번 판에 들고 온 가전 (상점에 나오는 순서) */
   private deck: UnitId[] = [...UNIT_ORDER];
   /** 이번 판에 번 부품 */
@@ -223,6 +224,7 @@ export class GameScene extends Phaser.Scene {
     };
     this.popups = 0;
     this.tauntHints = 0;
+    this.weighHints = 0;
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), THEME.neutral, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), THEME.neutral, 17);
@@ -1248,6 +1250,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'kill': {
         this.progress.kills++;
+        if (ev.enemy === 'sixseven') this.progress.sixseven++;
         const def = this.sim.cfg.enemies[ev.enemy];
         const ghost = icon(this, ev.x, ev.y, def.id, def.emoji, def.radius * 2.6).setDepth(8);
         const s0 = baseScale(ghost);
@@ -1295,6 +1298,20 @@ export class GameScene extends Phaser.Scene {
       case 'heal':
         this.fx.heal(ev.x, ev.y, ev.r);
         break;
+      case 'weigh': {
+        // 식스세븐이 6 또는 7을 골랐다: 머리 위에 큰 숫자
+        this.floatText(ev.x, ev.y - 26, STR.weigh(ev.mode), ev.mode === 6 ? '#4f8fd0' : THEME.danger, 26);
+        if (this.weighHints < 1) {
+          this.showToast(STR.weighHint, 3);
+          this.weighHints++;
+        }
+        break;
+      }
+      case 'sixtySeven':
+        this.floatText(ev.x, ev.y - 30, STR.sixtySeven(ev.kills), THEME.gold, 26);
+        this.cameras.main.flash(200, 255, 220, 120);
+        sfx.play('coin');
+        break;
       case 'taunt': {
         // L 포즈: 보스 위에 글자, 약 오른 가전마다 💢
         this.floatText(ev.x, ev.y - 30, STR.taunt, THEME.pink, 26);
@@ -1318,7 +1335,7 @@ export class GameScene extends Phaser.Scene {
           // 보스마다 등장 문구가 다르다
           const bossId = this.sim.waveDef(ev.wave)?.groups.map((g) => g.enemy).find((id) => this.sim.cfg.enemies[id].boss);
           const bossText = (bossId && STR.bossBanners[bossId]) || STR.bossBanner;
-          this.banner(ev.boss ? bossText : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
+          this.banner(ev.boss ? bossText : ev.wave === 67 ? STR.wave67 : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : ev.wave === 67 ? '#ffd35a' : '#ffffff');
         }
         if (ev.boss) {
           this.cameras.main.shake(800, 0.006);

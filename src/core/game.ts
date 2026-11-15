@@ -79,6 +79,10 @@ export type GameEvent =
   | { type: 'waveStart'; wave: number; boss: boolean; mod: WaveModDef | null }
   | { type: 'shieldHit'; enemy: number; x: number; y: number; left: number }
   | { type: 'heal'; x: number; y: number; r: number }
+  /** 식스세븐이 6 또는 7을 골랐다 */
+  | { type: 'weigh'; enemy: number; mode: 6 | 7; x: number; y: number }
+  /** 한 판 처치 수가 67, 167, 267 …: 💰67 보너스 */
+  | { type: 'sixtySeven'; x: number; y: number; kills: number }
   /** 까불이 왕자의 L 포즈: units는 약 오른 가전 uid */
   | { type: 'taunt'; enemy: number; x: number; y: number; r: number; units: number[] }
   | { type: 'bolt'; points: Vec[] }
@@ -186,6 +190,8 @@ export class Game {
   /** 에어컨의 맵 전체 감속 배율 (1이면 없음) */
   globalSlow = 1;
   /** 에어컨(제습): 모든 적이 받는 피해 배율 */
+  /** 이번 판 처치 수 (67 이스터에그) */
+  kills = 0;
   globalVuln = 1;
   private breakerUsed = false;
   private modVersion = 0;
@@ -625,7 +631,7 @@ export class Game {
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
       slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, knocks: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
-      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0, tauntTimer: def.taunt?.every ?? 0,
+      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0, tauntTimer: def.taunt?.every ?? 0, weighMode: 0, weighTimer: def.weigh ? def.weigh.every * 0.5 : 0,
       burnDps: 0, burnTime: 0, shred: 0,
     };
     this.enemies.push(e);
@@ -700,6 +706,16 @@ export class Game {
       }
       // 치유사: 주변 적을 회복시킨다 (자기 자신과 보스는 제외)
       if (e.healCd > 0) e.healCd -= dt;
+      // 식스세븐: 6.7초마다 6 또는 7을 고른다 (처음 고르는 건 반 주기 뒤)
+      const wg = e.def.weigh;
+      if (wg) {
+        e.weighTimer -= dt;
+        if (e.weighTimer <= 0) {
+          e.weighTimer = wg.every;
+          e.weighMode = this.rng() < 0.5 ? 6 : 7;
+          this.events.push({ type: 'weigh', enemy: e.uid, mode: e.weighMode, x: e.x, y: e.y });
+        }
+      }
       // 까불이 왕자: L 포즈로 주변 가전을 약 올린다
       const tt = e.def.taunt;
       if (tt) {
@@ -901,7 +917,9 @@ export class Game {
     const frozen = e.stunTime > 0 ? e.frozenVuln : 1;
     const amp = amount * e.hackMul * frozen * this.globalVuln;
     // 방어력 무시 공격이거나 해킹당한 적은 방어력이 0
-    const armor = opts.pierce || e.hackMul > 1 ? 0 : Math.max(0, e.def.armor + (this.activeMod?.armorAdd ?? 0) - e.shred);
+    // 식스세븐: 6이면 방어 +6, 7이면 방어 0
+    const weighArmor = e.weighMode === 6 ? (e.def.weigh?.six.armor ?? 0) : e.weighMode === 7 ? -e.def.armor : 0;
+    const armor = opts.pierce || e.hackMul > 1 ? 0 : Math.max(0, e.def.armor + weighArmor + (this.activeMod?.armorAdd ?? 0) - e.shred);
     // 다리미: 맞힌 뒤 방어력을 깎는다 (다음 공격부터 적용)
     if (shred) e.shred = Math.min(MAX_SHRED, e.shred + shred);
     const dealt = Math.max(amp * 0.25, amp - armor);
@@ -931,6 +949,12 @@ export class Game {
         ));
         this.money += reward;
         this.events.push({ type: 'kill', enemy: e.def.id, x: e.x, y: e.y, reward });
+        // 67 이스터에그: 이번 판 처치 수가 67, 167, 267 … 이면 💰67
+        this.kills++;
+        if (this.kills % 100 === 67) {
+          this.money += 67;
+          this.events.push({ type: 'sixtySeven', x: e.x, y: e.y, kills: this.kills });
+        }
         const sp = e.def.splitInto;
         if (sp) for (let i = 0; i < sp.count; i++) this.spawnEnemy(sp.id, Math.max(0, e.dist - i * 14), e.lane);
         if (this.mods.chain > 0) {
@@ -970,8 +994,9 @@ export class Game {
       const enrage = e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below ? e.def.enrage.speedMul : 1;
       const slowed = Math.max(e.def.boss ? BOSS_SLOW_FLOOR : SLOW_FLOOR, e.slowMul * this.globalSlow);
       // 춤추며 걷기: 박자에 맞춰 빨라졌다 느려졌다 (평균 속도는 그대로)
+      const weigh = e.weighMode === 6 ? (e.def.weigh?.six.speed ?? 1) : e.weighMode === 7 ? (e.def.weigh?.seven.speed ?? 1) : 1;
       const dance = e.def.dance ? 1 + e.def.dance.swing * Math.sin(((this.waveTime + e.uid * 0.37) / e.def.dance.beat) * Math.PI * 2) : 1;
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * slowed * dance * dt;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * slowed * dance * weigh * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {

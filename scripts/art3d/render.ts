@@ -5,9 +5,10 @@ import { MODELS as GAME_MODELS } from '../../src/view3d/models';
 import { DANCER_FRAMES } from './dancer-frames';
 import { GREASE_SAMPLES } from './grease-samples';
 import { SAMPLES } from './samples';
+import { SIXSEVEN_FRAMES } from './sixseven-frames';
 
-// ?set=samples / grease / dancer 이면 디자인 후보·동작 프레임을 렌더링한다
-const SETS: Record<string, typeof GAME_MODELS> = { samples: SAMPLES, grease: GREASE_SAMPLES, dancer: DANCER_FRAMES };
+// ?set=samples / grease / dancer / sixseven 이면 디자인 후보·동작 프레임을 렌더링한다
+const SETS: Record<string, typeof GAME_MODELS> = { samples: SAMPLES, grease: GREASE_SAMPLES, dancer: DANCER_FRAMES, sixseven: SIXSEVEN_FRAMES };
 const MODELS = SETS[new URLSearchParams(location.search).get('set') ?? ''] ?? GAME_MODELS;
 
 const SIZE = 256;

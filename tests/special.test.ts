@@ -267,3 +267,73 @@ describe('까불이 왕자 (춤추는 보스)', () => {
     expect(d.dist / expected).toBeLessThan(1.1);
   });
 });
+
+describe('식스세븐 (67)', () => {
+  function setup() {
+    const g = new Game({ ...defaultConfig('normal'), seed: 5, startMoney: 1e6, critChance: 0, cards: [] });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    return g;
+  }
+
+  it('6.7초마다 6 또는 7을 고르고, 6은 방어 +6, 7은 방어 0', () => {
+    const g = setup();
+    const e = g.spawnEnemy('sixseven', 300);
+    e.def = { ...e.def, speed: 0 };
+    expect(e.weighMode).toBe(0);
+    g.update(3.4); // 처음 고르는 건 반 주기 뒤
+    expect([6, 7]).toContain(e.weighMode);
+    const seen = new Set<number>();
+    for (let i = 0; i < 20; i++) {
+      g.update(6.7);
+      seen.add(e.weighMode);
+    }
+    expect([...seen].sort()).toEqual([6, 7]); // 어느 쪽일지 모른다: 둘 다 나온다
+    // 방어력: 같은 피해를 6일 때와 7일 때 비교
+    const hitAs = (mode: 6 | 7) => {
+      e.weighMode = mode;
+      e.hp = e.maxHp = 1e6;
+      (g as unknown as { damage: (e: unknown, n: number) => void }).damage(e, 20);
+      return 1e6 - e.hp;
+    };
+    expect(hitAs(7)).toBe(20); // 방어 0
+    expect(hitAs(6)).toBe(20 - (e.def.armor + 6)); // 방어 2 + 6
+  });
+
+  it('7이면 빠르고 6이면 느리다', () => {
+    const run = (mode: 6 | 7) => {
+      const g = setup();
+      const e = g.spawnEnemy('sixseven', 0);
+      e.hp = e.maxHp = 1e9;
+      e.weighTimer = 1e9; // 고른 상태를 고정
+      e.weighMode = mode;
+      g.update(2);
+      return e.dist;
+    };
+    expect(run(7) / run(6)).toBeCloseTo(1.7 / 0.75, 1);
+  });
+
+  it('한 판 처치 수가 67, 167 …이면 💰67', () => {
+    const g = setup();
+    let bonus = 0;
+    for (let i = 0; i < 170; i++) {
+      const e = g.spawnEnemy('goo', 300);
+      const before = g.money;
+      e.hp = 0;
+      g.update(1 / 60);
+      const got = g.drainEvents().find((ev) => ev.type === 'sixtySeven');
+      if (got) {
+        bonus++;
+        expect(g.money - before).toBeGreaterThanOrEqual(67);
+      }
+    }
+    expect(bonus).toBe(2);
+    expect(g.kills).toBe(170);
+  });
+
+  it('7·12·16웨이브와 무한 모드에 나온다', async () => {
+    const { WAVES } = await import('../src/data/waves');
+    for (const n of [7, 12, 16]) expect(WAVES[n - 1].groups.some((gr) => gr.enemy === 'sixseven'), `${n}`).toBe(true);
+  });
+});

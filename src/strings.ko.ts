@@ -15,6 +15,10 @@ export const STR = {
   bossBanner: '⚠ 보스 등장! ⚠',
   bossBanners: { dancer: '🕺 까불이 왕자 등장! 🕺' } as Record<string, string>,
   taunt: 'L 포즈! 💢',
+  weigh: (n: 6 | 7) => (n === 6 ? '6! 🛡️' : '7! 💨'),
+  weighHint: '🤷 식스세븐: 6이면 단단(방어 +6), 7이면 빠름(속도 ×1.7)',
+  sixtySeven: (kills: number) => `${kills}번째 처치! 67! 🤷 +💰67`,
+  wave67: '🤷 67웨이브! 🤷',
   tauntHint: '💢 약 올라서 공격이 느려졌다!',
   modBanner: (emoji: string, name: string) => `${emoji} ${name} 웨이브!`,
   waveMods: {
@@ -94,6 +98,7 @@ export const STR = {
     kills_1000: { name: '청소 전문가', desc: '적 1,000마리 처치 (누적)' },
     legends_5: { name: '전설 수집가', desc: '전설 카드 5종 골라 보기 (누적)' },
     branches_12: { name: '모든 길을 걷다', desc: 'Lv4 갈래 12종 써 보기 (누적)' },
+    sixseven: { name: '식스세븐 🤷', desc: '식스세븐 67마리 처치 (누적)' },
   } as Record<string, { name: string; desc: string }>,
   cardTitle: (wave: number) => `🃏 웨이브 ${wave} 클리어! 카드를 고르세요`,
   cardSkip: (money: number) => `건너뛰기  +💰${money}`,
