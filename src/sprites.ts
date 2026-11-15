@@ -30,6 +30,7 @@ export const SPRITES: Record<string, string> = {
   ghost: 'ghost.png',
   healer: 'healer.png',
   charger: 'charger.png',
+  dancer: 'dancer.png',
   // 지형
   outlet: 'outlet.svg',
   drain: 'drain.svg',

@@ -47,7 +47,8 @@ describe('무한 모드', () => {
   it('생성 웨이브는 매번 같고, 점점 세지고, 10웨이브마다 보스가 늘어난다', () => {
     expect(endlessWave(27)).toEqual(endlessWave(27));
     expect(endlessWave(30).hpMul).toBeGreaterThan(WAVES[19].hpMul);
-    const bosses = (n: number) => endlessWave(n).groups.filter((x) => x.enemy === 'boss').reduce((a, x) => a + x.count, 0);
+    // 보스(하수구 대왕·까불이 왕자 번갈아) 마릿수
+    const bosses = (n: number) => endlessWave(n).groups.filter((x) => x.enemy === 'boss' || x.enemy === 'dancer').reduce((a, x) => a + x.count, 0);
     expect(bosses(29)).toBe(0);
     expect(bosses(30)).toBe(1);
     expect(bosses(40)).toBe(2);

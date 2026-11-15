@@ -79,6 +79,8 @@ export type GameEvent =
   | { type: 'waveStart'; wave: number; boss: boolean; mod: WaveModDef | null }
   | { type: 'shieldHit'; enemy: number; x: number; y: number; left: number }
   | { type: 'heal'; x: number; y: number; r: number }
+  /** 까불이 왕자의 L 포즈: units는 약 오른 가전 uid */
+  | { type: 'taunt'; enemy: number; x: number; y: number; r: number; units: number[] }
   | { type: 'bolt'; points: Vec[] }
   | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
   | { type: 'income'; x: number; y: number; amount: number }
@@ -437,7 +439,7 @@ export class Game {
     const cost = this.placeCost(id);
     this.money -= cost;
     this.units.push({
-      uid: this.nextUid++, def, level: 0, branch: null, stars: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1,
+      uid: this.nextUid++, def, level: 0, branch: null, stars: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1, tauntTime: 0, tauntSlow: 0,
       rampTarget: 0, rampMul: 1, dmgMul: 1,
     });
     return { ok: true };
@@ -623,7 +625,7 @@ export class Game {
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
       slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, knocks: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
-      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0,
+      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0, tauntTimer: def.taunt?.every ?? 0,
       burnDps: 0, burnTime: 0, shred: 0,
     };
     this.enemies.push(e);
@@ -698,6 +700,20 @@ export class Game {
       }
       // 치유사: 주변 적을 회복시킨다 (자기 자신과 보스는 제외)
       if (e.healCd > 0) e.healCd -= dt;
+      // 까불이 왕자: L 포즈로 주변 가전을 약 올린다
+      const tt = e.def.taunt;
+      if (tt) {
+        e.tauntTimer -= dt;
+        if (e.tauntTimer <= 0) {
+          e.tauntTimer = tt.every;
+          const hit = this.units.filter((u) => dist(u, e) <= tt.radius + u.def.radius && u.def.kind !== 'income' && u.def.kind !== 'aura');
+          for (const u of hit) {
+            u.tauntTime = Math.max(u.tauntTime, tt.duration);
+            u.tauntSlow = tt.slow;
+          }
+          this.events.push({ type: 'taunt', enemy: e.uid, x: e.x, y: e.y, r: tt.radius, units: hit.map((u) => u.uid) });
+        }
+      }
       const h = e.def.heal;
       if (h) {
         e.healTimer -= dt;
@@ -764,7 +780,10 @@ export class Game {
       const lv = this.stats(u);
       const branch = u.branch !== null ? u.def.branches![u.branch].id : null;
       if (u.def.kind === 'buff' || u.def.kind === 'income' || u.def.kind === 'aura') continue;
-      u.cooldown -= dt * u.buffMul * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
+      // 약 오른 가전은 공격이 느려진다 (까불이 왕자의 L 포즈)
+      const taunted = u.tauntTime > 0 ? 1 - u.tauntSlow : 1;
+      if (u.tauntTime > 0) u.tauntTime -= dt;
+      u.cooldown -= dt * u.buffMul * taunted * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
       if (u.cooldown > 0) continue;
       const inRange = this.enemies.filter((e) => e.hp > 0 && dist(u, e) <= lv.range + e.def.radius);
       // 투명한 유령은 조준할 수 없다. 범위형(선풍기, 흡입)은 조준이 필요 없어서 그대로 맞힌다
@@ -950,7 +969,9 @@ export class Game {
       }
       const enrage = e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below ? e.def.enrage.speedMul : 1;
       const slowed = Math.max(e.def.boss ? BOSS_SLOW_FLOOR : SLOW_FLOOR, e.slowMul * this.globalSlow);
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * slowed * dt;
+      // 춤추며 걷기: 박자에 맞춰 빨라졌다 느려졌다 (평균 속도는 그대로)
+      const dance = e.def.dance ? 1 + e.def.dance.swing * Math.sin(((this.waveTime + e.uid * 0.37) / e.def.dance.beat) * Math.PI * 2) : 1;
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * slowed * dance * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {

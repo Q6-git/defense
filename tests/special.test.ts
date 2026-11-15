@@ -104,14 +104,14 @@ describe('특수 웨이브', () => {
     const g = new Game({ ...defaultConfig('normal', true), seed: 11 });
     expect(g.waveMod(4)).toBeNull();
     expect(g.waveMod(5)).toBeNull(); // 초반은 제외 (10웨이브부터)
-    expect(g.waveMod(15)).not.toBeNull();
+    expect(g.waveMod(15)).toBeNull(); // 까불이 왕자 (중간 보스)
     expect(g.waveMod(10)).not.toBeNull();
     expect(g.waveMod(20)).toBeNull(); // 보스 웨이브
     expect(g.waveMod(25)).not.toBeNull();
     expect(g.waveMod(30)).toBeNull();
     expect(g.waveMod(10)).toBe(g.waveMod(10));
     // 같은 시드면 같은 변칙
-    expect(new Game({ ...defaultConfig('normal', true), seed: 11 }).waveMod(15)).toBe(g.waveMod(15));
+    expect(new Game({ ...defaultConfig('normal', true), seed: 11 }).waveMod(25)).toBe(g.waveMod(25));
   });
 
   it('판(시드)마다 변칙이 달라진다', () => {
@@ -217,5 +217,53 @@ describe('군중 제어 겹치기', () => {
 
   it('보스는 더 덜 묶인다', () => {
     expect(advanceRatio('boss')).toBeGreaterThan(0.35);
+  });
+});
+
+describe('까불이 왕자 (춤추는 보스)', () => {
+  function setup() {
+    const g = new Game({ ...defaultConfig('normal'), seed: 1, startMoney: 1e6, critChance: 0, cards: [] });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    return g;
+  }
+
+  it('15웨이브에 중간 보스로 나오고, 무한 모드에서는 하수구 대왕과 번갈아 나온다', async () => {
+    const { WAVES, endlessWave } = await import('../src/data/waves');
+    expect(WAVES[14].groups.some((gr) => gr.enemy === 'dancer')).toBe(true);
+    const bossOf = (n: number) => endlessWave(n).groups.find((gr) => gr.enemy === 'boss' || gr.enemy === 'dancer')?.enemy;
+    expect([bossOf(30), bossOf(40), bossOf(50)]).toEqual(['dancer', 'boss', 'dancer']);
+  });
+
+  it('L 포즈: 8초마다 반경 안 가전이 3초 동안 공격 속도 -40%', () => {
+    const g = setup();
+    expect(g.apply({ type: 'place', unit: 'toaster', x: 500, y: 240 }).ok).toBe(true);
+    expect(g.apply({ type: 'place', unit: 'toaster', x: 858, y: 410 }).ok).toBe(true);
+    const [near, far] = g.units;
+    const d = g.spawnEnemy('dancer', 420);
+    d.def = { ...d.def, speed: 0 };
+    d.hp = d.maxHp = 1e9;
+    g.update(7.9);
+    expect(near.tauntTime).toBe(0);
+    g.drainEvents();
+    g.update(0.2);
+    const ev = g.drainEvents().find((e) => e.type === 'taunt');
+    expect(ev).toBeDefined();
+    expect(near.tauntTime).toBeGreaterThan(2.5);
+    expect(near.tauntSlow).toBe(0.4);
+    expect(far.tauntTime).toBe(0);
+    g.update(3.1);
+    expect(near.tauntTime).toBeLessThanOrEqual(0);
+  });
+
+  it('춤추며 걷기: 속도가 오르내려도 평균 속도는 그대로', () => {
+    const g = setup();
+    const d = g.spawnEnemy('dancer', 0);
+    d.hp = d.maxHp = 1e9;
+    for (let t = 0; t < 8; t += 1 / 60) g.update(1 / 60);
+    const expected = d.def.speed * g.cfg.enemySpeedMul * 8;
+    expect(d.dist / expected).toBeGreaterThan(0.9);
+    expect(d.dist / expected).toBeLessThan(1.1);
   });
 });

@@ -17,5 +17,11 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
   shield: { id: 'shield', hp: 45, speed: 70, armor: 0, reward: 14, radius: 15, emoji: '🛡️', color: 0x7aa0c8, shield: 4 },
   ghost: { id: 'ghost', hp: 60, speed: 100, armor: 0, reward: 10, radius: 14, emoji: '👻', color: 0xcfd3e6, phase: { every: 3, duration: 1.5 } },
   healer: { id: 'healer', hp: 120, speed: 70, armor: 0, reward: 18, radius: 15, emoji: '💉', color: 0xf08fb0, heal: { interval: 2, pct: 0.04, radius: 110 } },
+  // 까불이 왕자: 춤추며(박자마다 빨라졌다 느려졌다) 전진하고, 8초마다 L 포즈로 주변 가전을 약 올려 3초간 공격 속도 -40%
+  dancer: {
+    id: 'dancer', hp: 900, speed: 42, armor: 6, reward: 450, radius: 30, emoji: '🕺', color: 0x5fd0b0, boss: true,
+    dance: { beat: 0.8, swing: 0.6 },
+    taunt: { every: 8, radius: 160, slow: 0.4, duration: 3 },
+  },
   charger: { id: 'charger', hp: 55, speed: 75, armor: 0, reward: 12, radius: 15, emoji: '🏃', color: 0xe0703a, enrage: { below: 0.5, speedMul: 1.5 } },
 };

@@ -92,6 +92,8 @@ export class GameScene extends Phaser.Scene {
   private run!: RunStats;
   /** 지금 떠 있는 업적 알림 수 (겹치지 않게 아래로 쌓는다) */
   private popups = 0;
+  /** 이번 판에 보여 준 L 포즈 안내 횟수 (처음 몇 번만) */
+  private tauntHints = 0;
   /** 이번 판에 들고 온 가전 (상점에 나오는 순서) */
   private deck: UnitId[] = [...UNIT_ORDER];
   /** 이번 판에 번 부품 */
@@ -220,6 +222,7 @@ export class GameScene extends Phaser.Scene {
       cleared: 0, placed: [], usedSkill: false, leaked: false, cards: 0,
     };
     this.popups = 0;
+    this.tauntHints = 0;
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), THEME.neutral, 18);
     this.speedBtn = button(this, 912, 28, 104, 40, STR.speed(1), () => this.cycleSpeed(), THEME.neutral, 17);
@@ -1004,6 +1007,8 @@ export class GameScene extends Phaser.Scene {
     const boss = gm.enemies.find((e) => e.def.boss);
     this.bossLabel.setVisible(!!boss);
     if (boss) {
+      const name = STR.bossNames[boss.def.id] ?? STR.bossName;
+      if (this.bossLabel.text !== name) this.bossLabel.setText(name);
       o.fillStyle(0x000000, 0.6).fillRect(320, 66, 400, 14);
       o.fillStyle(0xb04ae0).fillRect(320, 66, (400 * Math.max(0, boss.hp)) / boss.maxHp, 14);
       o.lineStyle(1, 0xffffff, 0.5).strokeRect(320, 66, 400, 14);
@@ -1290,9 +1295,31 @@ export class GameScene extends Phaser.Scene {
       case 'heal':
         this.fx.heal(ev.x, ev.y, ev.r);
         break;
+      case 'taunt': {
+        // L 포즈: 보스 위에 글자, 약 오른 가전마다 💢
+        this.floatText(ev.x, ev.y - 30, STR.taunt, THEME.pink, 26);
+        this.board?.taunt(ev.enemy, this.clock);
+        for (const uid of ev.units) {
+          const u = this.sim.findUnit(uid);
+          if (!u) continue;
+          const at = this.sp(u.x, u.y, u.def.radius * 2.4);
+          this.floatText(at.x, at.y, '💢', THEME.danger, 22);
+        }
+        if (ev.units.length && this.tauntHints < 2) {
+          this.showToast(STR.tauntHint);
+          this.tauntHints++;
+        }
+        sfx.play('error');
+        break;
+      }
       case 'waveStart':
         if (ev.mod) this.banner(STR.modBanner(ev.mod.emoji, STR.waveMods[ev.mod.id].name), '#ffd35a');
-        else this.banner(ev.boss ? STR.bossBanner : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
+        else {
+          // 보스마다 등장 문구가 다르다
+          const bossId = this.sim.waveDef(ev.wave)?.groups.map((g) => g.enemy).find((id) => this.sim.cfg.enemies[id].boss);
+          const bossText = (bossId && STR.bossBanners[bossId]) || STR.bossBanner;
+          this.banner(ev.boss ? bossText : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
+        }
         if (ev.boss) {
           this.cameras.main.shake(800, 0.006);
           sfx.play('boss');

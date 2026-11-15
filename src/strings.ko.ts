@@ -13,6 +13,9 @@ export const STR = {
   preview: '다음',
   waveBanner: (n: number) => `🌊 웨이브 ${n}`,
   bossBanner: '⚠ 보스 등장! ⚠',
+  bossBanners: { dancer: '🕺 까불이 왕자 등장! 🕺' } as Record<string, string>,
+  taunt: 'L 포즈! 💢',
+  tauntHint: '💢 약 올라서 공격이 느려졌다!',
   modBanner: (emoji: string, name: string) => `${emoji} ${name} 웨이브!`,
   waveMods: {
     rush: { name: '러시', desc: '적 수 +50%, 체력 -35%' },
@@ -154,6 +157,7 @@ export const STR = {
     hell: { name: '💀 지옥', desc: '기지 HP 150. 실수 한 번이 끝' },
   } satisfies Record<DifficultyId, { name: string; desc: string }>,
   bossName: '👹 막힌 배수구 대왕',
+  bossNames: { boss: '👹 막힌 배수구 대왕', dancer: '🕺 까불이 왕자 (춤추며 약 올림)' } as Record<string, string>,
   shop: '가전 설치',
   cancel: '취소',
   upgrade: (cost: number) => `⬆ 업그레이드 💰${cost}`,

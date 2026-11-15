@@ -340,7 +340,78 @@ const charger: Model = () => {
   return g;
 };
 
+const dancer: Model = () => {
+  // 까불이 왕자: 팔다리 달린 청록 점액 왕자. 한 손을 이마에 대고 L자를 만든 채 몸을 흔들며 걷는다
+  const slime = slimeMat(0x5fd0b0);
+  const dark = slimeMat(0x3aa88a);
+  const glove = plastic(0xffffff, 0.4);
+  const finger = plastic(0xff4f8b, 0.35);
+  const gold = metal(0xffc93a);
+
+  // 몸과 머리 (body 그룹을 흔든다)
+  const head = group(
+    at(sphere(0.55, slime, 1.05, 0.95, 1), 0, 0, 0),
+    at(sphere(0.14, slime, 1, 1.6, 1), 0.3, -0.42, 0.25), // 흘러내리는 방울
+    at(face(1.25, { mouth: 'smile', spread: 0.23 }), 0, -0.02, 0.52),
+  );
+  // 삐딱한 왕관
+  const crown = group(at(cyl(0.26, 0.28, 0.16, gold, 6), 0, 0, 0));
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    crown.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), gold), Math.cos(a) * 0.22, 0.14, Math.sin(a) * 0.22));
+  }
+  head.add(at(crown, -0.1, 0.55, 0, 0, 0, 0.25));
+
+  // L 손: 이마 앞에 댄 장갑 + 노란 손가락 두 개(세로 검지 + 가로 엄지) → 보는 쪽에서 L자로 읽힌다
+  const lHand = group(
+    at(sphere(0.13, glove), 0.02, -0.02, -0.04),
+    at(rbox(0.11, 0.46, 0.09, 0.045, finger), -0.07, 0.24, 0.02), // 검지 (세로)
+    at(rbox(0.34, 0.11, 0.09, 0.045, finger), 0.08, 0.0, 0.03), // 엄지 (가로)
+  );
+  head.add(at(lHand, 0.16, 0.36, 0.6, 0, 0.35, 0));
+  // 이마로 올린 팔 (어깨 → L 손)
+  const armUp = group(tube([[0.42, -0.55, 0.05], [0.56, -0.1, 0.35], [0.26, 0.3, 0.58]], 0.07, slime));
+  head.add(armUp);
+
+  // 반대 팔: 흔든다
+  const armSwing = group(tube([[0, 0, 0], [-0.2, -0.25, 0.05], [-0.3, -0.5, 0.1]], 0.07, slime), at(sphere(0.11, glove), -0.3, -0.52, 0.1));
+  armSwing.name = 'armSwing';
+
+  const body = group(
+    at(sphere(0.42, slime, 1, 1.05, 0.9), 0, 0, 0),
+    at(rbox(0.5, 0.08, 0.5, 0.04, dark), 0, -0.05, 0), // 허리띠
+    at(sphere(0.05, gold), 0, -0.05, 0.27),
+    at(head, 0, 0.8, 0.02),
+    at(armSwing, -0.38, 0.2, 0),
+  );
+  body.name = 'body';
+
+  // 다리: 엉덩이에서 축을 잡고 번갈아 찬다
+  const leg = (side: number) => {
+    const g = group(at(cyl(0.09, 0.1, 0.4, slime), 0, -0.2, 0), at(sphere(0.15, dark, 1, 0.6, 1.4), 0, -0.42, 0.06));
+    g.name = side < 0 ? 'legL' : 'legR';
+    return at(g, side * 0.2, 0.5, 0);
+  };
+  const root = group(at(body, 0, 0.9, 0), leg(-1), leg(1));
+  const legL = root.getObjectByName('legL')!, legR = root.getObjectByName('legR')!;
+  const baseY = body.position.y;
+
+  // 매 프레임 춤: 좌우로 흔들고, 다리를 번갈아 차고, 반대 팔을 흔든다. L 포즈 직후 1.2초는 크게 뛰며 L을 내민다
+  root.userData.animate = (t: number, sinceTaunt: number) => {
+    const beat = t * Math.PI * 2 / 0.8;
+    const big = sinceTaunt >= 0 && sinceTaunt < 1.2 ? Math.sin((sinceTaunt / 1.2) * Math.PI) : 0;
+    body.rotation.z = Math.sin(beat) * 0.18;
+    body.position.y = baseY + Math.abs(Math.sin(beat)) * 0.08 + big * 0.35;
+    legL.rotation.x = Math.max(0, Math.sin(beat)) * -0.9;
+    legR.rotation.x = Math.max(0, -Math.sin(beat)) * -0.9;
+    armSwing.rotation.z = Math.sin(beat + 1) * 0.6;
+    lHand.scale.setScalar(1 + big * 0.6);
+    lHand.position.z = 0.6 + big * 0.25;
+  };
+  return root;
+};
+
 export const MODELS: Record<string, Model> = {
   toaster, fan, microwave, vacuum, wifi, washer, stove, strip, battery, iron, aircon, dishwasher,
-  goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger,
+  goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger, dancer,
 };

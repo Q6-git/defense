@@ -19,7 +19,7 @@ const TABLE: G[][] = [
   /* 12 */ [['roach', 12, 0.8, 0], ['grease', 6, 1.5, 5], ['healer', 3, 2.5, 3]],
   /* 13 */ [['goo', 26, 0.3, 0], ['splitter', 10, 0.8, 3], ['rat', 12, 0.3, 8], ['charger', 8, 0.7, 5]],
   /* 14 */ [['grease', 12, 1.0, 0], ['roach', 10, 0.7, 4], ['shield', 8, 0.9, 2]],
-  /* 15 */ [['splitter', 13, 0.6, 0], ['roach', 9, 0.7, 5], ['rat', 16, 0.25, 10], ['healer', 2, 3.0, 4]],
+  /* 15 */ [['splitter', 13, 0.6, 0], ['roach', 9, 0.7, 5], ['rat', 16, 0.25, 10], ['healer', 2, 3.0, 4], ['dancer', 1, 1, 7]],
   /* 16 */ [['grease', 16, 0.8, 0], ['goo', 26, 0.25, 4], ['ghost', 12, 0.5, 2]],
   /* 17 */ [['roach', 19, 0.5, 0], ['splitter', 12, 0.6, 5], ['charger', 12, 0.6, 3]],
   /* 18 */ [['grease', 17, 0.7, 0], ['roach', 15, 0.5, 3], ['rat', 26, 0.2, 8], ['shield', 9, 0.8, 2], ['healer', 3, 2.5, 6]],
@@ -58,7 +58,8 @@ export function endlessWave(n: number): WaveDef {
   ];
   // 3웨이브에 한 번은 치유사가 따라온다
   if (n % 3 === 0) groups.push({ enemy: 'healer', count: 2 + Math.floor(k / 6), interval: 2.5, delay: 3 });
-  if (n % 10 === 0) groups.push({ enemy: 'boss', count: n / 10 - 2, interval: 4, delay: 6 });
+  // 10웨이브마다 보스: 하수구 대왕과 까불이 왕자가 번갈아
+  if (n % 10 === 0) groups.push({ enemy: (n / 10) % 2 ? 'dancer' : 'boss', count: n / 10 - 2, interval: 4, delay: 6 });
   // 정해진 웨이브 이후에는 웨이브마다 체력이 8%씩 추가로 복리 증가한다 (약 9웨이브마다 2배).
   // 가전을 놓을 자리는 한정돼 있으니, 아무리 잘 짜도 언젠가는 무너진다
   return { hpMul: hpMulFor(n) * Math.pow(1.08, k), groups };

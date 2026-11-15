@@ -10,7 +10,7 @@ export const TARGET_MODES: readonly TargetMode[] = ['first', 'last', 'strong', '
 
 export type EnemyId =
   | 'goo' | 'rat' | 'grease' | 'roach' | 'splitter' | 'splitling' | 'boss'
-  | 'shield' | 'ghost' | 'healer' | 'charger';
+  | 'shield' | 'ghost' | 'healer' | 'charger' | 'dancer';
 
 export interface EnemyDef {
   id: EnemyId;
@@ -34,6 +34,10 @@ export interface EnemyDef {
   heal?: { interval: number; pct: number; radius: number };
   /** 돌격병: 체력 비율이 below 이하가 되면 속도가 speedMul배 */
   enrage?: { below: number; speedMul: number };
+  /** 춤추며 걷기: beat초 박자로 속도가 1±swing배로 오르내린다 (평균 속도는 그대로) */
+  dance?: { beat: number; swing: number };
+  /** 약 올리기(L 포즈): every초마다 반경 안 가전의 공격 속도를 duration초 동안 slow만큼 늦춘다 */
+  taunt?: { every: number; radius: number; slow: number; duration: number };
 }
 
 export type WaveModId = 'rush' | 'fog' | 'haste' | 'steel' | 'gold';
@@ -136,6 +140,8 @@ export interface Enemy {
   hidden: boolean;
   phaseTimer: number;
   healTimer: number;
+  /** 다음 약 올리기까지 남은 시간 */
+  tauntTimer: number;
   /** 치유사에게 회복을 받은 뒤 다시 받을 수 있을 때까지 남은 시간 (여러 치유사의 회복이 겹치지 않게) */
   healCd: number;
 }
@@ -266,6 +272,9 @@ export interface Unit {
   buffMul: number;
   /** 이번 스텝에 받은 공격력 버프 배율 */
   dmgMul: number;
+  /** 약이 올라(까불이 왕자의 L 포즈) 공격이 느려지는 남은 시간과 느려지는 정도 */
+  tauntTime: number;
+  tauntSlow: number;
 }
 
 export type DifficultyId = 'easy' | 'normal' | 'hard' | 'hell';
