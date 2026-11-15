@@ -104,7 +104,7 @@ describe('특수 웨이브', () => {
     const g = new Game({ ...defaultConfig('normal', true), seed: 11 });
     expect(g.waveMod(4)).toBeNull();
     expect(g.waveMod(5)).toBeNull(); // 초반은 제외 (10웨이브부터)
-    expect(g.waveMod(15)).toBeNull(); // 까불이 왕자 (중간 보스)
+    expect(g.waveMod(15)).toBeNull(); // 「L을 가져가!」 (중간 보스)
     expect(g.waveMod(10)).not.toBeNull();
     expect(g.waveMod(20)).toBeNull(); // 보스 웨이브
     expect(g.waveMod(25)).not.toBeNull();
@@ -220,7 +220,7 @@ describe('군중 제어 겹치기', () => {
   });
 });
 
-describe('까불이 왕자 (춤추는 보스)', () => {
+describe('「L을 가져가!」 (춤추는 보스)', () => {
   function setup() {
     const g = new Game({ ...defaultConfig('normal'), seed: 1, startMoney: 1e6, critChance: 0, cards: [] });
     g.apply({ type: 'startWave' });

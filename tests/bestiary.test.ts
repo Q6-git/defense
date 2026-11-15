@@ -15,7 +15,7 @@ describe('몬스터 도감', () => {
     }
   });
 
-  it('처음 나오는 웨이브: 초록 점액 1, 식스세븐 7, 까불이 왕자 15, 대왕 20, 작은 방울은 분열 슬라임과 같다', () => {
+  it('처음 나오는 웨이브: 초록 점액 1, 식스세븐 7, 「L을 가져가!」 15, 대왕 20, 작은 방울은 분열 슬라임과 같다', () => {
     expect(firstWave('goo')).toBe(1);
     expect(firstWave('sixseven')).toBe(7);
     expect(firstWave('dancer')).toBe(15);

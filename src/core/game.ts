@@ -83,7 +83,7 @@ export type GameEvent =
   | { type: 'weigh'; enemy: number; mode: 6 | 7; x: number; y: number }
   /** 한 판 처치 수가 67, 167, 267 …: 💰67 보너스 */
   | { type: 'sixtySeven'; x: number; y: number; kills: number }
-  /** 까불이 왕자의 L 포즈: units는 약 오른 가전 uid */
+  /** 「L을 가져가!」의 L 포즈: units는 약 오른 가전 uid */
   | { type: 'taunt'; enemy: number; x: number; y: number; r: number; units: number[] }
   | { type: 'bolt'; points: Vec[] }
   | { type: 'kill'; enemy: EnemyId; x: number; y: number; reward: number }
@@ -716,7 +716,7 @@ export class Game {
           this.events.push({ type: 'weigh', enemy: e.uid, mode: e.weighMode, x: e.x, y: e.y });
         }
       }
-      // 까불이 왕자: L 포즈로 주변 가전을 약 올린다
+      // 「L을 가져가!」: L 포즈로 주변 가전을 약 올린다
       const tt = e.def.taunt;
       if (tt) {
         e.tauntTimer -= dt;
@@ -796,7 +796,7 @@ export class Game {
       const lv = this.stats(u);
       const branch = u.branch !== null ? u.def.branches![u.branch].id : null;
       if (u.def.kind === 'buff' || u.def.kind === 'income' || u.def.kind === 'aura') continue;
-      // 약 오른 가전은 공격이 느려진다 (까불이 왕자의 L 포즈)
+      // 약 오른 가전은 공격이 느려진다 (「L을 가져가!」의 L 포즈)
       const taunted = u.tauntTime > 0 ? 1 - u.tauntSlow : 1;
       if (u.tauntTime > 0) u.tauntTime -= dt;
       u.cooldown -= dt * u.buffMul * taunted * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);

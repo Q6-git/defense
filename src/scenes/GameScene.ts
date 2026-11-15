@@ -98,7 +98,6 @@ export class GameScene extends Phaser.Scene {
   /** 지금 떠 있는 업적 알림 수 (겹치지 않게 아래로 쌓는다) */
   private popups = 0;
   /** 이번 판에 보여 준 L 포즈 안내 횟수 (처음 몇 번만) */
-  private tauntHints = 0;
   private weighHints = 0;
   /** 이번 판에 들고 온 가전 (상점에 나오는 순서) */
   private deck: UnitId[] = [...UNIT_ORDER];
@@ -204,6 +203,7 @@ export class GameScene extends Phaser.Scene {
     this.badges.clear();
     this.starTags.clear();
     this.flashes.clear();
+    this.pops.clear();
     this.punch.clear();
     this.born.clear();
     this.lastX.clear();
@@ -247,7 +247,6 @@ export class GameScene extends Phaser.Scene {
       cleared: 0, placed: [], usedSkill: false, leaked: false, cards: 0,
     };
     this.popups = 0;
-    this.tauntHints = 0;
     this.weighHints = 0;
     this.pauseBtn = button(this, 772, 28, 48, 40, '⏸️', () => this.setPaused(true), THEME.neutral, 18);
     this.muteBtn = button(this, 828, 28, 48, 40, sfx.muted ? '🔇' : '🔊', () => this.muteBtn.setText(sfx.toggleMute() ? '🔇' : '🔊'), THEME.neutral, 18);
@@ -1344,23 +1343,20 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'sixtySeven':
-        this.floatText(ev.x, ev.y - 30, STR.sixtySeven(ev.kills), THEME.gold, 26);
+        this.pop67(STR.sixtySeven(ev.kills));
         this.cameras.main.flash(200, 255, 220, 120);
         sfx.play('coin');
         break;
       case 'taunt': {
         // L 포즈: 보스 위에 글자, 약 오른 가전마다 💢
-        this.floatText(ev.x, ev.y - 30, STR.taunt, THEME.pink, 26);
+        this.floatText(ev.x, ev.y - 30, '💢', THEME.pink, 30);
+        this.popTaunt(ev.units.length > 0);
         this.board?.taunt(ev.enemy, this.clock);
         for (const uid of ev.units) {
           const u = this.sim.findUnit(uid);
           if (!u) continue;
           const at = this.sp(u.x, u.y, u.def.radius * 2.4);
           this.floatText(at.x, at.y, '💢', THEME.danger, 22);
-        }
-        if (ev.units.length && this.tauntHints < 2) {
-          this.showToast(STR.tauntHint);
-          this.tauntHints++;
         }
         sfx.play('error');
         break;
@@ -1371,7 +1367,8 @@ export class GameScene extends Phaser.Scene {
           // 보스마다 등장 문구가 다르다
           const bossId = this.sim.waveDef(ev.wave)?.groups.map((g) => g.enemy).find((id) => this.sim.cfg.enemies[id].boss);
           const bossText = (bossId && STR.bossBanners[bossId]) || STR.bossBanner;
-          this.banner(ev.boss ? bossText : ev.wave === 67 ? STR.wave67 : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : ev.wave === 67 ? '#ffd35a' : '#ffffff');
+          if (ev.wave === 67 && !ev.boss) this.pop67(STR.wave67Sub);
+          else this.banner(ev.boss ? bossText : STR.waveBanner(ev.wave), ev.boss ? '#ff6b6b' : '#ffffff');
         }
         if (ev.boss) {
           this.cameras.main.shake(800, 0.006);
@@ -1475,6 +1472,51 @@ export class GameScene extends Phaser.Scene {
       ],
       onComplete: () => t.destroy(),
     });
+  }
+
+  /** 화면 가운데 큰 알림 (같은 종류가 이미 떠 있으면 새것으로 바꾼다) */
+  private pops = new Map<string, Phaser.GameObjects.Container>();
+  private bigPop(kind: string, parts: Phaser.GameObjects.GameObject[], hold: number): Phaser.GameObjects.Container {
+    this.pops.get(kind)?.destroy();
+    // 맵 가운데 (오른쪽 패널 제외)
+    const c = this.add.container(PANEL_X / 2, 330, parts).setDepth(46).setScale(0.2).setAlpha(0);
+    this.pops.set(kind, c);
+    this.tweens.chain({
+      targets: c,
+      tweens: [
+        { scale: 1, alpha: 1, duration: 260, ease: 'Back.easeOut' },
+        { scale: 1.04, duration: hold, yoyo: false },
+        { scale: 1.35, alpha: 0, duration: 260, ease: 'Quad.easeIn' },
+      ],
+      onComplete: () => {
+        c.destroy();
+        if (this.pops.get(kind) === c) this.pops.delete(kind);
+      },
+    });
+    return c;
+  }
+
+  /** 67! 파란 6과 빨간 7이 손바닥 저울질하듯 번갈아 오르내린다 */
+  private pop67(sub: string): void {
+    const big = (s: string, x: number, color: string) =>
+      text(this, x, 0, s, 190, color).setOrigin(0.5).setStroke('#ffffff', 14).setShadow(0, 6, 'rgba(0,0,0,0.35)', 8);
+    const six = big('6', -62, '#3f86d6');
+    const seven = big('7', 62, '#e5484d');
+    const shrug = text(this, 0, -128, '🤷', 64).setOrigin(0.5);
+    const label = text(this, 0, 128, sub, 30, THEME.gold).setOrigin(0.5).setStroke('#4a3b34', 7);
+    this.bigPop('67', [six, seven, shrug, label], 1500);
+    this.tweens.add({ targets: six, y: -22, duration: 230, yoyo: true, repeat: 3, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: seven, y: -22, duration: 230, yoyo: true, repeat: 3, delay: 230, ease: 'Sine.easeInOut' });
+  }
+
+  /** L을 가져가! 분홍 글씨가 흔들리며 튀어나온다 */
+  private popTaunt(hit: boolean): void {
+    const main = text(this, 0, 0, STR.taunt, 92, '#ff5fa2').setOrigin(0.5).setStroke('#ffffff', 12).setShadow(0, 5, 'rgba(0,0,0,0.3)', 8);
+    const parts: Phaser.GameObjects.GameObject[] = [main];
+    if (hit) parts.push(text(this, 0, 78, STR.tauntSub, 26, THEME.text).setOrigin(0.5).setStroke('#ffffff', 6));
+    this.bigPop('taunt', parts, 700);
+    main.setAngle(-8);
+    this.tweens.add({ targets: main, angle: 8, duration: 120, yoyo: true, repeat: 3, ease: 'Sine.easeInOut', onComplete: () => main.setAngle(0) });
   }
 
   private floatText(x: number, y: number, s: string, color: string, size = 16): void {

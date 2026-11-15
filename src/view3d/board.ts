@@ -439,7 +439,7 @@ export class Board3D {
     this.camera = cameraFor(this.map, v);
   }
 
-  /** 까불이 왕자가 L 포즈를 취했다: 모델 애니메이션을 크게 */
+  /** 「L을 가져가!」가 L 포즈를 취했다: 모델 애니메이션을 크게 */
   taunt(enemyUid: number, t: number): void {
     const a = this.enemies.get(enemyUid);
     if (a) a.obj.userData.tauntAt = t;
@@ -522,7 +522,7 @@ export class Board3D {
       }
       a.lastX = e.x;
       a.lastY = e.y;
-      // 춤 같은 모델 자체 애니메이션 (까불이 왕자)
+      // 춤 같은 모델 자체 애니메이션 (「L을 가져가!」)
       const anim = a.obj.userData.animate as ((t: number, sinceTaunt: number, e: Enemy) => void) | undefined;
       anim?.(t + e.uid * 0.37, t - ((a.obj.userData.tauntAt as number | undefined) ?? -99), e);
       a.obj.rotation.y = a.yaw;

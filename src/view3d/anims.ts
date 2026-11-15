@@ -12,7 +12,7 @@ export interface AnimPose {
 }
 
 export const MODEL_ANIMS: Record<string, { frames: number; fps: number; pose: (i: number) => AnimPose }> = {
-  // 까불이 왕자: 옆차기 두 번(1.6초) → L 포즈(1.2초)
+  // 「L을 가져가!」: 옆차기 두 번(1.6초) → L 포즈(1.2초)
   dancer: {
     frames: 42,
     fps: 15,

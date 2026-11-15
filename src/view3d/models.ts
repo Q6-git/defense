@@ -341,7 +341,7 @@ const charger: Model = () => {
 };
 
 const dancer: Model = () => {
-  // 까불이 왕자: 팔다리 달린 청록 점액 왕자. 한 손을 이마에 대고 L자를 만든 채 몸을 흔들며 걷는다
+  // 「L을 가져가!」: 팔다리 달린 청록 점액 왕자. 한 손을 이마에 대고 L자를 만든 채 몸을 흔들며 걷는다
   const slime = slimeMat(0x5fd0b0);
   const dark = slimeMat(0x3aa88a);
   const glove = plastic(0xffffff, 0.4);

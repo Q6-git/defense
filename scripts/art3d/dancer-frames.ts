@@ -1,4 +1,4 @@
-// 까불이 왕자 춤 동작 확인용 프레임. render.html?set=dancer
+// 「L을 가져가!」 춤 동작 확인용 프레임. render.html?set=dancer
 import type * as THREE from 'three';
 import { MODELS } from '../../src/view3d/models';
 

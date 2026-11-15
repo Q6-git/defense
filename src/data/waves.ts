@@ -58,7 +58,7 @@ export function endlessWave(n: number): WaveDef {
   ];
   // 3웨이브에 한 번은 치유사가 따라온다
   if (n % 3 === 0) groups.push({ enemy: 'healer', count: 2 + Math.floor(k / 6), interval: 2.5, delay: 3 });
-  // 10웨이브마다 보스: 하수구 대왕과 까불이 왕자가 번갈아
+  // 10웨이브마다 보스: 하수구 대왕과 「L을 가져가!」가 번갈아
   if (n % 10 === 0) groups.push({ enemy: (n / 10) % 2 ? 'dancer' : 'boss', count: n / 10 - 2, interval: 4, delay: 6 });
   // 정해진 웨이브 이후에는 웨이브마다 체력이 8%씩 추가로 복리 증가한다 (약 9웨이브마다 2배).
   // 가전을 놓을 자리는 한정돼 있으니, 아무리 잘 짜도 언젠가는 무너진다
