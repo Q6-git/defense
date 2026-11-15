@@ -134,6 +134,8 @@ export interface Enemy {
   hidden: boolean;
   phaseTimer: number;
   healTimer: number;
+  /** 치유사에게 회복을 받은 뒤 다시 받을 수 있을 때까지 남은 시간 (여러 치유사의 회복이 겹치지 않게) */
+  healCd: number;
 }
 
 export type AbilityId = 'plunger' | 'overload';
@@ -248,6 +250,8 @@ export interface Unit {
   level: number;
   /** 고른 갈래 (0 또는 1), 아직이면 null */
   branch: 0 | 1 | null;
+  /** 갈래를 고른 뒤 ★강화한 횟수 */
+  stars: number;
   /** 그릴 모드: 지금 지지고 있는 적과 쌓인 배율 */
   rampTarget: number;
   rampMul: number;

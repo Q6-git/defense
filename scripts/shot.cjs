@@ -1,5 +1,5 @@
 // 사용법: node scripts/shot.cjs <url> <out.png> [스텝 JSON]
-// 스텝: [{"click":[x,y]}, {"move":[x,y]}, {"wait":ms}, {"eval":"JS 코드"}, {"shot":"중간.png"}]
+// 스텝: [{"click":[x,y]}, {"move":[x,y]}, {"wheel":[x,y,dy]}, {"drag":[x1,y1,x2,y2]}, {"key":"Escape"}, {"wait":ms}, {"eval":"JS 코드"}, {"shot":"중간.png"}]
 // 좌표는 게임 해상도(1280x720) 기준. 개발 서버에서는 window.sim 으로 게임 상태에 접근할 수 있다.
 const { chromium } = require('playwright');
 (async () => {
@@ -16,6 +16,18 @@ const { chromium } = require('playwright');
   for (const s of steps) {
     if (s.click) await page.mouse.click(s.click[0], s.click[1]);
     if (s.move) await page.mouse.move(s.move[0], s.move[1]);
+    if (s.wheel) {
+      await page.mouse.move(s.wheel[0], s.wheel[1]);
+      await page.mouse.wheel(0, s.wheel[2]);
+    }
+    if (s.drag) {
+      const [x1, y1, x2, y2] = s.drag;
+      await page.mouse.move(x1, y1);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i++) await page.mouse.move(x1 + ((x2 - x1) * i) / 10, y1 + ((y2 - y1) * i) / 10);
+      await page.mouse.up();
+    }
+    if (s.key) await page.keyboard.press(s.key);
     if (s.eval) console.log(JSON.stringify(await page.evaluate(s.eval)));
     if (s.wait) await page.waitForTimeout(s.wait);
     if (s.shot) await page.screenshot({ path: s.shot, timeout: 180000 });

@@ -28,7 +28,7 @@ describe('갈림길 업그레이드', () => {
     expect(g.apply({ type: 'upgrade', uid: u.uid })).toEqual({ ok: false, reason: 'branch' });
   });
 
-  it('갈래를 고르면 스탯이 바뀌고 더는 업그레이드할 수 없다', () => {
+  it('갈래를 고르면 스탯이 바뀌고, 그다음 업그레이드는 ★강화다', () => {
     const g = game();
     const u = lv3(g, 'toaster', 560, 240);
     const before = g.money;
@@ -36,7 +36,7 @@ describe('갈림길 업그레이드', () => {
     expect(g.money).toBe(before - u.def.branches![1].cost);
     expect(u.branch).toBe(1);
     expect(g.stats(u).range).toBe(u.def.branches![1].range);
-    expect(g.upgradeOptions(u)).toEqual([]);
+    expect(g.upgradeOptions(u).map((o) => o.star)).toEqual([true]);
   });
 
   it('저격 토스터는 고르는 순간 타겟이 "가장 강한"이 된다', () => {

@@ -31,6 +31,53 @@ export function makeCamera(map: MapDef): THREE.PerspectiveCamera {
   return cam;
 }
 
+/** 확대·이동 상태: zoom 1(전체 보기)~ZOOM_MAX, x/z는 카메라가 바라보는 점을 옮긴 양(px) */
+export interface View {
+  zoom: number;
+  x: number;
+  z: number;
+}
+export const ZOOM_MAX = 2.6;
+export const HOME: View = { zoom: 1, x: 0, z: 0 };
+
+/** 시점(View)에 맞춘 카메라: 기본 카메라에서 바라보는 점을 옮기고, 그 점 쪽으로 다가간다 */
+export function cameraFor(map: MapDef, view: View): THREE.PerspectiveCamera {
+  const cam = makeCamera(map);
+  const g = map.grid!;
+  const target = new THREE.Vector3(g.x + (g.cols * g.size) / 2, -40, g.y + (g.rows * g.size) / 2 - 20);
+  const offset = cam.position.clone().sub(target).divideScalar(view.zoom);
+  target.x += view.x;
+  target.z += view.z;
+  cam.position.copy(target).add(offset);
+  cam.lookAt(target);
+  cam.updateMatrixWorld();
+  return cam;
+}
+
+/** 확대할수록 넓게 움직일 수 있고, 전체 보기(zoom 1)에서는 가운데로 */
+function clampView(map: MapDef, v: View): View {
+  const g = map.grid!;
+  const zoom = Math.min(ZOOM_MAX, Math.max(1, v.zoom));
+  const k = 1 - 1 / zoom;
+  const mx = ((g.cols * g.size) / 2) * k * 1.1, mz = ((g.rows * g.size) / 2) * k * 1.2;
+  return { zoom, x: Math.max(-mx, Math.min(mx, v.x)), z: Math.max(-mz, Math.min(mz, v.z)) };
+}
+
+/** 화면의 (sx, sy) 아래 바닥 지점이 그대로 있도록 factor만큼 확대·축소 */
+export function zoomView(map: MapDef, v: View, sx: number, sy: number, factor: number): View {
+  const before = unproject(cameraFor(map, v), sx, sy);
+  const z = clampView(map, { ...v, zoom: v.zoom * factor });
+  const after = unproject(cameraFor(map, z), sx, sy);
+  return clampView(map, { zoom: z.zoom, x: z.x + before.x - after.x, z: z.z + before.y - after.y });
+}
+
+/** 화면에서 from → to로 끈 만큼 바닥을 따라 옮긴다 */
+export function panView(map: MapDef, v: View, from: { x: number; y: number }, to: { x: number; y: number }): View {
+  const cam = cameraFor(map, v);
+  const a = unproject(cam, from.x, from.y), b = unproject(cam, to.x, to.y);
+  return clampView(map, { zoom: v.zoom, x: v.x + a.x - b.x, z: v.z + a.y - b.y });
+}
+
 /** 3D 점(바닥 x,y와 높이 h) → 화면 좌표 */
 export function project(cam: THREE.Camera, x: number, y: number, h = 0): { x: number; y: number } {
   const v = new THREE.Vector3(x, h, y).project(cam);
@@ -94,7 +141,9 @@ const ENEMY_SCALE = 1.85;
 
 export class Board3D {
   readonly canvas: HTMLCanvasElement;
-  readonly camera: THREE.PerspectiveCamera;
+  camera: THREE.PerspectiveCamera;
+  /** 지금 확대·이동 상태 */
+  view: View = { ...HOME };
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   /** 바닥 표시 메시 풀 */
@@ -356,6 +405,12 @@ export class Board3D {
     });
   }
   private ringCache = new Map<string, THREE.BufferGeometry>();
+
+  /** 확대·이동 상태를 바꾸고 카메라에 반영한다 */
+  setView(v: View): void {
+    this.view = v;
+    this.camera = cameraFor(this.map, v);
+  }
 
   /** 레벨이 올랐다: 통 튀어 오르고 플러그 불빛이 번쩍인다 */
   levelUp(uid: number, t: number): void {

@@ -112,7 +112,15 @@ export type CommandResult = { ok: true } | { ok: false; reason: PlaceError | 'ma
 export interface UpgradeOption {
   branch: 0 | 1 | null;
   cost: number;
+  /** 갈래 이후의 ★강화 */
+  star?: boolean;
 }
+
+/**
+ * ★강화: Lv4(갈래) 다음에도 돈을 넣어 계속 세진다. 후반에 가전을 끝없이 늘리지 않아도 되게 하고, 남는 돈의 쓸 곳을 만든다.
+ * 별 하나당 공격력·지속 피해·수입 +25%(공격형), 버프·감속 효과 +10%(지원형). 비용은 갈래 비용 × 1.5^n
+ */
+export const STAR = { max: 10, power: 0.25, support: 0.1, costMul: 1.5 };
 
 /** 전자레인지 해동 폭탄이 남기는 불 장판 */
 export interface Zone {
@@ -269,16 +277,16 @@ export class Game {
 
   /** 유닛의 현재 스탯. 갈림길을 골랐으면 그 갈래 스탯이고, 카드 효과가 반영돼 있다 */
   stats(u: Unit): UnitLevel {
-    const key = this.modVersion * 100 + u.level * 10 + (u.branch ?? 9);
+    const key = this.modVersion * 10000 + u.stars * 100 + u.level * 10 + (u.branch ?? 9);
     const hit = this.statCache.get(u);
     if (hit && hit.key === key) return hit.stats;
-    const stats = this.levelStats(u.def.id, u.level, u.branch);
+    const stats = this.levelStats(u.def.id, u.level, u.branch, u.stars);
     this.statCache.set(u, { key, stats });
     return stats;
   }
 
   /** 가전 id의 레벨(0부터)·갈래 스탯에 카드 효과를 반영한 값. 설치 전이나 업그레이드 미리보기에도 쓴다 */
-  levelStats(id: UnitId, level: number, branch: 0 | 1 | null = null): UnitLevel {
+  levelStats(id: UnitId, level: number, branch: 0 | 1 | null = null, stars = 0): UnitLevel {
     const def = this.cfg.units[id];
     const base = branch !== null && def.branches ? def.branches[branch] : def.levels[level];
     const m = this.mods;
@@ -290,6 +298,20 @@ export class Game {
     };
     if (base.splash) stats.splash = base.splash * m.splash;
     if (base.buff) stats.buff = base.buff + m.wifiBuff;
+    if (stars > 0) {
+      const k = 1 + STAR.power * stars;
+      const sk = 1 + STAR.support * stars;
+      stats.damage *= k;
+      if (stats.dot) stats.dot = { ...stats.dot, dps: stats.dot.dps * k };
+      if (stats.burn) stats.burn = { ...stats.burn, dps: stats.burn.dps * k };
+      if (stats.income) stats.income = Math.round(stats.income * k);
+      if (stats.interest) stats.interest = { ...stats.interest, max: Math.round(stats.interest.max * k) };
+      if (stats.buff) stats.buff *= sk;
+      if (stats.dmgBuff) stats.dmgBuff *= sk;
+      if (stats.globalSlow) stats.globalSlow = Math.min(0.6, stats.globalSlow * sk);
+      if (stats.globalVuln) stats.globalVuln *= sk;
+      if (stats.hackVuln) stats.hackVuln = 1 + (stats.hackVuln - 1) * sk;
+    }
     return stats;
   }
 
@@ -388,7 +410,14 @@ export class Game {
     if (u.branch === null && u.def.branches) {
       return u.def.branches.map((b, i) => ({ branch: i as 0 | 1, cost: Math.round(b.cost * m.upgradeCost * m.branchCost) }));
     }
+    if (u.branch !== null && u.stars < STAR.max) return [{ branch: null, cost: this.starCost(u), star: true }];
     return [];
+  }
+
+  /** 다음 ★강화 비용 (10 단위로 반올림) */
+  starCost(u: Unit): number {
+    const base = u.def.branches![u.branch!].cost * Math.pow(STAR.costMul, u.stars + 1) * this.mods.upgradeCost;
+    return Math.round(base / 10) * 10;
   }
 
   sellValue(u: Unit): number {
@@ -402,7 +431,7 @@ export class Game {
     const cost = this.placeCost(id);
     this.money -= cost;
     this.units.push({
-      uid: this.nextUid++, def, level: 0, branch: null, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1,
+      uid: this.nextUid++, def, level: 0, branch: null, stars: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1,
       rampTarget: 0, rampMul: 1, dmgMul: 1,
     });
     return { ok: true };
@@ -418,6 +447,10 @@ export class Game {
     if (this.money < opt.cost) return { ok: false, reason: 'money' };
     this.money -= opt.cost;
     u.invested += opt.cost;
+    if (opt.star) {
+      u.stars++;
+      return { ok: true };
+    }
     u.level++;
     if (opt.branch !== null) {
       u.branch = opt.branch;
@@ -584,7 +617,7 @@ export class Game {
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
       slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
-      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0,
+      shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0,
       burnDps: 0, burnTime: 0, shred: 0,
     };
     this.enemies.push(e);
@@ -658,6 +691,7 @@ export class Game {
         }
       }
       // 치유사: 주변 적을 회복시킨다 (자기 자신과 보스는 제외)
+      if (e.healCd > 0) e.healCd -= dt;
       const h = e.def.heal;
       if (h) {
         e.healTimer -= dt;
@@ -665,8 +699,10 @@ export class Game {
           e.healTimer = h.interval;
           let healed = false;
           for (const o of this.enemies) {
-            if (o === e || o.def.boss || o.hp >= o.maxHp || dist(o, e) > h.radius) continue;
+            // 보스와 다른 치유사는 고치지 않고, 방금 회복받은 적은 건너뛴다 (치유사가 여럿이어도 회복은 한 번)
+            if (o === e || o.def.boss || o.def.heal || o.healCd > 0 || o.hp >= o.maxHp || dist(o, e) > h.radius) continue;
             o.hp = Math.min(o.maxHp, o.hp + o.maxHp * h.pct);
+            o.healCd = h.interval * 0.95;
             healed = true;
           }
           if (healed) this.events.push({ type: 'heal', x: e.x, y: e.y, r: h.radius });
