@@ -116,6 +116,12 @@ export function button(
   const bg = new RoundBox(scene, 0, -depthPx / 2, w, h - depthPx, color, Math.min(14, h / 3), depthPx);
   const light = isLight(color);
   const label = text(scene, 0, -depthPx / 2, s, size, light ? THEME.text : THEME.textOnDark).setOrigin(0.5);
+  // 글자가 버튼보다 길면(금액이 커지는 등) 넘치지 않게 글씨를 줄인다
+  const fit = () => {
+    label.setFontSize(size);
+    for (let fs = size; label.width > w - 12 && fs > 10; fs--) label.setFontSize(fs - 1);
+  };
+  fit();
   if (!light) label.setShadow(0, 1, 'rgba(0,0,0,0.25)', 2);
   const container = scene.add.container(x, y, [bg, label]);
   let enabled = true;
@@ -144,7 +150,9 @@ export function button(
       container.setAlpha(on ? 1 : 0.45);
     },
     setText(t) {
+      if (label.text === t) return;
       label.setText(t);
+      fit();
     },
   };
 }
