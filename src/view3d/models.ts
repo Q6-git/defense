@@ -392,18 +392,24 @@ const dancer: Model = () => {
     g.name = side < 0 ? 'legL' : 'legR';
     return at(g, side * 0.2, 0.5, 0);
   };
-  const root = group(at(body, 0, 0.9, 0), leg(-1), leg(1));
+  // rig: 춤으로 움직이는 부분. root의 위치·회전은 게임이 정하므로 건드리지 않는다
+  const rig = group(at(body, 0, 0.9, 0), leg(-1), leg(1));
+  const root = group(rig);
   const legL = root.getObjectByName('legL')!, legR = root.getObjectByName('legR')!;
   const baseY = body.position.y;
 
-  // 매 프레임 춤: 좌우로 흔들고, 다리를 번갈아 차고, 반대 팔을 흔든다. L 포즈 직후 1.2초는 크게 뛰며 L을 내민다
+  // 매 프레임 춤: 다리를 양옆으로 높이 번갈아 차고(최대 약 70°), 찬 반대쪽으로 몸을 기울이며 통통 뛴다.
+  // L 포즈 직후 1.2초는 크게 뛰며 L을 내민다
   root.userData.animate = (t: number, sinceTaunt: number) => {
     const beat = t * Math.PI * 2 / 0.8;
+    const s = Math.sin(beat);
     const big = sinceTaunt >= 0 && sinceTaunt < 1.2 ? Math.sin((sinceTaunt / 1.2) * Math.PI) : 0;
-    body.rotation.z = Math.sin(beat) * 0.18;
-    body.position.y = baseY + Math.abs(Math.sin(beat)) * 0.08 + big * 0.35;
-    legL.rotation.x = Math.max(0, Math.sin(beat)) * -0.9;
-    legR.rotation.x = Math.max(0, -Math.sin(beat)) * -0.9;
+    const kick = 1.5; // 옆차기 높이(라디안, 약 85°)
+    legR.rotation.z = Math.max(0, s) * kick; // 오른다리를 오른쪽(+x)으로
+    legL.rotation.z = -Math.max(0, -s) * kick; // 왼다리를 왼쪽(-x)으로
+    rig.position.x = -s * 0.12; // 찬 반대쪽으로 무게 중심 이동
+    body.rotation.z = s * 0.25; // 찬 반대쪽으로 몸을 기울임
+    body.position.y = baseY + Math.abs(s) * 0.12 + big * 0.35;
     armSwing.rotation.z = Math.sin(beat + 1) * 0.6;
     lHand.scale.setScalar(1 + big * 0.6);
     lHand.position.z = 0.6 + big * 0.25;
