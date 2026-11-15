@@ -33,10 +33,14 @@ export interface Progress {
   pity: number;
   /** 처치한 식스세븐 수 (누적) */
   sixseven: number;
+  /** 소개 카드를 본(만난) 몬스터 */
+  seen: string[];
+  /** 몬스터별 누적 처치 수 (도감) */
+  killsBy: Record<string, number>;
 }
 
 export function emptyProgress(): Progress {
-  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0 };
+  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0, seen: [], killsBy: {} };
 }
 
 export interface AchievementDef {
