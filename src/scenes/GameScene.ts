@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
 import { Game, type GameEvent } from '../core/game';
-import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId } from '../core/types';
+import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId, type UnitLevel } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { MAP_ORDER, type MapId } from '../data/map';
@@ -14,6 +14,7 @@ import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
+import { ANIM_FRAME, MODEL_ANIMS } from '../view3d/anims';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
@@ -133,6 +134,7 @@ export class GameScene extends Phaser.Scene {
   private introQueue: EnemyId[] = [];
   /** 시작 화면(맵·난이도 선택)이 떠 있는지 */
   private picking = false;
+  private pickerLayer?: Phaser.GameObjects.Container;
   private speed = 1;
   private shopBtns: { id: UnitId; btn: Button }[] = [];
   private abilityBtns: AbilityButton[] = [];
@@ -169,7 +171,10 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     // 검사를 통과한 그림만 불러온다. 못 불러온 그림은 이모지로 그려진다
     for (const [key, url] of Object.entries(spriteUrls)) {
-      if (!this.textures.exists(key)) this.load.image(key, url);
+      if (this.textures.exists(key)) continue;
+      // 동작 시트는 격자로 잘라서 프레임으로 읽는다
+      if (key.endsWith('_anim')) this.load.spritesheet(key, url, { frameWidth: ANIM_FRAME, frameHeight: ANIM_FRAME });
+      else this.load.image(key, url);
     }
   }
 
@@ -178,6 +183,13 @@ export class GameScene extends Phaser.Scene {
     this.setup = loadSetup();
     this.endScreen = [];
     this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId));
+    // 움직이는 몬스터의 반복 동작 (도감·소개 카드)
+    for (const [name, spec] of Object.entries(MODEL_ANIMS)) {
+      const key = `${name}_anim`;
+      if (this.textures.exists(key) && !this.anims.exists(key)) {
+        this.anims.create({ key, frames: this.anims.generateFrameNumbers(key, { start: 0, end: spec.frames - 1 }), frameRate: spec.fps, repeat: -1 });
+      }
+    }
     // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
     if (import.meta.env.DEV) Object.assign(window, { sim: this.sim, scene: this });
     this.enemyEmojis.clear();
@@ -270,6 +282,7 @@ export class GameScene extends Phaser.Scene {
     this.picking = true;
     const { width, height } = this.sim.cfg.map;
     const layer = this.add.container(0, 0).setDepth(60);
+    this.pickerLayer = layer;
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
     const box = card(this, width / 2, height / 2, 640, 700, 'center', THEME.bar);
     const title = text(this, width / 2, 58, `🔌 ${STR.title}`, 36).setOrigin(0.5);
@@ -446,6 +459,7 @@ export class GameScene extends Phaser.Scene {
         }
         sfx.play('place');
         if (!this.run.placed.includes(id)) this.run.placed.push(id);
+        this.progress.placedBy[id] = (this.progress.placedBy[id] ?? 0) + 1;
         const u = this.sim.units[this.sim.units.length - 1];
         this.popIn(u);
       } else if (res.reason in STR.placeError) {
@@ -1508,9 +1522,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 덱 편성 화면: 가진 가전 중 최대 6종을 고른다 */
+  /**
+   * 시작 화면 위에 뜨는 창(도감·업적·덱·뽑기). 창이 열려 있는 동안 아래 시작 화면 버튼은 눌리지 않게 막는다.
+   * (Phaser는 마지막 렌더 순서로 맨 위 물체를 고르는데, 그리는 도중에 누르면 아래 버튼이 눌릴 수 있다)
+   */
+  private modalLayer(): Phaser.GameObjects.Container {
+    const layer = this.add.container(0, 0).setDepth(80);
+    const under = this.pickerLayer;
+    const setInput = (on: boolean) => {
+      if (!under?.active) return;
+      const walk = (o: Phaser.GameObjects.GameObject) => {
+        if (o.input) o.input.enabled = on;
+        if (o instanceof Phaser.GameObjects.Container) o.list.forEach(walk);
+      };
+      walk(under);
+    };
+    setInput(false);
+    layer.once(Phaser.GameObjects.Events.DESTROY, () => {
+      // 창을 닫는 그 클릭이 아래 버튼까지 누르지 않게 한 박자 늦게 푼다
+      this.time.delayedCall(0, () => {
+        const other = this.children.list.some((o) => o !== layer && o.active && o instanceof Phaser.GameObjects.Container && o.depth === 80);
+        if (!other) setInput(true);
+      });
+    });
+    return layer;
+  }
+
   private showDeck(): void {
     const { width, height } = this.sim.cfg.map;
-    const layer = this.add.container(0, 0).setDepth(80);
+    const layer = this.modalLayer();
     const reopen = () => {
       layer.destroy();
       this.showDeck();
@@ -1561,7 +1601,7 @@ export class GameScene extends Phaser.Scene {
   private showGacha(results: PullResult[] = []): void {
     const { width, height } = this.sim.cfg.map;
     const p = this.progress;
-    const layer = this.add.container(0, 0).setDepth(80);
+    const layer = this.modalLayer();
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
     const box = card(this, width / 2, height / 2, 800, 600, 'center', THEME.bar);
     const title = text(this, width / 2 - 370, 92, STR.gachaTitle, 30).setOrigin(0, 0.5);
@@ -1624,6 +1664,16 @@ export class GameScene extends Phaser.Scene {
     if (!this.introLayer && this.introQueue.length && !this.pauseLayer && !this.sim.finished) this.showIntro(this.introQueue.shift()!);
   }
 
+  /** 몬스터 그림: 동작 시트가 있으면 반복 재생, 없으면 정지 그림 */
+  private portrait(id: string, emoji: string, x: number, y: number, size: number): Phaser.GameObjects.GameObject & { setAlpha(a: number): unknown } {
+    const key = `${id}_anim`;
+    if (this.anims.exists(key)) {
+      // 시트 한 칸은 정지 그림보다 여백이 많아(모든 프레임을 담는 고정 카메라) 조금 크게
+      return this.add.sprite(x, y, key).setDisplaySize(size * 1.45, size * 1.45).play(key);
+    }
+    return icon(this, x, y, id, emoji, size);
+  }
+
   /** 체력·속도·방어 막대 (보스처럼 큰 값도 비교되게 제곱근 눈금) */
   private statBars(layer: Phaser.GameObjects.Container, id: EnemyId, x: number, y: number, w: number): void {
     const all = BESTIARY.map((k) => this.sim.cfg.enemies[k]);
@@ -1654,7 +1704,7 @@ export class GameScene extends Phaser.Scene {
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.45).setOrigin(0).setInteractive();
     const box = card(this, cx, cy, 560, 470, 'center', THEME.bar).setStrokeStyle(4, boss ? 0xff6b6b : THEME.selected);
     const tag = text(this, cx, cy - 205, boss ? STR.introBoss : STR.introNew, 22, boss ? THEME.danger : THEME.gold).setOrigin(0.5);
-    const pic = icon(this, cx - 160, cy - 80, id, def.emoji, 150);
+    const pic = this.portrait(id, def.emoji, cx - 160, cy - 80, 150);
     const name = text(this, cx - 60, cy - 140, `${def.emoji} ${info.name}`, 30).setOrigin(0, 0.5);
     const desc = text(this, cx - 60, cy - 110, info.desc, 17, THEME.text).setWordWrapWidth(300, true).setLineSpacing(4);
     layer.add([dim, box, tag, pic, name, desc]);
@@ -1677,16 +1727,30 @@ ${info.tip}`, 16, THEME.text).setWordWrapWidth(470, true).setLineSpacing(3);
   }
 
   /** 도감: 만난 몬스터는 그림과 이름, 못 만난 몬스터는 실루엣과 ???. 누르면 오른쪽에 자세한 정보 */
-  private showBestiary(): void {
+  private showBestiary(tab: 'enemies' | 'units' = 'enemies'): void {
     const { width, height } = this.sim.cfg.map;
     const p = this.progress;
-    const layer = this.add.container(0, 0).setDepth(80);
+    const layer = this.modalLayer();
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
     const box = card(this, width / 2, height / 2, 1000, 690, 'center', THEME.bar);
     const title = text(this, width / 2 - 470, 40, STR.bestiaryTitle, 30).setOrigin(0, 0.5);
-    const count = text(this, width / 2 + 290, 40, `${p.seen.length}/${BESTIARY.length}`, 20, THEME.gold).setOrigin(1, 0.5);
     const close = button(this, width / 2 + 410, 40, 130, 44, STR.close, () => layer.destroy(), THEME.neutral, 18);
-    layer.add([dim, box, title, count, close.container]);
+    layer.add([dim, box, title, close.container]);
+    // 탭: 하수구 군단 / 가전 수비대
+    const owned = [...UNIT_ORDER, ...GACHA_UNITS].filter((u) => UNIT_ORDER.includes(u) || p.owned.includes(u)).length;
+    (['enemies', 'units'] as const).forEach((t, i) => {
+      const label = `${STR.bestiaryTabs[t]} ${t === 'enemies' ? `${p.seen.length}/${BESTIARY.length}` : `${owned}/${UNIT_ORDER.length + GACHA_UNITS.length}`}`;
+      const b = button(this, width / 2 - 200 + i * 230, 40, 220, 44, label, () => {
+        if (t === tab) return;
+        layer.destroy();
+        this.showBestiary(t);
+      }, t === tab ? THEME.green : THEME.neutral, 16);
+      layer.add(b.container);
+    });
+    if (tab === 'units') {
+      this.unitCodex(layer);
+      return;
+    }
     // 오른쪽 자세히 보기
     const detail = this.add.container(0, 0);
     layer.add(detail);
@@ -1705,7 +1769,7 @@ ${info.tip}`, 16, THEME.text).setWordWrapWidth(470, true).setLineSpacing(3);
       }
       const info = STR.enemies[id];
       detail.add([
-        icon(this, dx + 180, 200, id, def.emoji, 150),
+        this.portrait(id, def.emoji, dx + 180, 200, 150),
         text(this, dx + 180, 300, `${def.emoji} ${info.name}${def.boss ? '  ⚠' : ''}`, 26).setOrigin(0.5),
         text(this, dx + 20, 330, info.desc, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
       ]);
@@ -1739,10 +1803,77 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
     else detail.add(text(this, dx + 180, 380, STR.bestiaryPick, 18, THEME.textSoft).setOrigin(0.5));
   }
 
+  /** 가전 도감: 가진 가전은 역할·레벨별 성능·갈래, 못 뽑은 가전은 실루엣 */
+  private unitCodex(layer: Phaser.GameObjects.Container): void {
+    const { width } = this.sim.cfg.map;
+    const p = this.progress;
+    const all = [...UNIT_ORDER, ...GACHA_UNITS];
+    const has = (u: UnitId) => UNIT_ORDER.includes(u) || p.owned.includes(u);
+    const detail = this.add.container(0, 0);
+    layer.add(detail);
+    const dx = width / 2 + 120;
+    const show = (id: UnitId) => {
+      detail.removeAll(true);
+      const def = this.sim.cfg.units[id];
+      const rarity = GACHA_POOL[id];
+      detail.add(new RoundBox(this, dx, 90, 360, 590, THEME.white, 14, 0, 'topleft').setStrokeStyle(2, rarity ? RARITY_COLOR[rarity] : THEME.cardLine));
+      if (!has(id)) {
+        const shadow = icon(this, dx + 180, 230, id, def.emoji, 170);
+        if ('setTintFill' in shadow) shadow.setTintFill(0x3a3341);
+        shadow.setAlpha(0.35);
+        detail.add([
+          shadow,
+          text(this, dx + 180, 370, STR.unknown, 34, THEME.textSoft).setOrigin(0.5),
+          text(this, dx + 180, 410, `${STR.unitLocked}${rarity ? ` (${STR.gachaRarity[rarity]})` : ''}`, 16, THEME.textSoft).setOrigin(0.5),
+        ]);
+        return;
+      }
+      const info = STR.units[id];
+      // 레벨별 성능: 공격형은 DPS, 지원형은 효과
+      const main = (lv: UnitLevel) => {
+        const d = this.sim.dps(id, lv);
+        if (d.dps) return `⚔️DPS ${Math.round(d.dps)}`;
+        if (lv.buff) return `공속 +${Math.round(lv.buff * 100)}%`;
+        if (lv.dmgBuff) return `공격력 +${Math.round(lv.dmgBuff * 100)}%`;
+        if (lv.income) return `수입 💰${lv.income}`;
+        if (lv.globalSlow) return `전체 감속 ${Math.round(lv.globalSlow * 100)}%`;
+        return '';
+      };
+      const lines = def.levels.map((_, i) => STR.levelLine(i + 1, main(this.sim.levelStats(id, i)), Math.round(def.levels[i].range), def.levels[i].cost));
+      const branches = (def.branches ?? []).map((b, i) => `${b.emoji} ${STR.branches[b.id].name} (💰${b.cost}, ${main(this.sim.levelStats(id, def.levels.length, i as 0 | 1))}): ${STR.branches[b.id].desc}`);
+      detail.add([
+        icon(this, dx + 180, 165, id, def.emoji, 120),
+        text(this, dx + 180, 248, `${def.emoji} ${info.name}${rarity ? `  ${STR.gachaRarity[rarity]}` : ''}`, 24).setOrigin(0.5),
+        text(this, dx + 20, 272, `${info.desc}\n${STR.roleLabel(STR.roles[def.kind])}`, 14, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
+        text(this, dx + 20, 330, lines.join('\n'), 14, THEME.text).setLineSpacing(4),
+        text(this, dx + 20, 405, `${STR.branchesLabel}\n${branches.join('\n')}`, 13, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
+        text(this, dx + 20, 650, STR.placedCount(p.placedBy[id] ?? 0), 15, THEME.textSoft),
+      ]);
+    };
+    all.forEach((id, i) => {
+      const x = width / 2 - 420 + (i % 4) * 130;
+      const y = 140 + Math.floor(i / 4) * 140;
+      const def = this.sim.cfg.units[id];
+      const mine = has(id);
+      const rarity = GACHA_POOL[id];
+      const cell = new RoundBox(this, x, y, 118, 128, mine ? THEME.white : 0xeee6da, 12, 0, 'center').setStrokeStyle(2, rarity && mine ? RARITY_COLOR[rarity] : THEME.cardLine);
+      const hit = this.add.rectangle(x, y, 118, 128, 0xffffff, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => show(id));
+      const pic = icon(this, x, y - 14, id, def.emoji, 78);
+      if (!mine) {
+        if ('setTintFill' in pic) pic.setTintFill(0x3a3341);
+        pic.setAlpha(0.35);
+      }
+      const label = text(this, x, y + 46, mine ? STR.units[id].name : STR.unknown, 15, mine ? THEME.text : THEME.textSoft).setOrigin(0.5);
+      layer.add([cell, pic, label, hit]);
+    });
+    show(all[0]);
+  }
+
   private showAchievements(): void {
     const { width, height } = this.sim.cfg.map;
     const p = this.progress;
-    const layer = this.add.container(0, 0).setDepth(80);
+    const layer = this.modalLayer();
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
     const box = card(this, width / 2, height / 2, 860, 690, 'center', THEME.bar);
     const title = text(this, width / 2 - 400, 40, STR.achTitle, 30).setOrigin(0, 0.5);

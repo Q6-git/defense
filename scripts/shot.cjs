@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
   await page.waitForSelector('canvas');
   await page.waitForTimeout(500);
   for (const s of steps) {
-    if (s.click) await page.mouse.click(s.click[0], s.click[1]);
+    if (s.click) await page.mouse.click(s.click[0], s.click[1], { delay: s.click[2] ?? 0 });
     if (s.move) await page.mouse.move(s.move[0], s.move[1]);
     if (s.wheel) {
       await page.mouse.move(s.wheel[0], s.wheel[1]);
