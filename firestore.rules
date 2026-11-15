@@ -3,7 +3,7 @@ rules_version = '2';
 // 무한 모드 온라인 랭킹 보안 규칙
 // - 누구나 읽을 수 있다
 // - 쓰기는 익명 로그인한 사용자가 자기 문서(<uid>_<난이도>)에만, 더 좋은 기록일 때만
-// - 이름만 바꾸는 것은 언제든 허용
+// - 이름만 바꾸는 것은 허용 (이름이 실제로 바뀔 때)
 service cloud.firestore {
   match /databases/{database}/documents {
     match /rankings/{docId} {
