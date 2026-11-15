@@ -32,6 +32,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm run test:rules
+      - run: npx vite-node scripts/check-firebase.ts
+        env:
+          VITE_FIREBASE_CONFIG: ${{ vars.FIREBASE_CONFIG }}
       - run: npm run build
         env:
           # 온라인 랭킹: 저장소 Settings → Secrets and variables → Actions → Variables 의 FIREBASE_CONFIG (없으면 온라인 랭킹 꺼짐)

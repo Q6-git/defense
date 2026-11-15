@@ -12,8 +12,12 @@ export interface FirebaseWebConfig {
 export function parseConfig(raw: string | undefined): FirebaseWebConfig | null {
   if (!raw || !raw.trim()) return null;
   try {
-    // 콘솔에서 복사한 'const firebaseConfig = { apiKey: "..." }' 모양도 받아 준다
-    const body = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)
+    // 콘솔에서 복사한 코드 조각도 받아 준다: 주석·import 줄이 섞여 있어도 'firebaseConfig = { ... }' 부분만 꺼낸다
+    const text = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const from = text.includes('firebaseConfig') ? text.indexOf('{', text.indexOf('firebaseConfig')) : text.indexOf('{');
+    const to = text.indexOf('}', from);
+    if (from < 0 || to < 0) return null;
+    const body = text.slice(from, to + 1)
       .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":')
       .replace(/'/g, '"')
       .replace(/,\s*}/g, '}');
