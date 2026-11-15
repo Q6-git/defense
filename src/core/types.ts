@@ -280,7 +280,7 @@ export interface Unit {
   buffMul: number;
   /** 이번 스텝에 받은 공격력 버프 배율 */
   dmgMul: number;
-  /** 약이 올라(까불이 왕자의 L 포즈) 공격이 느려지는 남은 시간과 느려지는 정도 */
+  /** 약이 올라(「L을 가져가!」의 L 포즈) 공격이 느려지는 남은 시간과 느려지는 정도 */
   tauntTime: number;
   tauntSlow: number;
 }
