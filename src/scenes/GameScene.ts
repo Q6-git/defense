@@ -9,12 +9,14 @@ import { GACHA_UNITS, UNIT_ORDER } from '../data/units';
 import { clearParts, GACHA, GACHA_POOL, pull, type PullResult } from '../gacha';
 import { sfx, type SoundId } from '../sfx';
 import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achievements';
-import { loadBest, loadDeck, loadProgress, loadSetup, saveBest, saveDeck, saveProgress, saveSetup, type RunSetup } from '../storage';
+import { loadBest, loadDeck, loadName, loadProgress, loadRanking, loadSetup, saveBest, saveDeck, saveName, saveProgress, saveRanking, saveSetup, type RunSetup } from '../storage';
+import { addRank, rankList, topUnits, type RankEntry } from '../ranking';
 import { STR } from '../strings.ko';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
 import { ANIM_FRAME, MODEL_ANIMS } from '../view3d/anims';
+import { bulkBranch, nextBulkStep } from '../core/bulk';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
@@ -131,6 +133,10 @@ export class GameScene extends Phaser.Scene {
   private pauseLayer: Phaser.GameObjects.Container | null = null;
   /** 처음 만난 몬스터 소개 카드 (떠 있는 동안 게임이 멈춘다) */
   private introLayer: Phaser.GameObjects.Container | null = null;
+  /** 이번 판을 랭킹에 이미 남겼는지 */
+  private ranked = false;
+  /** 방금 남긴 랭킹 기록 (랭킹 표에서 강조) */
+  private static lastRankAt = 0;
   private introQueue: EnemyId[] = [];
   /** 시작 화면(맵·난이도 선택)이 떠 있는지 */
   private picking = false;
@@ -228,6 +234,7 @@ export class GameScene extends Phaser.Scene {
     this.modLabel = text(this, 520, 64, '', 17, THEME.danger).setOrigin(0.5, 0).setStroke('#ffffff', 5).setDepth(6);
     this.pauseLayer = null;
     this.picking = false;
+    this.ranked = false;
     this.progress = loadProgress();
     // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
     const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
@@ -289,6 +296,8 @@ export class GameScene extends Phaser.Scene {
     layer.add([dim, box, title]);
     const bestiaryBtn = button(this, 1120, 252, 230, 52, STR.bestiaryButton(this.progress.seen.length, BESTIARY.length), () => this.showBestiary(), THEME.green, 19);
     layer.add(bestiaryBtn.container);
+    const rankBtn = button(this, 1120, 316, 230, 52, STR.rankingButton, () => this.showRanking(), THEME.orange, 19);
+    layer.add(rankBtn.container);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
     const deckBtn = button(this, 1120, 124, 230, 52, STR.deckButton, () => this.showDeck(), THEME.blue, 19);
@@ -644,21 +653,17 @@ export class GameScene extends Phaser.Scene {
     this.info = { root, title, stats, upgrade, upgradeAll, branchA, branchB, sell, target };
   }
 
-  /** 고른 가전과 같은 종류를, 갈림길이 아닌 것 중 가장 싼 업그레이드부터 돈이 되는 만큼 올린다 */
+  /** 고른 가전과 같은 종류를 기본 Lv3 → 갈림길(고른 갈래로) → ★강화 순서로 돈이 되는 만큼 올린다 */
   private upgradeAllSame(): void {
     const u = this.selected;
     if (!u) return;
+    const branch = bulkBranch(this.sim, u);
     let n = 0;
     for (let guard = 0; guard < 500; guard++) {
-      const cands = this.sim.units
-        .filter((x) => x.def.id === u.def.id)
-        .map((x) => ({ x, opt: this.sim.upgradeOptions(x) }))
-        .filter((c) => c.opt.length === 1 && c.opt[0].cost <= this.sim.money)
-        .sort((a, b) => a.opt[0].cost - b.opt[0].cost);
-      if (!cands.length) break;
-      const { x, opt } = cands[0];
-      if (!this.sim.apply({ type: 'upgrade', uid: x.uid }).ok) break;
-      this.upgradeFx(x, undefined, !!opt[0].star);
+      const step = nextBulkStep(this.sim, u.def.id, branch);
+      if (!step) break;
+      if (!this.sim.apply({ type: 'upgrade', uid: step.unit.uid, branch: step.branch }).ok) break;
+      this.upgradeFx(step.unit, step.branch, step.star);
       n++;
     }
     if (n === 0) {
@@ -1176,7 +1181,7 @@ export class GameScene extends Phaser.Scene {
     // '모두'는 같은 종류가 2대 이상일 때만
     const same = u ? this.sim.units.filter((x) => x.def.id === u.def.id).length : 0;
     this.info.upgradeAll.container.setVisible(showControls && !atFork && same >= 2);
-    if (u) this.info.upgradeAll.setEnabled(this.sim.units.some((x) => x.def.id === u.def.id && this.sim.upgradeOptions(x).length === 1 && this.sim.upgradeOptions(x)[0].cost <= this.sim.money));
+    if (u) this.info.upgradeAll.setEnabled(nextBulkStep(this.sim, u.def.id, bulkBranch(this.sim, u)) !== null);
     this.info.branchA.container.setVisible(showControls && atFork);
     this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
@@ -1969,6 +1974,7 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
   /** 판을 그만둔다. 도달한 웨이브는 기록으로 남긴다 */
   private leaveRun(restart: boolean): void {
     if (this.sim.wave > 0) saveBest({ ...this.setup, endless: this.sim.endless }, this.sim.wave);
+    this.recordRank();
     saveProgress(this.progress);
     this.tweens.resumeAll();
     this.time.paused = false;
@@ -1983,6 +1989,75 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
     sfx.play('wave');
   }
 
+  /** 무한 모드 판이 끝나면 랭킹에 남긴다. 몇 위인지 돌려준다 (순위 밖이거나 무한 모드가 아니면 0) */
+  private recordRank(): number {
+    if (this.ranked || !this.sim.endless || this.sim.wave <= 0) return 0;
+    this.ranked = true;
+    const entry: RankEntry = {
+      name: loadName() || STR.defaultName,
+      wave: this.sim.wave,
+      kills: this.sim.kills,
+      map: this.setup.map,
+      difficulty: this.setup.difficulty,
+      at: Date.now(),
+      units: topUnits(this.sim.units.map((u) => u.def.id)),
+    };
+    const { list, rank } = addRank(loadRanking(), entry);
+    saveRanking(list);
+    if (rank > 0) GameScene.lastRankAt = entry.at;
+    return rank;
+  }
+
+  /** 무한 모드 랭킹 표: 난이도 탭, 이름 바꾸기 */
+  private showRanking(diff: DifficultyId = this.difficulty): void {
+    const { width, height } = this.sim.cfg.map;
+    const layer = this.modalLayer();
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 1000, 690, 'center', THEME.bar);
+    const title = text(this, width / 2 - 470, 40, STR.rankingTitle, 28).setOrigin(0, 0.5);
+    const close = button(this, width / 2 + 410, 40, 130, 44, STR.close, () => layer.destroy(), THEME.neutral, 18);
+    layer.add([dim, box, title, close.container]);
+    const reopen = (d: DifficultyId) => {
+      layer.destroy();
+      this.showRanking(d);
+    };
+    const name = loadName() || STR.defaultName;
+    const nameBtn = button(this, width / 2 + 210, 40, 230, 44, STR.rankingName(name), () => {
+      // 휴대폰에서도 바로 글자를 칠 수 있게 브라우저 입력 창을 쓴다
+      const v = window.prompt(STR.rankingNamePrompt, name);
+      if (v === null) return;
+      saveName(v.trim().slice(0, 8));
+      reopen(diff);
+    }, THEME.white, 16);
+    layer.add(nameBtn.container);
+    const colors: Record<DifficultyId, number> = { easy: THEME.green, normal: THEME.blue, hard: THEME.orange, hell: 0xc8445a };
+    DIFFICULTY_ORDER.forEach((id, i) => {
+      const b = button(this, width / 2 - 345 + i * 230, 100, 220, 46, STR.difficulties[id].name, () => id !== diff && reopen(id), id === diff ? colors[id] : THEME.neutral, 18);
+      layer.add(b.container);
+    });
+    const list = rankList(loadRanking(), diff);
+    const left = width / 2 - 460;
+    const cols = [0, 70, 220, 320, 400, 560, 800];
+    STR.rankingHead.forEach((h, i) => layer.add(text(this, left + cols[i], 146, h, 15, THEME.textSoft)));
+    if (!list.length) {
+      layer.add(text(this, width / 2, 380, STR.rankingEmpty, 22, THEME.textSoft).setOrigin(0.5).setAlign('center').setLineSpacing(8));
+    }
+    const medal = ['🥇', '🥈', '🥉'];
+    list.forEach((e, i) => {
+      const y = 196 + i * 46;
+      const mine = e.at === GameScene.lastRankAt;
+      const row = new RoundBox(this, width / 2, y, 940, 40, mine ? 0xfff0c8 : i % 2 ? THEME.bar : THEME.white, 10).setStrokeStyle(mine ? 3 : 0, THEME.selected);
+      layer.add(row);
+      const d = new Date(e.at);
+      const cells = [
+        medal[i] ?? `${i + 1}`, e.name, `${e.wave}`, `${e.kills}`, STR.maps[e.map as MapId]?.name ?? e.map, '', `${d.getMonth() + 1}/${d.getDate()}`,
+      ];
+      cells.forEach((c, j) => layer.add(text(this, left + cols[j] + (j === 0 ? 12 : 0), y, c, j === 2 ? 22 : 17, j === 2 ? THEME.gold : THEME.text).setOrigin(0, 0.5)));
+      e.units.forEach((u, k) => layer.add(icon(this, left + cols[5] + 18 + k * 40, y, u, this.sim.cfg.units[u as UnitId]?.emoji ?? '❓', 34)));
+    });
+    layer.add(text(this, width / 2, 676, STR.rankingNote, 15, THEME.textSoft).setOrigin(0.5));
+  }
+
   private showEndScreen(won: boolean): void {
     this.placing = null;
     this.aiming = null;
@@ -1992,25 +2067,30 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
     const run: RunSetup = { ...this.setup, endless: this.sim.endless };
     const isNew = saveBest(run, reached);
     const { width, height } = this.sim.cfg.map;
-    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
-    const canContinue = won && !!this.sim.cfg.extraWave;
-    const boxH = canContinue ? 430 : 350;
-    const top = height / 2 - boxH / 2;
-    const box = card(this, width / 2, height / 2, 540, boxH, 'center', THEME.bar).setStrokeStyle(4, won ? THEME.selected : THEME.red);
-    const title = text(this, width / 2, top + 60, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
     const lines = [
       `${STR.maps[this.setup.map as MapId]?.name ?? ''}  ${STR.difficulties[this.difficulty].name}${run.endless ? ' ♾️' : ''}`,
       STR.reachedWave(reached), STR.best(loadBest(run)),
     ];
     if (isNew) lines.push(STR.newBest);
+    const rank = this.recordRank();
+    if (rank > 0) lines.push(STR.rankedAt(rank));
     lines.push(STR.runReward(this.runParts));
-    const body = text(this, width / 2, top + 155, lines.join('\n'), 20, THEME.text).setOrigin(0.5).setAlign('center').setLineSpacing(6);
-    const again = button(this, width / 2 - 120, top + 265, 220, 50, STR.restart, () => this.scene.restart({ start: true }), THEME.green, 20);
-    const change = button(this, width / 2 + 120, top + 265, 220, 50, STR.changeDifficulty, () => this.scene.restart({}), THEME.neutral, 20);
+    // 줄 수에 맞춰 창 높이를 정한다
+    const canContinue = won && !!this.sim.cfg.extraWave;
+    const bodyH = lines.length * 31;
+    const btnOff = 105 + bodyH + 40;
+    const boxH = btnOff + (canContinue ? 135 : 60);
+    const top = height / 2 - boxH / 2;
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 540, boxH, 'center', THEME.bar).setStrokeStyle(4, won ? THEME.selected : THEME.red);
+    const title = text(this, width / 2, top + 55, won ? `🏆 ${STR.victory}` : `💥 ${STR.gameOver}`, 34).setOrigin(0.5);
+    const body = text(this, width / 2, top + 100, lines.join('\n'), 20, THEME.text).setOrigin(0.5, 0).setAlign('center').setLineSpacing(6);
+    const again = button(this, width / 2 - 120, top + btnOff, 220, 50, STR.restart, () => this.scene.restart({ start: true }), THEME.green, 20);
+    const change = button(this, width / 2 + 120, top + btnOff, 220, 50, STR.changeDifficulty, () => this.scene.restart({}), THEME.neutral, 20);
     this.endScreen = [dim, box, title, body, again.container, change.container];
     // 20웨이브를 이기면 그대로 무한 모드로 이어갈 수 있다
     if (canContinue) {
-      const cont = button(this, width / 2, top + 340, 460, 50, STR.continueEndless, () => this.continueEndless(), THEME.purple, 20);
+      const cont = button(this, width / 2, top + btnOff + 75, 460, 50, STR.continueEndless, () => this.continueEndless(), THEME.purple, 20);
       this.endScreen.push(cont.container);
     }
     for (const ob of this.endScreen) (ob as unknown as { setDepth(d: number): void }).setDepth(50);

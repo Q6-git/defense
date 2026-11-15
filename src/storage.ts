@@ -90,3 +90,27 @@ export function loadDeck(): string[] | null {
 export function saveDeck(deck: string[]): void {
   set('deck', JSON.stringify(deck));
 }
+
+// ── 무한 모드 랭킹 (이 기기)
+import type { RankEntry } from './ranking';
+
+export function loadRanking(): RankEntry[] {
+  try {
+    const v = JSON.parse(get('ranking') ?? '[]') as unknown;
+    return Array.isArray(v) ? (v as RankEntry[]).filter((e) => e && typeof e.wave === 'number') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveRanking(list: RankEntry[]): void {
+  set('ranking', JSON.stringify(list));
+}
+
+export function loadName(): string {
+  return get('name') ?? '';
+}
+
+export function saveName(name: string): void {
+  set('name', name);
+}
