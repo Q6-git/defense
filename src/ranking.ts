@@ -44,3 +44,16 @@ export function topUnits(placed: string[]): string[] {
   for (const u of placed) n.set(u, (n.get(u) ?? 0) + 1);
   return [...n.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([u]) => u);
 }
+
+/** 이름 글자 수 상한 (firestore.rules와 같게) */
+export const NAME_MAX = 8;
+
+/** 앞뒤 공백을 지우고 사이 공백은 하나로, 최대 NAME_MAX글자 (이모지가 반으로 잘리지 않게 글자 단위) */
+export function cleanName(s: string): string {
+  return Array.from(s.trim().replace(/\s+/g, ' ')).slice(0, NAME_MAX).join('').trim();
+}
+
+/** 이름을 안 정했을 때 쓰는 이름: 수비대 + 숫자 4개 */
+export function randomName(rand: () => number = Math.random): string {
+  return `수비대${String(Math.floor(rand() * 10000)).padStart(4, '0')}`;
+}
