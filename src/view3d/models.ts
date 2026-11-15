@@ -242,15 +242,17 @@ const roach: Model = () => {
 const slimeMat = (color: number, opacity = 0.95) => new THREE.MeshStandardMaterial({ color, roughness: 0.18, metalness: 0, transparent: opacity < 1, opacity });
 
 const grease: Model = () => {
-  // 기름때 덩어리: 크고 묵직한 갈색 방울, 번들번들 + 흘러내린 자국
-  const oil = new THREE.MeshStandardMaterial({ color: 0x7a4a22, roughness: 0.08, metalness: 0.25 });
+  // 기름때: 거무튀튀한 올리브색으로 번들거리는 넓고 납작한 덩어리 + 위에 노란 식용유 방울 + 바닥에 번진 기름
+  const gloss = (color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.06, metalness: 0.3, ...opts });
+  const body = gloss(0x4a4a2e);
+  const drop = gloss(0xffc93a, { transparent: true, opacity: 0.85, emissive: 0x8a5a00, emissiveIntensity: 0.25 });
   return group(
-    at(sphere(0.72, oil, 1.15, 0.8, 1), 0, 0.55, 0),
-    at(sphere(0.3, oil, 1, 1.4, 1), 0, 1.05, -0.05), // 위로 솟은 방울
-    at(sphere(0.18, oil, 1, 0.6, 1.3), -0.7, 0.12, 0.25),
-    at(sphere(0.15, oil, 1, 0.6, 1.3), 0.66, 0.1, 0.35),
-    at(sphere(0.12, new THREE.MeshStandardMaterial({ color: 0xd8f0ff, roughness: 0.05, transparent: true, opacity: 0.8 }), 0.7, 1, 0.5), 0.45, 0.85, 0.5), // 땀방울
-    at(face(1.5, { mouth: 'grr', light: true, spread: 0.25 }), 0, 0.62, 0.66),
+    at(sphere(1.0, gloss(0x2f2f1e, { transparent: true, opacity: 0.8 }), 1.25, 0.08, 1.05), 0, 0.03, 0.05),
+    at(sphere(0.78, body, 1.25, 0.62, 1.05), 0, 0.42, 0),
+    at(sphere(0.2, body, 1.4, 0.5, 1.2), -0.82, 0.12, 0.3),
+    at(sphere(0.16, body, 1.4, 0.5, 1.2), 0.8, 0.1, 0.4),
+    at(sphere(0.2, drop, 1.3, 0.45, 1), -0.28, 0.85, -0.12), at(sphere(0.15, drop, 1.3, 0.45, 1), 0.3, 0.82, 0.02), at(sphere(0.11, drop, 1.3, 0.45, 1), 0.05, 0.86, -0.38),
+    at(face(1.75, { mouth: 'grr', light: true, spread: 0.3 }), 0, 0.52, 0.76),
   );
 };
 
