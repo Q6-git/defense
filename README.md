@@ -11,7 +11,7 @@ npm test           # 로직 단위 테스트
 npm run balance    # 봇 플레이어로 밸런스 확인 (--seed=N: 카드 운 바꾸기, --nocards: 카드 없이, --branches: 갈림길 비교, --endless: 무한 모드, --maps: 맵 비교)
 npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
 npx vite-node scripts/units.ts      # 가전별 떼거리/강적 상황 벤치마크 (Lv3 한 대와 Lv4 두 갈래, 1000💰당 효율)
-npx vite-node scripts/cc-stack.ts   # 선풍기 여러 대로 적을 영원히 묶을 수 없는지 확인
+npx vite-node scripts/cc-stack.ts   # 선풍기 여러 대 + 에어컨으로 느린 적·보스를 영원히 묶을 수 없는지 확인
 npm run build      # dist/ 에 배포용 빌드
 npx vite --port 5199 & node scripts/render3d.cjs   # 3D 캐릭터(scripts/art3d/models.ts)를 public/sprites/*.png로 렌더링
 ```
@@ -28,6 +28,7 @@ npx vite --port 5199 & node scripts/render3d.cjs   # 3D 캐릭터(scripts/art3d/
 - 스킬 2개를 웨이브 중에 직접 사용
   - 🪠 뚫어뻥: 누른 곳을 내려쳐 범위 피해 + 기절 (재사용 20초)
   - ⚡ 과부하: 6초 동안 모든 가전 공격 속도 2배 (재사용 40초)
+- 감속은 겹쳐도 원래 속도의 35%(보스 50%) 아래로 내려가지 않고, 태풍 선풍기의 밀어내기는 같은 적을 밀 때마다 절반으로 줄어든다 (느린 적이 갇히지 않게)
 - Lv3 다음은 **갈림길**: 두 갈래 중 하나를 골라 Lv4로 (되돌릴 수 없음)
 - Lv4 다음은 **★강화** 최대 10번: 별 하나당 공격력·화상·수입 +25% (지원형은 버프·감속 +10%), 비용은 갈래 비용 × 1.5ⁿ. 후반에 가전을 끝없이 늘리지 않고 남는 돈을 쓸 수 있다
 

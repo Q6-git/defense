@@ -135,6 +135,12 @@ export interface Zone {
 const MAX_STEP = 1 / 60;
 /** 밀려난 적이 다시 밀리지 않는 시간(초) */
 const KNOCK_IMMUNE = 3;
+/**
+ * 감속 하한: 선풍기·에어컨 감속이 아무리 겹쳐도 원래 속도의 이만큼은 간다 (보스는 BOSS_SLOW_FLOOR).
+ * 느린 적(기름때, 보스)이 감속 + 밀어내기에 갇혀 영원히 전진하지 못하는 것을 막는다
+ */
+const SLOW_FLOOR = 0.35;
+const BOSS_SLOW_FLOOR = 0.5;
 /** 연쇄 폭발 카드의 폭발 반경 */
 const CHAIN_RADIUS = 70;
 /** 멀티탭 번개가 튕길 수 있는 거리 */
@@ -616,7 +622,7 @@ export class Game {
     const p = path.pointAt(dist);
     const e: Enemy = {
       uid: this.nextUid++, def, hp, maxHp: hp, dist, lane, left: path.length - dist, x: p.x, y: p.y,
-      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
+      slowMul: 1, slowTime: 0, stunTime: 0, frozenVuln: 1, hackMul: 1, knockImmune: 0, knocks: 0, freezeImmune: 0, summonTimer: def.summon?.interval ?? 0,
       shield: def.shield ?? 0, hidden: false, phaseTimer: def.phase?.every ?? 0, healTimer: def.heal?.interval ?? 0, healCd: 0,
       burnDps: 0, burnTime: 0, shred: 0,
     };
@@ -777,7 +783,9 @@ export class Game {
           e.slowTime = Math.max(e.slowTime, lv.slowDuration ?? 0);
           if (lv.knockback && e.knockImmune <= 0) {
             e.knockImmune = KNOCK_IMMUNE;
-            e.dist = Math.max(0, e.dist - lv.knockback * resist);
+            // 같은 적을 밀 때마다 절반씩 (45 → 22 → 11 …): 한 적이 밀리는 총거리는 처음의 2배를 넘지 않는다
+            e.dist = Math.max(0, e.dist - lv.knockback * resist * Math.pow(0.5, e.knocks));
+            e.knocks++;
             const p = this.paths[e.lane].pointAt(e.dist);
             e.left = this.paths[e.lane].length - e.dist;
             e.x = p.x;
@@ -941,7 +949,8 @@ export class Game {
         continue;
       }
       const enrage = e.def.enrage && e.hp <= e.maxHp * e.def.enrage.below ? e.def.enrage.speedMul : 1;
-      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * e.slowMul * this.globalSlow * dt;
+      const slowed = Math.max(e.def.boss ? BOSS_SLOW_FLOOR : SLOW_FLOOR, e.slowMul * this.globalSlow);
+      e.dist += e.def.speed * this.cfg.enemySpeedMul * this.mods.enemySpeed * (this.activeMod?.speedMul ?? 1) * enrage * slowed * dt;
       const path = this.paths[e.lane];
       e.left = path.length - e.dist;
       if (e.dist >= path.length) {

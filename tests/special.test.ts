@@ -186,3 +186,36 @@ describe('특수 웨이브', () => {
     expect(gold.money - money).toBe(Math.round(g0.def.reward * gold.cfg.rewardMul * 2));
   });
 });
+
+describe('군중 제어 겹치기', () => {
+  /** 입구 근처 태풍 선풍기 8대 + 급냉 에어컨 ★5 아래에서 20초 동안 전진한 거리 / 방해 없이 간 거리 */
+  function advanceRatio(enemy: 'grease' | 'boss'): number {
+    const g = new Game({ ...defaultConfig('hell'), seed: 3, startMoney: 1e9, cards: [] });
+    const T = (c: number, r: number) => ({ x: c * 52 + 26, y: 72 + r * 52 + 26 });
+    const lv4 = (unit: 'fan' | 'aircon', c: number, r: number, stars: number) => {
+      expect(g.apply({ type: 'place', unit, ...T(c, r) }).ok).toBe(true);
+      const u = g.units[g.units.length - 1];
+      g.apply({ type: 'upgrade', uid: u.uid });
+      g.apply({ type: 'upgrade', uid: u.uid });
+      g.apply({ type: 'upgrade', uid: u.uid, branch: 0 });
+      for (let i = 0; i < stars; i++) g.apply({ type: 'upgrade', uid: u.uid });
+    };
+    for (const [c, r] of [[1, 0], [2, 0], [3, 0], [5, 0], [6, 0], [2, 2], [4, 2], [6, 2]]) lv4('fan', c, r, 0);
+    lv4('aircon', 19, 6, 5);
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    const e = g.spawnEnemy(enemy, 100);
+    e.hp = e.maxHp = 1e12;
+    for (let t = 0; t < 20; t += 0.05) g.update(0.05);
+    return (e.dist - 100) / (e.def.speed * g.cfg.enemySpeedMul * 20);
+  }
+
+  it('느린 적(기름때)도 감속·밀어내기에 갇히지 않고 계속 전진한다', () => {
+    expect(advanceRatio('grease')).toBeGreaterThan(0.2);
+  });
+
+  it('보스는 더 덜 묶인다', () => {
+    expect(advanceRatio('boss')).toBeGreaterThan(0.35);
+  });
+});

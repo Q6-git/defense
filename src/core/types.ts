@@ -120,6 +120,8 @@ export interface Enemy {
   hackMul: number;
   /** 밀려난 뒤 다시 밀리지 않는 남은 시간. 태풍 여러 대로 적을 영원히 붙잡지 못하게 한다 */
   knockImmune: number;
+  /** 밀려난 횟수: 밀 때마다 거리가 절반으로 줄어든다 */
+  knocks: number;
   /** 얼었다 풀린 뒤 다시 얼지 않는 남은 시간 (얼어 있는 시간 포함). 냉풍 여러 대로 영원히 얼려 두지 못하게 한다 */
   freezeImmune: number;
   /** 불붙은 상태: 초당 피해와 남은 시간 */
