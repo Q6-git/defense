@@ -2,3 +2,8 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# Firebase 에뮬레이터 로그·로컬 설정
+*-debug.log
+.firebase/
+.env.local

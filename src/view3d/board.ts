@@ -130,7 +130,18 @@ type Actor = {
   plug?: THREE.MeshStandardMaterial;
   /** 마지막으로 레벨이 오른 시각 */
   levelUpAt?: number;
+  /** 다 쓴 모형을 다시 쓰려고 모아 두는 곳의 이름 */
+  poolKey: string;
 };
+
+/**
+ * 화면 품질 단계. 느려지면 자동으로 한 단계씩 낮춘다 (기기마다 한 번 정해지면 다음 판에도 유지).
+ *  0: 최고  1: 적 그림자 끔, 해상도 1.5배까지  2: 적을 그림 판(빌보드)으로, 해상도 1배
+ */
+export const QUALITY = {
+  level: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 1 : 0,
+};
+const DPR_CAP = [2, 1.5, 1];
 
 /** 플러그 불빛: Lv1 꺼짐, Lv2 초록, Lv3 금색, Lv4(갈림길) 보라 */
 const LED_COLORS = [0x55525e, 0x5cff7a, 0xffc93a, 0xc58aff];
@@ -169,13 +180,8 @@ export class Board3D {
     const g = this.grid;
     this.pathCell = (c, r) => sim.distanceToPath({ x: g.x + (c + 0.5) * g.size, y: g.y + (r + 0.5) * g.size }) < map.pathHalfWidth;
 
-    this.canvas = document.createElement('canvas');
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.85;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer = sharedRenderer();
+    this.canvas = this.renderer.domElement;
 
     this.camera = makeCamera(map);
 
@@ -198,6 +204,7 @@ export class Board3D {
     sc.background = new THREE.Color(th.bg);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     sc.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
     sc.environmentIntensity = 0.35;
     sc.add(new THREE.HemisphereLight(0xfff4e6, 0x6a5470, 0.7));
     const cx = g.x + (g.cols * S) / 2, cz = g.y + (g.rows * S) / 2;
@@ -205,7 +212,9 @@ export class Board3D {
     sun.position.set(cx - 520, 720, cz + 300);
     sun.target.position.set(cx, 0, cz);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    const ms = QUALITY.level === 0 ? 2048 : 1024;
+    sun.shadow.mapSize.set(ms, ms);
+    this.sun = sun;
     Object.assign(sun.shadow.camera, { left: -900, right: 900, top: 700, bottom: -700, near: 10, far: 2500 });
     sun.shadow.bias = -0.0004;
     sc.add(sun, sun.target);
@@ -320,11 +329,29 @@ export class Board3D {
   // ───────── 캐릭터
 
   /** radius: 게임 속 반지름(px), scale: 모델 배율 계수 */
-  private makeActor(key: string, radius: number, scale: number): Actor {
+  private pool = new Map<string, Actor[]>();
+  private sun?: THREE.DirectionalLight;
+
+  /** 같은 모형이 남아 있으면 다시 쓰고, 없으면 새로 만든다 (적이 끝없이 나와도 메모리가 늘지 않게) */
+  private makeActor(key: string, radius: number, scale: number, lite = false): Actor {
+    const poolKey = `${key}:${radius}:${scale}:${lite ? 1 : 0}`;
+    const reuse = this.pool.get(poolKey)?.pop();
+    if (reuse) {
+      reuse.obj.visible = true;
+      reuse.yaw = 0;
+      reuse.lastX = reuse.lastY = NaN;
+      reuse.levelUpAt = undefined;
+      delete reuse.obj.userData.tauntAt;
+      return reuse;
+    }
+    return this.buildActor(key, radius, scale, lite, poolKey);
+  }
+
+  private buildActor(key: string, radius: number, scale: number, lite: boolean, poolKey: string): Actor {
     let obj: THREE.Object3D;
     const mats: THREE.MeshStandardMaterial[] = [];
     let sprite = false;
-    const build = MODELS[key];
+    const build = lite ? undefined : MODELS[key];
     let base: number;
     if (build) {
       obj = build();
@@ -362,7 +389,7 @@ export class Board3D {
       m.material = mat;
       return mat;
     };
-    return { obj, mats, sprite, base, yaw: 0, lastX: NaN, lastY: NaN, led: own('plugLed'), plug: own('plugBody') };
+    return { obj, mats, sprite, base, yaw: 0, lastX: NaN, lastY: NaN, led: own('plugLed'), plug: own('plugBody'), poolKey };
   }
 
   /** 화면 좌표 (h: 칸 높이 위로 더 올릴 양) */
@@ -434,6 +461,7 @@ export class Board3D {
    * punch: 반동/움찔 배율, flash: 방금 맞은 적, born: 설치된 시각
    */
   render(sim: Game, t: number, dt: number, fx: { punch: Map<number, number>; flash: Set<number>; born: Map<number, number>; levelScale: (u: Unit) => number }): void {
+    this.adapt();
     // 가전
     const alive = new Set<number>();
     for (const u of sim.units) {
@@ -477,7 +505,10 @@ export class Board3D {
       seen.add(e.uid);
       let a = this.enemies.get(e.uid);
       if (!a) {
-        a = this.makeActor(e.def.id, e.def.radius, ENEMY_SCALE * (e.def.radius < 13 ? 1.25 : 1));
+        // 가장 낮은 품질에서는 보스가 아닌 적을 그림 판으로 (그리기 횟수가 수십 분의 1)
+        const lite = QUALITY.level >= 2 && !e.def.boss;
+        a = this.makeActor(e.def.id, e.def.radius, ENEMY_SCALE * (e.def.radius < 13 ? 1.25 : 1), lite);
+        this.setShadow(a, QUALITY.level === 0);
         this.enemies.set(e.uid, a);
       }
       const hop = e.stunTime <= 0 ? Math.abs(Math.sin(t * 9 + e.uid)) : 0;
@@ -499,6 +530,41 @@ export class Board3D {
     }
     this.prune(this.enemies, seen);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private setShadow(a: Actor, on: boolean): void {
+    if (a.sprite || a.obj.userData.shadow === on) return;
+    a.obj.userData.shadow = on;
+    a.obj.traverse((m) => {
+      if ((m as THREE.Mesh).isMesh) m.castShadow = on;
+    });
+  }
+
+  /** 최근 프레임 간격(ms)을 보고, 3초 동안 평균 40fps가 안 되면 품질을 한 단계 낮춘다 */
+  private perf = { last: 0, sum: 0, n: 0, warm: 0 };
+  private adapt(): void {
+    const now = performance.now();
+    const p = this.perf;
+    const gap = p.last ? now - p.last : 0;
+    p.last = now;
+    // 탭을 벗어났다 오거나 일시정지했다 풀린 큰 틈은 세지 않는다
+    if (gap <= 0 || gap > 500 || (typeof document !== 'undefined' && document.hidden)) return;
+    // 판이 열린 직후(모형 준비) 2초는 건너뛴다
+    if ((p.warm += gap) < 2000) return;
+    p.sum += gap;
+    p.n++;
+    if (p.sum < 3000) return;
+    const fps = (1000 * p.n) / p.sum;
+    p.sum = p.n = 0;
+    if (fps >= 40 || QUALITY.level >= 2) return;
+    QUALITY.level++;
+    p.warm = 0;
+    for (const a of this.enemies.values()) this.setShadow(a, QUALITY.level === 0);
+    if (this.sun && this.sun.shadow.mapSize.x > 1024) {
+      this.sun.shadow.mapSize.set(1024, 1024);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
   }
 
   private scaleActor(a: Actor, sx: number, sy: number): void {
@@ -533,7 +599,9 @@ export class Board3D {
   private prune(pool: Map<number, Actor>, alive: Set<number>): void {
     for (const [uid, a] of pool) {
       if (alive.has(uid)) continue;
-      this.scene.remove(a.obj);
+      a.obj.visible = false;
+      const free = this.pool.get(a.poolKey) ?? this.pool.set(a.poolKey, []).get(a.poolKey)!;
+      free.push(a);
       pool.delete(uid);
       this.aim.delete(uid);
     }
@@ -550,15 +618,45 @@ export class Board3D {
     st.top = `${r.top - parent.top}px`;
     st.width = `${r.width}px`;
     st.height = `${r.height}px`;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP[QUALITY.level]);
     const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
     if (this.canvas.width !== w || this.canvas.height !== h) this.renderer.setSize(w, h, false);
   }
 
+  /**
+   * 화면을 떠날 때: 렌더러(WebGL 컨텍스트)는 다음 판에 다시 쓰고, 이 판의 모형·재질·그림만 비운다.
+   * 판마다 새 컨텍스트를 만들면 브라우저 한도(약 16개)를 넘는 순간 가장 오래된 Phaser 컨텍스트가 끊겨
+   * 3D 맵만 보이고 UI가 사라진다.
+   */
   dispose(): void {
-    this.renderer.dispose();
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+      for (const mat of mats) {
+        for (const v of Object.values(mat)) if (v instanceof THREE.Texture) v.dispose();
+        mat.dispose();
+      }
+    });
+    this.scene.environment?.dispose();
+    this.renderer.renderLists.dispose();
     this.canvas.remove();
   }
+}
+
+let shared: THREE.WebGLRenderer | null = null;
+
+/** 모든 3D 맵이 함께 쓰는 렌더러 하나 */
+function sharedRenderer(): THREE.WebGLRenderer {
+  if (shared && !shared.getContext().isContextLost()) return shared;
+  const r = new THREE.WebGLRenderer({ antialias: true });
+  r.shadowMap.enabled = true;
+  r.shadowMap.type = THREE.PCFSoftShadowMap;
+  r.toneMapping = THREE.ACESFilmicToneMapping;
+  r.toneMappingExposure = 0.85;
+  r.outputColorSpace = THREE.SRGBColorSpace;
+  shared = r;
+  return r;
 }
 
 /** 뒤 배경 무늬: 벽돌 타일 / 정사각 타일 / 줄무늬 벽지 / 하늘과 구름 */

@@ -2,11 +2,15 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ANIM_COLS, ANIM_FRAME, MODEL_ANIMS } from '../../src/view3d/anims';
+import { KIT } from '../../src/view3d/kit';
 import { MODELS as GAME_MODELS } from '../../src/view3d/models';
 import { DANCER_FRAMES } from './dancer-frames';
 import { GREASE_SAMPLES } from './grease-samples';
 import { SAMPLES } from './samples';
 import { SIXSEVEN_FRAMES } from './sixseven-frames';
+
+// 그림은 크게 렌더링하므로 곡면을 가장 곱게
+KIT.detail = 1;
 
 // ?set=samples / grease / dancer / sixseven 이면 디자인 후보·동작 프레임을 렌더링한다
 const SETS: Record<string, typeof GAME_MODELS> = { samples: SAMPLES, grease: GREASE_SAMPLES, dancer: DANCER_FRAMES, sixseven: SIXSEVEN_FRAMES };

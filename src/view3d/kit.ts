@@ -14,24 +14,46 @@ export function metal(color: number | string): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.25, metalness: 0.55 });
 }
 
+/**
+ * 곡면을 몇 조각으로 나눌지 (1 = 그림 렌더링용 최고 품질).
+ * 게임 화면에서는 캐릭터가 작아서 절반 정도면 충분하고, 적이 많을 때 휴대폰이 훨씬 가볍다.
+ */
+export const KIT = { detail: 0.5 };
+const seg = (n: number, min: number) => Math.max(min, Math.round(n * KIT.detail));
+
+/**
+ * 같은 모양은 한 번만 만들어 함께 쓴다 (적 수십 마리가 같은 구·상자를 공유).
+ * 공유하므로 기하 자체는 절대 고치지 않는다 — 크기·위치는 메시에서 바꾼다.
+ */
+const GEO = new Map<string, THREE.BufferGeometry>();
+function shared<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
+  const k = `${key}@${KIT.detail}`;
+  let g = GEO.get(k);
+  if (!g) GEO.set(k, (g = make()));
+  return g as T;
+}
+
 export function rbox(w: number, h: number, d: number, r: number, mat: THREE.Material): THREE.Mesh {
-  return new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2, h / 2, d / 2)), mat);
+  const rr = Math.min(r, w / 2, h / 2, d / 2);
+  return new THREE.Mesh(shared(`b${w},${h},${d},${rr}`, () => new RoundedBoxGeometry(w, h, d, seg(4, 2), rr)), mat);
 }
 export function sphere(r: number, mat: THREE.Material, sx = 1, sy = 1, sz = 1): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), mat);
+  const m = new THREE.Mesh(shared(`s${r}`, () => new THREE.SphereGeometry(r, seg(32, 12), seg(24, 8))), mat);
   m.scale.set(sx, sy, sz);
   return m;
 }
-export function cyl(rt: number, rb: number, h: number, mat: THREE.Material, seg = 24): THREE.Mesh {
-  return new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+export function cyl(rt: number, rb: number, h: number, mat: THREE.Material, n = 24): THREE.Mesh {
+  return new THREE.Mesh(shared(`c${rt},${rb},${h},${n}`, () => new THREE.CylinderGeometry(rt, rb, h, seg(n, Math.min(n, 8)))), mat);
 }
 export function torus(r: number, tube: number, mat: THREE.Material, arc = Math.PI * 2): THREE.Mesh {
-  return new THREE.Mesh(new THREE.TorusGeometry(r, tube, 16, 48, arc), mat);
+  return new THREE.Mesh(shared(`t${r},${tube},${arc}`, () => new THREE.TorusGeometry(r, tube, seg(16, 6), seg(48, 16), arc)), mat);
 }
 /** 점들을 잇는 둥근 관 (더듬이, 꼬리 등) */
 export function tube(points: [number, number, number][], r: number, mat: THREE.Material): THREE.Mesh {
-  const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
-  return new THREE.Mesh(new THREE.TubeGeometry(curve, 32, r, 12, false), mat);
+  return new THREE.Mesh(shared(`u${r}:${points.join(';')}`, () => {
+    const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
+    return new THREE.TubeGeometry(curve, seg(32, 12), r, seg(12, 6), false);
+  }), mat);
 }
 
 export function at<T extends THREE.Object3D>(o: T, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0): T {

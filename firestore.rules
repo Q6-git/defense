@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// 무한 모드 온라인 랭킹 보안 규칙
+// - 누구나 읽을 수 있다
+// - 쓰기는 익명 로그인한 사용자가 자기 문서(<uid>_<난이도>)에만, 더 좋은 기록일 때만
+// - 이름만 바꾸는 것은 허용 (이름이 실제로 바뀔 때)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rankings/{docId} {
+      allow read: if true;
+      allow create: if isOwnDoc(docId) && validEntry(request.resource.data);
+      allow update: if isOwnDoc(docId) && validEntry(request.resource.data)
+        && request.resource.data.difficulty == resource.data.difficulty
+        && (isBetter() || onlyRenamed());
+      allow delete: if false;
+    }
+
+    function isOwnDoc(docId) {
+      return request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && docId == request.auth.uid + '_' + request.resource.data.difficulty;
+    }
+
+    function validEntry(d) {
+      return d.keys().hasOnly(['uid', 'name', 'wave', 'kills', 'map', 'difficulty', 'units', 'at'])
+        && d.keys().hasAll(['uid', 'name', 'wave', 'kills', 'map', 'difficulty', 'units', 'at'])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 8
+        && d.wave is int && d.wave >= 1 && d.wave <= 500
+        // 한 웨이브에 잡을 수 있는 적 수를 넉넉히 잡은 상한 (말이 안 되는 기록 막기)
+        && d.kills is int && d.kills >= 0 && d.kills <= d.wave * 150
+        && d.map in ['kitchen', 'bathroom', 'balcony', 'laundry', 'living']
+        && d.difficulty in ['easy', 'normal', 'hard', 'hell']
+        && d.units is list && d.units.size() <= 3
+        && d.at == request.time;
+    }
+
+    function isBetter() {
+      return request.resource.data.wave > resource.data.wave
+        || (request.resource.data.wave == resource.data.wave && request.resource.data.kills > resource.data.kills);
+    }
+
+    function onlyRenamed() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'at'])
+        && request.resource.data.name != resource.data.name;
+    }
+  }
+}
