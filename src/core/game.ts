@@ -133,7 +133,8 @@ export interface UpgradeOption {
 
 /**
  * ★강화: Lv4(갈래) 다음에도 돈을 넣어 계속 세진다. 후반에 가전을 끝없이 늘리지 않아도 되게 하고, 남는 돈의 쓸 곳을 만든다.
- * 별 하나당 공격력·지속 피해·수입 +25%(공격형), 버프·감속 효과 +10%(지원형). 비용은 갈래 비용 × 1.5^n
+ * 별 하나당 공격력·지속 피해·수입 +25%(공격형), 버프·전체 감속·밀어내기·얼리기 같은 지원 효과 +10%(지원형). 비용은 갈래 비용 × 1.5^n.
+ * 한도에 닿아 더 오르지 않는 가전은 거기서 강화가 멈춘다
  */
 export const STAR = { max: 10, power: 0.25, support: 0.1, costMul: 1.5 };
 
@@ -355,6 +356,13 @@ export class Game {
       if (stats.globalSlow) stats.globalSlow = Math.min(MAX_GLOBAL_SLOW, stats.globalSlow * sk);
       if (stats.globalVuln) stats.globalVuln *= sk;
       if (stats.hackVuln) stats.hackVuln = 1 + (stats.hackVuln - 1) * sk;
+      // 선풍기: 바람 피해는 작아서, 감속 지속·밀어내기·얼리기가 함께 세진다 (감속 세기는 하한이 있어 그대로)
+      if (stats.slowDuration) stats.slowDuration *= sk;
+      if (stats.knockback) stats.knockback *= sk;
+      if (stats.freeze) stats.freeze *= sk;
+      if (stats.frozenVuln) stats.frozenVuln = 1 + (stats.frozenVuln - 1) * sk;
+      // 동전 분수: 주변 처치 보상 보너스
+      if (stats.bounty) stats.bounty = { ...stats.bounty, mul: 1 + (stats.bounty.mul - 1) * sk };
     }
     return stats;
   }
@@ -472,8 +480,14 @@ export class Game {
     if (u.branch === null && u.def.branches) {
       return u.def.branches.map((b, i) => ({ branch: i as 0 | 1, cost: Math.round(b.cost * m.upgradeCost * m.branchCost) }));
     }
-    if (u.branch !== null && u.stars < STAR.max) return [{ branch: null, cost: this.starCost(u), star: true }];
+    if (u.branch !== null && u.stars < STAR.max && this.starUseful(u)) return [{ branch: null, cost: this.starCost(u), star: true }];
     return [];
+  }
+
+  /** ★을 하나 더 올리면 수치가 달라지는지. 한도에 닿아 더 오르지 않으면(급냉 에어컨의 전체 감속 등) 강화를 막는다 */
+  private starUseful(u: Unit): boolean {
+    const at = (stars: number) => JSON.stringify(this.levelStats(u.def.id, u.level, u.branch, stars));
+    return at(u.stars) !== at(u.stars + 1);
   }
 
   /** 다음 ★강화 비용 (10 단위로 반올림) */

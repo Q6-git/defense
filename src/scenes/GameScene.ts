@@ -18,7 +18,7 @@ import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
 import { ANIM_FRAME, MODEL_ANIMS } from '../view3d/anims';
-import { bulkBranch, nextBulkStep } from '../core/bulk';
+import { bulkGroup, nextBulkStep } from '../core/bulk';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
@@ -657,17 +657,16 @@ export class GameScene extends Phaser.Scene {
     this.info = { root, title, stats, upgrade, upgradeAll, branchA, branchB, sell, target };
   }
 
-  /** 고른 가전과 같은 종류를 기본 Lv3 → 갈림길(고른 갈래로) → ★강화 순서로 돈이 되는 만큼 올린다 */
+  /** 고른 가전과 종류·갈래가 같은 가전을 함께 올린다: 갈래 전이면 Lv3까지, 갈래를 골랐으면 ★강화. 갈림길은 직접 고른다 */
   private upgradeAllSame(): void {
     const u = this.selected;
     if (!u) return;
-    const branch = bulkBranch(this.sim, u);
     let n = 0;
     for (let guard = 0; guard < 500; guard++) {
-      const step = nextBulkStep(this.sim, u.def.id, branch);
+      const step = nextBulkStep(this.sim, u);
       if (!step) break;
-      if (!this.sim.apply({ type: 'upgrade', uid: step.unit.uid, branch: step.branch }).ok) break;
-      this.upgradeFx(step.unit, step.branch, step.star);
+      if (!this.sim.apply({ type: 'upgrade', uid: step.unit.uid }).ok) break;
+      this.upgradeFx(step.unit, undefined, step.star);
       n++;
     }
     if (n === 0) {
@@ -675,7 +674,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     sfx.play('upgrade');
-    this.showToast(STR.upgradedAll(STR.units[u.def.id]?.name ?? u.def.id, n));
+    const br = u.branch !== null ? u.def.branches?.[u.branch] : undefined;
+    this.showToast(STR.upgradedAll(br ? STR.branches[br.id].full : (STR.units[u.def.id]?.name ?? u.def.id), n));
   }
 
   private upgradeSelected(branch?: 0 | 1): void {
@@ -1174,26 +1174,34 @@ export class GameScene extends Phaser.Scene {
         const area = def.kind === 'slow' || lv.hitAll || lv.line || lv.splash ? ` ${s.perEnemy}` : '';
         lines.push(`${s.dps} ${dpsText(cur)}${next ? ` → ${dpsText(next)}` : ''}${area}`);
       }
+      // 지원형 수치도 업그레이드·★강화하면 얼마나 오르는지 (→) 보여 준다
+      const nx = u && opts.length === 1 ? (opts[0].star ? this.sim.levelStats(id, level, u.branch, u.stars + 1) : this.sim.levelStats(id, level + 1)) : null;
+      const to = (a: number | undefined, b: number | undefined, f: (v: number) => string) =>
+        `${f(a ?? 0)}${b !== undefined && f(b) !== f(a ?? 0) ? ` → ${f(b)}` : ''}`;
+      const pct = (v: number) => `${Math.round(v * 100)}%`;
       if (lv.damage) lines.push(lv.cooldown ? s.hit(n1(lv.damage), Math.round(lv.cooldown * 100) / 100) : `${s.damage} ${n1(lv.damage)}`);
       if (lv.range) lines.push(`${s.range} ${Math.round(lv.range)}`);
       if (lv.splash) lines.push(`${s.splash} ${Math.round(lv.splash)}`);
-      if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
-      if (lv.buff) lines.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
-      if (lv.income) lines.push(`${s.income} 💰${lv.income}`);
+      if (lv.slow) lines.push(`${s.slow} ${to(1 - lv.slow, nx?.slow === undefined ? undefined : 1 - nx.slow, pct)}`);
+      if (lv.knockback) lines.push(`${s.knockback} ${to(lv.knockback, nx?.knockback, (v) => String(Math.round(v)))}`);
+      if (lv.freeze) lines.push(`${s.freeze} ${to(lv.freeze, nx?.freeze, (v) => `${n1(v)}초`)}`);
+      if (lv.buff) lines.push(`${s.buff} ${to(lv.buff, nx?.buff, pct)}`);
+      if (lv.income) lines.push(`${s.income} ${to(lv.income, nx?.income, (v) => `💰${v}`)}`);
+      if (lv.bounty) lines.push(`${s.bounty} ${to(lv.bounty.mul - 1, nx?.bounty ? nx.bounty.mul - 1 : undefined, (v) => `+${pct(v)}`)}`);
       if (lv.dot) lines.push(`${s.dot} 초당 ${lv.dot.dps} (${lv.dot.duration}초)`);
       if (lv.chainHits) lines.push(`${s.chain} ${lv.chainHits}마리`);
-      if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${Math.round(lv.dmgBuff * 100)}%`);
+      if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${to(lv.dmgBuff, nx?.dmgBuff, pct)}`);
       if (lv.shred) lines.push(`${s.shred} ${lv.shred}`);
-      if (lv.globalSlow) lines.push(`${s.globalSlow} ${Math.round(lv.globalSlow * 100)}%`);
-      if (lv.globalVuln) lines.push(`${s.globalVuln} +${Math.round(lv.globalVuln * 100)}%`);
+      if (lv.globalSlow) lines.push(`${s.globalSlow} ${to(lv.globalSlow, nx?.globalSlow, pct)}`);
+      if (lv.globalVuln) lines.push(`${s.globalVuln} ${to(lv.globalVuln, nx?.globalVuln, (v) => `+${pct(v)}`)}`);
     }
     this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
     const showControls = u !== null;
     this.info.upgrade.container.setVisible(showControls && !atFork);
-    // '모두'는 같은 종류가 2대 이상일 때만
-    const same = u ? this.sim.units.filter((x) => x.def.id === u.def.id).length : 0;
+    // '모두'는 종류와 갈래가 같은 가전이 2대 이상일 때만
+    const same = u ? bulkGroup(this.sim, u).length : 0;
     this.info.upgradeAll.container.setVisible(showControls && !atFork && same >= 2);
-    if (u) this.info.upgradeAll.setEnabled(nextBulkStep(this.sim, u.def.id, bulkBranch(this.sim, u)) !== null);
+    if (u) this.info.upgradeAll.setEnabled(nextBulkStep(this.sim, u) !== null);
     this.info.branchA.container.setVisible(showControls && atFork);
     this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
