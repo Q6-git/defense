@@ -8,7 +8,7 @@ import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
 import { MAP_ORDER, type MapId } from '../data/map';
 import { GACHA_UNITS, UNIT_ORDER } from '../data/units';
 import { clearParts, GACHA, GACHA_POOL, pull, type PullResult } from '../gacha';
-import { sfx, type SoundId } from '../sfx';
+import { sfx, VOLUME_STEPS, type Channel, type SoundId } from '../sfx';
 import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achievements';
 import { loadBest, loadDeck, loadName, loadProgress, loadRanking, loadSetup, saveBest, saveDeck, saveName, saveProgress, saveRanking, saveSetup, type RunSetup } from '../storage';
 import { addRank, cleanName, randomName, rankList, topUnits, type RankEntry } from '../ranking';
@@ -204,7 +204,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     // 개발 서버에서만: 브라우저 자동 테스트가 상태를 들여다볼 수 있게 노출
-    if (import.meta.env.DEV) Object.assign(window, { sim: this.sim, scene: this });
+    if (import.meta.env.DEV) Object.assign(window, { sim: this.sim, scene: this, sfx });
     this.enemyEmojis.clear();
     this.unitEmojis.clear();
     this.badges.clear();
@@ -352,6 +352,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_t: number, deltaMs: number): void {
+    this.syncMusic();
     if (this.pauseLayer || this.introLayer) return;
     const dt = Math.min(deltaMs / 1000, 0.25);
     this.clock += dt;
@@ -1530,6 +1531,7 @@ export class GameScene extends Phaser.Scene {
     const shrug = text(this, 0, -128, '🤷', 64).setOrigin(0.5);
     const label = text(this, 0, 128, sub, 30, THEME.gold).setOrigin(0.5).setStroke('#4a3b34', 7);
     this.bigPop('67', [six, seven, shrug, label], 1500);
+    sfx.play('sixseven');
     this.tweens.add({ targets: six, y: -22, duration: 230, yoyo: true, repeat: 3, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: seven, y: -22, duration: 230, yoyo: true, repeat: 3, delay: 230, ease: 'Sine.easeInOut' });
   }
@@ -1540,6 +1542,7 @@ export class GameScene extends Phaser.Scene {
     const parts: Phaser.GameObjects.GameObject[] = [main];
     if (hit) parts.push(text(this, 0, 78, STR.tauntSub, 26, THEME.text).setOrigin(0.5).setStroke('#ffffff', 6));
     this.bigPop('taunt', parts, 700);
+    sfx.play('taunt');
     main.setAngle(-8);
     this.tweens.add({ targets: main, angle: 8, duration: 120, yoyo: true, repeat: 3, ease: 'Sine.easeInOut', onComplete: () => main.setAngle(0) });
   }
@@ -1759,15 +1762,15 @@ export class GameScene extends Phaser.Scene {
     const { width, height } = this.sim.cfg.map;
     const layer = this.modalLayer();
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
-    const box = card(this, width / 2, height / 2, 560, 560, 'center', THEME.bar);
-    const title = text(this, width / 2 - 250, 122, STR.settingsTitle, 30).setOrigin(0, 0.5);
-    const close = button(this, width / 2 + 190, 122, 130, 44, STR.close, () => layer.destroy(), THEME.green, 18);
-    const langLabel = text(this, width / 2, 176, STR.language, 18, THEME.textSoft).setOrigin(0.5);
+    const box = card(this, width / 2, height / 2, 560, 620, 'center', THEME.bar);
+    const title = text(this, width / 2 - 250, 92, STR.settingsTitle, 30).setOrigin(0, 0.5);
+    const close = button(this, width / 2 + 190, 92, 130, 44, STR.close, () => layer.destroy(), THEME.green, 18);
+    const langLabel = text(this, width / 2, 146, STR.language, 18, THEME.textSoft).setOrigin(0.5);
     layer.add([dim, box, title, close.container, langLabel]);
     LANGS.forEach((l, i) => {
       const on = l.id === lang();
       // 언어 이름은 그 언어로 적는다 (지금 언어를 못 읽어도 찾을 수 있게). 고르면 화면을 새 언어로 다시 그린다
-      const b = button(this, width / 2, 226 + i * 58, 420, 50, l.name, () => {
+      const b = button(this, width / 2, 194 + i * 56, 420, 48, l.name, () => {
         if (on) return;
         setLang(l.id);
         this.scene.restart({});
@@ -1775,14 +1778,37 @@ export class GameScene extends Phaser.Scene {
       b.bg.setStrokeStyle(on ? 4 : 2, on ? THEME.selected : THEME.cardLine);
       layer.add(b.container);
     });
-    const soundY = 226 + LANGS.length * 58 + 44;
-    const soundLabel = text(this, width / 2, soundY - 40, STR.sound, 18, THEME.textSoft).setOrigin(0.5);
-    const sound = button(this, width / 2, soundY, 420, 50, sfx.muted ? STR.soundOff : STR.soundOn, () => {
-      const muted = sfx.toggleMute();
-      sound.setText(muted ? STR.soundOff : STR.soundOn);
-      this.muteBtn.setText(muted ? '🔇' : '🔊');
-    }, THEME.blue, 20);
-    layer.add([soundLabel, sound.container]);
+    // 음량: 배경음과 효과음을 따로, − / + 로 한 칸씩
+    const volumeRow = (ch: Channel, label: string, y: number, test: () => void) => {
+      const name = text(this, width / 2 - 210, y, label, 19).setOrigin(0, 0.5);
+      const bar = text(this, width / 2 + 70, y, '', 22, THEME.gold).setOrigin(0.5);
+      const show = () => {
+        const n = Math.round(sfx.volume(ch) * VOLUME_STEPS);
+        bar.setText(`${'■'.repeat(n)}${'□'.repeat(VOLUME_STEPS - n)}`);
+      };
+      const change = (d: number) => {
+        sfx.setVolume(ch, sfx.volume(ch) + d / VOLUME_STEPS);
+        show();
+        test();
+      };
+      const down = button(this, width / 2 - 30, y, 48, 44, '−', () => change(-1), THEME.neutral, 24);
+      const up = button(this, width / 2 + 170, y, 48, 44, '+', () => change(1), THEME.neutral, 24);
+      show();
+      layer.add([name, bar, down.container, up.container]);
+    };
+    const vy = 194 + LANGS.length * 56 + 30;
+    volumeRow('bgm', STR.bgm, vy, () => undefined);
+    volumeRow('sfx', STR.sound, vy + 58, () => sfx.play('coin'));
+  }
+
+  /** 지금 상황에 맞는 배경음을 고른다: 시작 화면, 웨이브(대기 중에는 잔잔하게), 보스, 「L을 가져가!」 */
+  private syncMusic(): void {
+    const gm = this.sim;
+    if (this.picking) return sfx.music('menu');
+    if (gm.finished) return sfx.music(null);
+    if (gm.enemies.some((e) => e.def.id === 'dancer')) return sfx.music('dancer');
+    if (gm.enemies.some((e) => e.def.boss)) return sfx.music('boss');
+    sfx.music('wave', gm.phase !== 'wave');
   }
 
   /** 연구 화면: 부품으로 올리는 영구 강화 */

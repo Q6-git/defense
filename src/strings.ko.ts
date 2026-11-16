@@ -8,8 +8,7 @@ export const STR = {
   settingsTitle: '⚙️ 설정',
   language: '🌐 언어',
   sound: '🔊 효과음',
-  soundOn: '켜짐',
-  soundOff: '꺼짐',
+  bgm: '🎵 배경음',
   /** 이름을 안 정했을 때 붙는 이름의 앞부분 (뒤에 숫자 4개. 합쳐서 8글자 이하) */
   namePrefix: '수비대',
   dpsMax: (n: number) => `(최대 ${n})`,
