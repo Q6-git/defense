@@ -41,6 +41,20 @@ export interface Mods {
   chain: number;
   /** 웨이브마다 처음 기지에 닿는 적(보스 제외) 1마리를 무효로 한다 */
   breaker: boolean;
+  /** 보조배터리 공격력 버프에 더해지는 값 */
+  batteryBuff: number;
+  /** 에어컨 전체 감속에 더해지는 값 */
+  airconSlow: number;
+  /** 크리티컬이 붙이는 화상: 그 공격 피해의 이 비율만큼 초당 피해 (CRIT_BURN_TIME초) */
+  critBurn: number;
+  /** 감속·기절 중인 적을 처치하면 더 받는 돈 */
+  slowBounty: number;
+  /** 가전을 판 뒤 다음 설치 한 번의 할인율 (0.5 = 반값) */
+  tradeIn: number;
+  /** 체력 비율이 이 값 이하로 떨어진 적(보스 제외)은 바로 처치된다 */
+  execute: number;
+  /** 체력이 가득한 적에게 주는 피해 증가율 */
+  firstHit: number;
 }
 
 export function baseMods(): Mods {
@@ -54,6 +68,7 @@ export function baseMods(): Mods {
     plungerCooldown: 1, overloadCooldown: 1, plungerDamage: 1, plungerRadius: 1, overloadDuration: 0,
     critChance: 0, critChanceMul: 1, critDamage: 0, sellRate: 0, waveBonus: 1, enemySpeed: 1,
     washerMax: 0, chain: 0, breaker: false,
+    batteryBuff: 0, airconSlow: 0, critBurn: 0, slowBounty: 0, tradeIn: 0, execute: 0, firstHit: 0,
   };
 }
 
@@ -63,6 +78,8 @@ export interface CardDef {
   rarity: CardRarity;
   /** 좋은 효과와 나쁜 효과가 함께 있는 카드 */
   risk?: boolean;
+  /** 이 가전 중 하나라도 덱에 있어야 나온다 (없으면 언제나 나온다) */
+  needs?: UnitId[];
   /** 한 판에 고를 수 있는 최대 횟수 */
   max: number;
   /** 고르는 즉시 받는 돈 */

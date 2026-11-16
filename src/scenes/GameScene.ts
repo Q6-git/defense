@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
-import { Game, type GameEvent } from '../core/game';
+import { Game, MASTERY, type GameEvent } from '../core/game';
+import { applyMeta, buyMastery, buyResearch, masteryCost, masteryLevel, RESEARCH, researchCost, researchLevel } from '../meta';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId, type UnitLevel } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
@@ -188,7 +189,13 @@ export class GameScene extends Phaser.Scene {
   create(data: { start?: boolean }): void {
     this.setup = loadSetup();
     this.endScreen = [];
-    this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId));
+    this.progress = loadProgress();
+    // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
+    const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
+    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, DECK_SIZE) as UnitId[];
+    this.deck = saved.length ? saved : [...UNIT_ORDER];
+    // 연구·숙련도·덱이 반영된 설정으로 판을 만든다
+    this.sim = new Game(applyMeta(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId), this.progress, this.deck));
     // 움직이는 몬스터의 반복 동작 (도감·소개 카드)
     for (const [name, spec] of Object.entries(MODEL_ANIMS)) {
       const key = `${name}_anim`;
@@ -236,11 +243,6 @@ export class GameScene extends Phaser.Scene {
     this.pauseLayer = null;
     this.picking = false;
     this.ranked = false;
-    this.progress = loadProgress();
-    // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
-    const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
-    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, DECK_SIZE) as UnitId[];
-    this.deck = saved.length ? saved : [...UNIT_ORDER];
     this.runParts = 0;
     this.run = {
       map: this.setup.map, difficulty: this.setup.difficulty, endless: this.setup.endless,
@@ -298,6 +300,8 @@ export class GameScene extends Phaser.Scene {
     layer.add(bestiaryBtn.container);
     const rankBtn = button(this, 1120, 316, 230, 52, STR.rankingButton, () => this.showRanking(), THEME.orange, 19);
     layer.add(rankBtn.container);
+    const researchBtn = button(this, 1120, 380, 230, 52, STR.researchButton, () => this.showResearch(), THEME.red, 19);
+    layer.add(researchBtn.container);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
     const deckBtn = button(this, 1120, 124, 230, 52, STR.deckButton, () => this.showDeck(), THEME.blue, 19);
@@ -1612,21 +1616,24 @@ export class GameScene extends Phaser.Scene {
       this.showDeck();
     };
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
-    const box = card(this, width / 2, height / 2, 800, 520, 'center', THEME.bar);
-    const title = text(this, width / 2 - 370, 132, STR.deckTitle, 30).setOrigin(0, 0.5);
-    const hint = text(this, width / 2, 180, STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
-    const warn = text(this, width / 2, 560, '', 17, THEME.danger).setOrigin(0.5);
+    const p = this.progress;
+    const box = card(this, width / 2, height / 2, 800, 620, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, 86, STR.deckTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2 + 230, 86, STR.gachaParts(p.parts), 18, THEME.gold).setOrigin(1, 0.5);
+    const hint = text(this, width / 2, 130, STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
+    const note = text(this, width / 2, 154, STR.masteryHint(Math.round(MASTERY.power * 100), Math.round(MASTERY.support * 100)), 14, THEME.textSoft).setOrigin(0.5);
+    const warn = text(this, width / 2, 648, '', 17, THEME.danger).setOrigin(0.5);
     // 닫으면 덱을 저장하고 시작 화면을 다시 그린다 (상점이 새 덱으로 바뀐다)
-    const close = button(this, width / 2 + 310, 132, 130, 44, STR.close, () => {
+    const close = button(this, width / 2 + 310, 86, 130, 44, STR.close, () => {
       saveDeck(this.deck);
       this.scene.restart({});
     }, THEME.green, 18);
-    layer.add([dim, box, title, hint, warn, close.container]);
+    layer.add([dim, box, title, parts, hint, note, warn, close.container]);
     const all: UnitId[] = [...UNIT_ORDER, ...GACHA_UNITS];
     all.forEach((id, i) => {
       const def = this.sim.cfg.units[id];
       const x = width / 2 + ((i % 6) - 2.5) * 125;
-      const y = 285 + Math.floor(i / 6) * 160;
+      const y = 250 + Math.floor(i / 6) * 225;
       const owned = UNIT_ORDER.includes(id) || this.progress.owned.includes(id);
       const inDeck = this.deck.includes(id);
       const rarity = GACHA_POOL[id];
@@ -1637,6 +1644,18 @@ export class GameScene extends Phaser.Scene {
       const sub = text(this, x, y + 48, owned ? (rarity ? STR.gachaRarity[rarity] : `💰${def.levels[0].cost}`) : STR.locked, 12, THEME.textSoft).setOrigin(0.5);
       layer.add([bg, ic, name, sub]);
       if (!owned) return;
+      // 숙련도: 카드 아래에 레벨과 강화 버튼
+      const lv = masteryLevel(p, id);
+      const cost = masteryCost(p, id);
+      const tag = text(this, x, y + 84, `${'★'.repeat(lv)}${'☆'.repeat(MASTERY.max - lv)}`, 15, lv ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const up = button(this, x, y + 114, 108, 36, cost === null ? STR.masteryMax : STR.masteryBuy(cost), () => {
+        if (!buyMastery(p, id)) return sfx.play('error');
+        saveProgress(p);
+        sfx.play('upgrade');
+        reopen();
+      }, cost === null ? THEME.neutral : THEME.purple, 15);
+      up.setEnabled(cost !== null && p.parts >= cost);
+      layer.add([tag, up.container]);
       bg.setInteractive(new Phaser.Geom.Rectangle(-56, -70, 112, 140), Phaser.Geom.Rectangle.Contains);
       if (bg.input) bg.input.cursor = 'pointer';
       bg.on('pointerup', () => {
@@ -1663,13 +1682,13 @@ export class GameScene extends Phaser.Scene {
     const title = text(this, width / 2 - 370, 92, STR.gachaTitle, 30).setOrigin(0, 0.5);
     const parts = text(this, width / 2, 92, STR.gachaParts(p.parts), 20, THEME.gold).setOrigin(0.5);
     const close = button(this, width / 2 + 310, 92, 130, 44, STR.close, () => this.scene.restart({}), THEME.neutral, 18);
-    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}`, 15, THEME.textSoft).setOrigin(0.5);
+    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}   ·   ${STR.gachaDupNote}`, 15, THEME.textSoft).setOrigin(0.5);
     layer.add([dim, box, title, parts, close.container, info]);
     const doPull = (n: 1 | 10) => {
       const r = pull(p, n);
       if (!r) return sfx.play('error');
       saveProgress(p);
-      sfx.play(r.some((x) => !x.duplicate) ? 'win' : 'coin');
+      sfx.play(r.some((x) => !x.duplicate || x.mastery) ? 'win' : 'coin');
       layer.destroy();
       this.showGacha(r);
     };
@@ -1684,7 +1703,9 @@ export class GameScene extends Phaser.Scene {
       const def = this.sim.cfg.units[r.unit as UnitId];
       const bg = new RoundBox(this, 0, 0, 66, 96, r.duplicate ? THEME.white : 0xfff0c8, 12).setStrokeStyle(4, RARITY_COLOR[r.rarity]);
       const ic = icon(this, 0, -14, r.unit, def.emoji, 50);
-      const tag = text(this, 0, 32, r.duplicate ? STR.gachaDup(r.refund) : STR.gachaNew, r.duplicate ? 11 : 15, r.duplicate ? THEME.textSoft : THEME.danger).setOrigin(0.5);
+      const tag = r.mastery
+        ? text(this, 0, 32, STR.gachaMastery, 13, THEME.gold).setOrigin(0.5)
+        : text(this, 0, 32, r.duplicate ? STR.gachaDup(r.refund) : STR.gachaNew, r.duplicate ? 11 : 15, r.duplicate ? THEME.textSoft : THEME.danger).setOrigin(0.5);
       const c = this.add.container(x, 330, [bg, ic, tag]).setScale(0);
       layer.add(c);
       this.tweens.add({ targets: c, scale: 1, delay: i * 70, duration: 240, ease: 'Back.easeOut' });
@@ -1700,8 +1721,44 @@ export class GameScene extends Phaser.Scene {
       const ic = icon(this, x, y - 34, id, def.emoji, 56).setAlpha(owned ? 1 : 0.35);
       const name = text(this, x, y + 10, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
       const rar = text(this, x, y + 32, STR.gachaRarity[rarity], 13, THEME.textSoft).setOrigin(0.5);
-      const st = text(this, x, y + 54, owned ? `✅ ${STR.gachaOwned}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const st = text(this, x, y + 54, owned ? `✅ ${STR.masteryTag(masteryLevel(p, id), MASTERY.max)}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
       layer.add([bg, ic, name, rar, st]);
+    });
+  }
+
+  /** 연구 화면: 부품으로 올리는 영구 강화 */
+  private showResearch(): void {
+    const { width, height } = this.sim.cfg.map;
+    const p = this.progress;
+    const layer = this.modalLayer();
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 800, 640, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, 76, STR.researchTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2 + 230, 76, STR.gachaParts(p.parts), 18, THEME.gold).setOrigin(1, 0.5);
+    // 닫으면 시작 화면을 다시 그린다 (연구가 다음 판 설정에 반영된다)
+    const close = button(this, width / 2 + 310, 76, 130, 44, STR.close, () => this.scene.restart({}), THEME.green, 18);
+    const hint = text(this, width / 2, 118, STR.researchHint, 16, THEME.textSoft).setOrigin(0.5);
+    layer.add([dim, box, title, parts, close.container, hint]);
+    RESEARCH.forEach((r, i) => {
+      const y = 180 + i * 72;
+      const lv = researchLevel(p, r.id);
+      const max = r.costs.length;
+      const cost = researchCost(p, r.id);
+      const info = STR.research[r.id];
+      const row = new RoundBox(this, width / 2, y, 760, 62, lv >= max ? 0xfff0c8 : THEME.white, 12).setStrokeStyle(2, lv >= max ? THEME.selected : THEME.cardLine);
+      const name = text(this, width / 2 - 360, y - 12, `${r.emoji} ${info.name}`, 19).setOrigin(0, 0.5);
+      const now = lv > 0 ? `  (${info.now(r.step * lv)})` : '';
+      const desc = text(this, width / 2 - 360, y + 14, `${max > 1 ? `레벨당 ${info.desc(r.step)}` : info.desc(r.step)}${now}`, 14, THEME.textSoft).setOrigin(0, 0.5);
+      const level = text(this, width / 2 + 150, y, STR.researchLevel(lv, max), 17, lv ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const buy = button(this, width / 2 + 285, y, 150, 44, cost === null ? STR.researchDone : STR.researchBuy(cost), () => {
+        if (!buyResearch(p, r.id)) return sfx.play('error');
+        saveProgress(p);
+        sfx.play('upgrade');
+        layer.destroy();
+        this.showResearch();
+      }, cost === null ? THEME.neutral : THEME.purple, 17);
+      buy.setEnabled(cost !== null && p.parts >= cost);
+      layer.add([row, name, desc, level, buy.container]);
     });
   }
 
@@ -1992,7 +2049,8 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
     offer.forEach((c, i) => {
       const kind = c.risk ? 'risk' : c.rarity;
       const color = colors[kind];
-      const x = width / 2 + (i - (offer.length - 1) / 2) * 290;
+      // 4장이면 간격을 좁혀 맵 폭 안에 넣는다
+      const x = width / 2 + (i - (offer.length - 1) / 2) * (offer.length > 3 ? 276 : 290);
       const y = 370;
       const pick = () => {
         if (gm.apply({ type: 'pickCard', index: i }).ok) close();
@@ -2015,10 +2073,21 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
       this.tweens.add({ targets: cont, y, alpha: 1, delay: i * 90, duration: 260, ease: 'Back.easeOut' });
       bg.on('pointerover', () => cont.setScale(1.04)).on('pointerout', () => cont.setScale(1));
     });
-    const skip = button(this, width / 2, 630, 300, 50, STR.cardSkip(gm.cfg.cardSkipMoney ?? 0), () => {
+    const rerollCost = gm.cfg.cardRerollCost;
+    const canReroll = rerollCost !== undefined;
+    const skip = button(this, width / 2 + (canReroll ? 160 : 0), 630, 300, 50, STR.cardSkip(gm.cfg.cardSkipMoney ?? 0), () => {
       if (gm.apply({ type: 'skipCard' }).ok) close();
     }, THEME.neutral, 18);
     layer.add(skip.container);
+    if (canReroll) {
+      // 다시 뽑기: 성공하면 cardOffer 이벤트가 새 카드로 이 화면을 다시 띄운다
+      const reroll = button(this, width / 2 - 160, 630, 300, 50, gm.rerolled ? STR.cardRerolled : STR.cardReroll(rerollCost), () => {
+        if (gm.apply({ type: 'rerollCards' }).ok) close();
+        else sfx.play('error');
+      }, THEME.blue, 18);
+      reroll.setEnabled(!gm.rerolled && gm.money >= rerollCost);
+      layer.add(reroll.container);
+    }
     sfx.play('clear');
   }
 

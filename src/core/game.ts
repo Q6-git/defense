@@ -55,6 +55,14 @@ export interface GameConfig {
   cardEvery?: number;
   /** 카드를 건너뛰면 받는 돈 */
   cardSkipMoney?: number;
+  /** 한 번에 내미는 카드 장수 (기본 3) */
+  cardChoices?: number;
+  /** 카드 다시 뽑기 비용. 내민 카드마다 한 번만 된다. 없으면 다시 뽑을 수 없다 */
+  cardRerollCost?: number;
+  /** 이번 판에 들고 온 가전. 있으면 덱에 없는 가전 전용 카드는 나오지 않는다 */
+  deck?: UnitId[];
+  /** 가전별 숙련도 (영구 강화 레벨, 0~MASTERY.max) */
+  mastery?: Partial<Record<UnitId, number>>;
   /** 무한 모드: 정해진 웨이브가 끝나도 extraWave로 계속 만든다 */
   endless?: boolean;
   /** 정해진 웨이브 이후의 웨이브를 만드는 함수 (무한 모드용) */
@@ -108,11 +116,12 @@ export type Command =
   | { type: 'continueEndless' }
   | { type: 'pickCard'; index: number }
   | { type: 'skipCard' }
+  | { type: 'rerollCards' }
   | { type: 'ability'; id: AbilityId; x?: number; y?: number };
 
 export type PlaceError = 'money' | 'path' | 'overlap' | 'bounds' | 'limit';
 
-export type CommandResult = { ok: true } | { ok: false; reason: PlaceError | 'maxLevel' | 'notFound' | 'phase' | 'cooldown' | 'branch' };
+export type CommandResult = { ok: true } | { ok: false; reason: PlaceError | 'maxLevel' | 'notFound' | 'phase' | 'cooldown' | 'branch' | 'used' };
 
 /** 다음 업그레이드 선택지. 갈림길이면 두 개, 일반 업그레이드면 하나, 최대 레벨이면 없음 */
 export interface UpgradeOption {
@@ -127,6 +136,12 @@ export interface UpgradeOption {
  * 별 하나당 공격력·지속 피해·수입 +25%(공격형), 버프·감속 효과 +10%(지원형). 비용은 갈래 비용 × 1.5^n
  */
 export const STAR = { max: 10, power: 0.25, support: 0.1, costMul: 1.5 };
+
+/**
+ * 숙련도: 판 밖에서 부품으로 올리는 가전별 영구 강화. ★강화와 같은 항목이 오른다.
+ * 레벨당 공격력·지속 피해·수입 +4%(공격형), 버프·감속 효과 +2%(지원형)
+ */
+export const MASTERY = { max: 5, power: 0.04, support: 0.02 };
 
 /** 전자레인지 해동 폭탄이 남기는 불 장판 */
 export interface Zone {
@@ -153,6 +168,10 @@ const CHAIN_RADIUS = 70;
 const CHAIN_JUMP = 120;
 /** 다리미로 깎을 수 있는 방어력 한도 */
 const MAX_SHRED = 20;
+/** 발화 카드: 크리티컬이 붙이는 화상의 지속 시간(초) */
+const CRIT_BURN_TIME = 3;
+/** 에어컨 전체 감속 한도 */
+const MAX_GLOBAL_SLOW = 0.6;
 /** 얼었다 풀린 적이 다시 얼지 않는 시간(초) */
 const FREEZE_IMMUNE = 2.5;
 
@@ -183,6 +202,10 @@ export class Game {
   mods: Mods = baseMods();
   /** 지금 고르라고 내민 카드. 있는 동안 게임은 멈춘다 */
   offer: CardDef[] | null = null;
+  /** 지금 내민 카드를 이미 다시 뽑았는지 */
+  rerolled = false;
+  /** 보상 판매 카드: 가전을 팔아서 다음 설치가 할인되는 상태 */
+  tradeInReady = false;
   /** 지금 진행 중인 웨이브에 걸린 변칙 (웨이브가 끝나면 null) */
   activeMod: WaveModDef | null = null;
   private seed: number;
@@ -256,6 +279,8 @@ export class Game {
         this.money += this.cfg.cardSkipMoney ?? 0;
         this.offer = null;
         return { ok: true };
+      case 'rerollCards':
+        return this.rerollCards();
     }
   }
 
@@ -279,7 +304,8 @@ export class Game {
 
   /** 설치 비용 (카드 할인 반영) */
   placeCost(id: UnitId): number {
-    return Math.round(this.cfg.units[id].levels[0].cost * this.mods.placeCost);
+    const tradeIn = this.tradeInReady ? 1 - this.mods.tradeIn : 1;
+    return Math.round(this.cfg.units[id].levels[0].cost * this.mods.placeCost * tradeIn);
   }
 
   /** 설치할 수 있는 최대 대수 (제한이 없으면 Infinity) */
@@ -312,9 +338,13 @@ export class Game {
     };
     if (base.splash) stats.splash = base.splash * m.splash;
     if (base.buff) stats.buff = base.buff + m.wifiBuff;
-    if (stars > 0) {
-      const k = 1 + STAR.power * stars;
-      const sk = 1 + STAR.support * stars;
+    if (base.dmgBuff) stats.dmgBuff = base.dmgBuff + m.batteryBuff;
+    if (base.globalSlow) stats.globalSlow = Math.min(MAX_GLOBAL_SLOW, base.globalSlow + m.airconSlow);
+    // ★강화(판 안)와 숙련도(판 밖)는 같은 항목을 올리고 서로 곱해진다
+    const mastery = Math.min(MASTERY.max, Math.max(0, this.cfg.mastery?.[id] ?? 0));
+    if (stars > 0 || mastery > 0) {
+      const k = (1 + STAR.power * stars) * (1 + MASTERY.power * mastery);
+      const sk = (1 + STAR.support * stars) * (1 + MASTERY.support * mastery);
       stats.damage *= k;
       if (stats.dot) stats.dot = { ...stats.dot, dps: stats.dot.dps * k };
       if (stats.burn) stats.burn = { ...stats.burn, dps: stats.burn.dps * k };
@@ -322,7 +352,7 @@ export class Game {
       if (stats.interest) stats.interest = { ...stats.interest, max: Math.round(stats.interest.max * k) };
       if (stats.buff) stats.buff *= sk;
       if (stats.dmgBuff) stats.dmgBuff *= sk;
-      if (stats.globalSlow) stats.globalSlow = Math.min(0.6, stats.globalSlow * sk);
+      if (stats.globalSlow) stats.globalSlow = Math.min(MAX_GLOBAL_SLOW, stats.globalSlow * sk);
       if (stats.globalVuln) stats.globalVuln *= sk;
       if (stats.hackVuln) stats.hackVuln = 1 + (stats.hackVuln - 1) * sk;
     }
@@ -382,14 +412,32 @@ export class Game {
     return { ok: true };
   }
 
-  /** 카드 3장을 뽑는다. 뒤 웨이브일수록 희귀·전설이 잘 나온다 */
-  private drawCards(): CardDef[] {
+  /** 지금 내민 카드를 돈을 내고 다시 뽑는다 (내민 카드마다 한 번). 방금 본 카드는 다시 나오지 않는다 */
+  private rerollCards(): CommandResult {
+    const cost = this.cfg.cardRerollCost;
+    if (!this.offer || cost === undefined) return { ok: false, reason: 'phase' };
+    if (this.rerolled) return { ok: false, reason: 'used' };
+    if (this.money < cost) return { ok: false, reason: 'money' };
+    const fresh = this.drawCards(this.offer);
+    if (!fresh.length) return { ok: false, reason: 'used' };
+    this.money -= cost;
+    this.offer = fresh;
+    this.rerolled = true;
+    this.events.push({ type: 'cardOffer' });
+    return { ok: true };
+  }
+
+  /** 카드를 뽑는다 (기본 3장). 뒤 웨이브일수록 희귀·전설이 잘 나온다. exclude: 다시 뽑을 때 빼는 카드 */
+  private drawCards(exclude: CardDef[] = []): CardDef[] {
+    const deck = this.cfg.deck;
     const pool = (this.cfg.cards ?? []).filter(
-      (c) => this.cardCount(c.id) < c.max && (c.hp === undefined || c.hp >= 0 || this.hp > -c.hp),
+      (c) => this.cardCount(c.id) < c.max && (c.hp === undefined || c.hp >= 0 || this.hp > -c.hp)
+        && (!deck || !c.needs || c.needs.some((u) => deck.includes(u))) && !exclude.includes(c),
     );
+    const choices = this.cfg.cardChoices ?? 3;
     const weight: Record<CardRarity, number> = { common: 60, rare: 30 + this.wave, legend: 10 + this.wave * 0.5 };
     const out: CardDef[] = [];
-    while (out.length < 3 && pool.length) {
+    while (out.length < choices && pool.length) {
       const rarities = (['common', 'rare', 'legend'] as CardRarity[]).filter((r) => pool.some((c) => c.rarity === r));
       let roll = this.rng() * rarities.reduce((a, r) => a + weight[r], 0);
       let rarity = rarities[rarities.length - 1];
@@ -444,6 +492,7 @@ export class Game {
     const def = this.cfg.units[id];
     const cost = this.placeCost(id);
     this.money -= cost;
+    this.tradeInReady = false;
     this.units.push({
       uid: this.nextUid++, def, level: 0, branch: null, stars: 0, x, y, cooldown: 0, target: 'first', invested: cost, buffMul: 1, tauntTime: 0, tauntSlow: 0,
       rampTarget: 0, rampMul: 1, dmgMul: 1,
@@ -478,6 +527,7 @@ export class Game {
     const u = this.findUnit(uid);
     if (!u) return { ok: false, reason: 'notFound' };
     this.money += this.sellValue(u);
+    if (this.mods.tradeIn > 0) this.tradeInReady = true;
     this.units = this.units.filter((x) => x !== u);
     return { ok: true };
   }
@@ -687,6 +737,7 @@ export class Game {
         const offer = this.drawCards();
         if (offer.length) {
           this.offer = offer;
+          this.rerolled = false;
           this.events.push({ type: 'cardOffer' });
         }
       }
@@ -853,7 +904,11 @@ export class Game {
         if (u.def.kind === 'splash' && lv.splash) {
           const r = lv.splash;
           this.events.push({ type: 'blast', x: t.x, y: t.y, r, color: u.def.color });
-          for (const e of this.enemies) if (e.hp > 0 && dist(e, t) <= r + e.def.radius) this.damage(e, dmg, opts);
+          for (const e of this.enemies) {
+            if (e.hp <= 0 || dist(e, t) > r + e.def.radius) continue;
+            this.damage(e, dmg, opts);
+            if (crit) this.ignite(e, dmg);
+          }
           if (lv.burn) this.zones.push({ x: t.x, y: t.y, r: r * 0.8, dps: lv.burn.dps, time: lv.burn.duration });
         } else {
           // 맞힌 적 모두에게 방어력 깎기와 화상이 들어간다
@@ -872,6 +927,7 @@ export class Game {
           }
           for (const e of hits) {
             this.damage(e, dmg, opts, lv.shred);
+            if (crit) this.ignite(e, dmg);
             if (lv.dot && e.hp > 0 && e.shield <= 0) {
               e.burnDps = Math.max(e.burnDps, lv.dot.dps * this.mods.damage[u.def.id] * this.mods.allDamage * u.dmgMul);
               e.burnTime = lv.dot.duration;
@@ -904,6 +960,13 @@ export class Game {
     this.removeDead();
   }
 
+  /** 발화 카드: 크리티컬로 맞은 적에게 화상을 붙인다 (더 센 화상이 있으면 그대로 둔다) */
+  private ignite(e: Enemy, hit: number): void {
+    if (this.mods.critBurn <= 0 || e.hp <= 0 || e.shield > 0) return;
+    e.burnDps = Math.max(e.burnDps, hit * this.mods.critBurn);
+    e.burnTime = Math.max(e.burnTime, CRIT_BURN_TIME);
+  }
+
   private damage(e: Enemy, amount: number, opts: { crit?: boolean; pierce?: boolean; silent?: boolean; dot?: boolean } = {}, shred = 0): void {
     if (e.hp <= 0 || amount <= 0) return;
     if (e.shield > 0) {
@@ -915,7 +978,9 @@ export class Game {
       return;
     }
     const frozen = e.stunTime > 0 ? e.frozenVuln : 1;
-    const amp = amount * e.hackMul * frozen * this.globalVuln;
+    // 선제 공격 카드: 아직 한 대도 안 맞은 적에게 더 세게 (지속 피해는 제외)
+    const first = !opts.dot && e.hp >= e.maxHp ? 1 + this.mods.firstHit : 1;
+    const amp = amount * e.hackMul * frozen * this.globalVuln * first;
     // 방어력 무시 공격이거나 해킹당한 적은 방어력이 0
     // 식스세븐: 6이면 방어 +6, 7이면 방어 0
     const weighArmor = e.weighMode === 6 ? (e.def.weigh?.six.armor ?? 0) : e.weighMode === 7 ? -e.def.armor : 0;
@@ -924,6 +989,8 @@ export class Game {
     if (shred) e.shred = Math.min(MAX_SHRED, e.shred + shred);
     const dealt = Math.max(amp * 0.25, amp - armor);
     e.hp -= dealt;
+    // 마무리 일격 카드: 체력이 얼마 안 남은 적(보스 제외)은 바로 처치
+    if (this.mods.execute > 0 && !e.def.boss && e.hp > 0 && e.hp <= e.maxHp * this.mods.execute) e.hp = 0;
     if (!opts.silent) this.events.push({ type: 'hit', enemy: e.uid, x: e.x, y: e.y, amount: Math.round(dealt), crit: !!opts.crit });
   }
 
@@ -944,7 +1011,9 @@ export class Game {
       if (!dead.length) return;
       this.enemies = this.enemies.filter((e) => e.hp > 0);
       for (const e of dead) {
-        const reward = Math.max(1, Math.round(
+        // 끈끈이 보상 카드: 감속·기절 중에 죽은 적은 돈을 더 준다
+        const sticky = e.slowTime > 0 || e.stunTime > 0 ? this.mods.slowBounty : 0;
+        const reward = sticky + Math.max(1, Math.round(
           e.def.reward * this.cfg.rewardMul * this.mods.reward * this.bountyMul(e) * (this.activeMod?.rewardMul ?? 1),
         ));
         this.money += reward;

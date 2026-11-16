@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyProgress } from '../src/achievements';
 import { defaultConfig } from '../src/config';
-import { Game } from '../src/core/game';
+import { Game, MASTERY } from '../src/core/game';
 import type { UnitId } from '../src/core/types';
 import { GACHA_UNITS } from '../src/data/units';
 import { STR } from '../src/strings.ko';
@@ -19,7 +19,7 @@ describe('뽑기', () => {
     expect(pull(p, 1, seq(0.5, 0))).toBeNull();
     p.parts = 100;
     const r = pull(p, 1, seq(0.5, 0))!;
-    expect(r[0]).toEqual({ unit: 'stove', rarity: 'rare', duplicate: false, refund: 0 });
+    expect(r[0]).toEqual({ unit: 'stove', rarity: 'rare', duplicate: false, mastery: false, refund: 0 });
     expect(p.parts).toBe(0);
     expect(p.owned).toEqual(['stove']);
   });
@@ -32,12 +32,18 @@ describe('뽑기', () => {
     expect(rarity(0.31)).toBe('rare');
   });
 
-  it('이미 가진 가전이 나오면 부품으로 환급된다', () => {
+  it('이미 가진 가전이 나오면 숙련도가 한 레벨 오르고, 최대 레벨이면 부품으로 환급된다', () => {
     const p = { ...emptyProgress(), parts: 200, owned: ['stove'] };
     const r = pull(p, 1, seq(0.5, 0))!;
-    expect(r[0].duplicate).toBe(true);
-    expect(p.parts).toBe(200 - 100 + GACHA.refund.rare);
+    expect(r[0]).toMatchObject({ duplicate: true, mastery: true, refund: 0 });
+    expect(p.mastery.stove).toBe(1);
+    expect(p.parts).toBe(100);
     expect(p.owned).toEqual(['stove']);
+    p.mastery.stove = MASTERY.max;
+    const r2 = pull(p, 1, seq(0.5, 0))!;
+    expect(r2[0]).toMatchObject({ duplicate: true, mastery: false, refund: GACHA.refund.rare });
+    expect(p.mastery.stove).toBe(MASTERY.max);
+    expect(p.parts).toBe(GACHA.refund.rare);
   });
 
   it('30회 안에 전설이 안 나오면 30회째는 전설 확정이고, 전설이 나오면 횟수가 초기화된다', () => {
@@ -52,7 +58,9 @@ describe('뽑기', () => {
   it('10회 뽑기는 900 부품', () => {
     const p = { ...emptyProgress(), parts: 900 };
     expect(pull(p, 10, seq(0.9, 0))!.length).toBe(10);
-    expect(p.parts).toBe(9 * GACHA.refund.rare); // 첫 장만 새 가전, 나머지 9장은 환급
+    // 첫 장은 새 가전, 다음 5장은 숙련도 +1, 나머지 4장은 환급
+    expect(p.mastery.stove).toBe(MASTERY.max);
+    expect(p.parts).toBe(4 * GACHA.refund.rare);
   });
 
   it('뽑기 대상은 6종이고, 판 보상은 난이도 배율을 따른다', () => {
