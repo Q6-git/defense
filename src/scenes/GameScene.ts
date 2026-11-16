@@ -18,7 +18,7 @@ import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
 import { ANIM_FRAME, MODEL_ANIMS } from '../view3d/anims';
-import { bulkGroup, nextBulkStep } from '../core/bulk';
+import { bulkGroup, forkAll, forkGroup, nextBulkStep } from '../core/bulk';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
@@ -167,9 +167,13 @@ export class GameScene extends Phaser.Scene {
     upgradeAll: Button;
     branchA: Button;
     branchB: Button;
+    /** 갈림길에서 고른 갈래를 같은 종류 가전 모두에 적용할지 (체크 버튼) */
+    forkAll: Button;
     sell: Button;
     target: Button;
   };
+  /** 갈림길 '모두' 체크. 갈래는 되돌릴 수 없어서 가전을 새로 고를 때마다 꺼진다 */
+  private forkAllOn = false;
 
   constructor() {
     super('game');
@@ -597,6 +601,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private select(u: Unit | null): void {
+    if (u !== this.selected) this.forkAllOn = false;
     this.selected = u;
     if (u) {
       this.placing = null;
@@ -655,12 +660,14 @@ export class GameScene extends Phaser.Scene {
     const branchB = button(this, w - 12 - half / 2, 200, half, 46, '', () => this.upgradeSelected(1), THEME.purple, 15);
     branchA.label.setAlign('center');
     branchB.label.setAlign('center');
+    // 갈림길 '모두' 체크: 패널 오른쪽 위 (갈림길에 같은 종류가 2대 이상일 때만 보인다)
+    const forkAllBtn = button(this, w - 12 - 37, 22, 74, 28, '', () => (this.forkAllOn = !this.forkAllOn), THEME.neutral, 14);
     const target = button(this, w / 2, 248, w - 24, 32, '', () => this.cycleTarget(), THEME.neutral, 15);
     const sell = button(this, w / 2, 290, w - 24, 32, '', () => this.sellSelected(), THEME.red, 15);
     const root = this.add.container(x, y, [
-      bg, title, stats, upgrade.container, upgradeAll.container, branchA.container, branchB.container, target.container, sell.container,
+      bg, title, stats, upgrade.container, upgradeAll.container, branchA.container, branchB.container, forkAllBtn.container, target.container, sell.container,
     ]);
-    this.info = { root, title, stats, upgrade, upgradeAll, branchA, branchB, sell, target };
+    this.info = { root, title, stats, upgrade, upgradeAll, branchA, branchB, forkAll: forkAllBtn, sell, target };
   }
 
   /** 고른 가전과 종류·갈래가 같은 가전을 함께 올린다: 갈래 전이면 Lv3까지, 갈래를 골랐으면 ★강화. 갈림길은 직접 고른다 */
@@ -687,6 +694,16 @@ export class GameScene extends Phaser.Scene {
   private upgradeSelected(branch?: 0 | 1): void {
     const u = this.selected;
     if (!u) return;
+    // 갈림길 '모두': 고른 갈래를 갈림길에 와 있는 같은 종류 가전에 한꺼번에
+    if (branch !== undefined && this.forkAllOn && forkGroup(this.sim, u).length >= 2) {
+      const done = forkAll(this.sim, u, branch);
+      this.forkAllOn = false;
+      if (!done.length) return void sfx.play('error');
+      sfx.play('upgrade');
+      for (const x of done) this.upgradeFx(x, branch, false);
+      this.showToast(STR.upgradedAll(STR.branches[u.def.branches![branch].id].full, done.length));
+      return;
+    }
     const star = !!this.sim.upgradeOptions(u)[0]?.star;
     if (!this.sim.apply({ type: 'upgrade', uid: u.uid, branch }).ok) {
       sfx.play('error');
@@ -1152,7 +1169,9 @@ export class GameScene extends Phaser.Scene {
     const br = u && u.branch !== null ? def.branches![u.branch] : null;
     const title = br ? `${br.emoji} ${STR.branches[br.id].full}` : `${def.emoji} ${name.name}`;
     // 이름이 긴 언어에서는 글씨를 줄여 패널 폭에 맞춘다
-    fitText(this.info.title.setFontSize(20).setText(`${title}${u ? `  ${STR.level(level + 1)}${u.stars ? ` ${STR.stars(u.stars)}` : ''}` : ''}`), PANEL_W - 48, 12);
+    // 갈림길에 같은 종류가 여럿이면 오른쪽 위에 '모두' 체크가 들어가서 제목 자리가 줄어든다
+    const forkCount = u ? forkGroup(this.sim, u).length : 0;
+    fitText(this.info.title.setFontSize(20).setText(`${title}${u ? `  ${STR.level(level + 1)}${u.stars ? ` ${STR.stars(u.stars)}` : ''}` : ''}`), PANEL_W - 48 - (forkCount >= 2 ? 80 : 0), 12);
     const s = STR.stats;
     const opts = u ? this.sim.upgradeOptions(u) : [];
     const atFork = opts.length === 2;
@@ -1214,6 +1233,12 @@ export class GameScene extends Phaser.Scene {
     const same = u ? bulkGroup(this.sim, u).length : 0;
     this.info.upgradeAll.container.setVisible(showControls && !atFork && same >= 2);
     if (u) this.info.upgradeAll.setEnabled(nextBulkStep(this.sim, u) !== null);
+    const forkMany = showControls && atFork && forkCount >= 2;
+    this.info.forkAll.container.setVisible(forkMany);
+    if (forkMany) {
+      this.info.forkAll.setText(`${this.forkAllOn ? '☑' : '☐'} ${STR.upgradeAll}`);
+      this.info.forkAll.bg.setStrokeStyle(this.forkAllOn ? 3 : 0, THEME.selected);
+    }
     this.info.branchA.container.setVisible(showControls && atFork);
     this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
@@ -1227,7 +1252,9 @@ export class GameScene extends Phaser.Scene {
         const d = this.sim.dps(id, this.sim.levelStats(id, level, i as 0 | 1), u);
         // 실제로 내는 값 (갈림길 할인·업그레이드 세일 카드 반영)
         const cost = opts[i].cost;
-        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, cost, d.dps ? Math.round(d.dps) : null));
+        // '모두'가 켜져 있으면 몇 대에 적용되는지(돈이 되는 만큼)와 합계를 보여 준다
+        const n = forkMany && this.forkAllOn ? Math.max(1, Math.min(forkCount, Math.floor(this.sim.money / cost))) : 1;
+        b.setText(STR.branchButton(bd.emoji, `${STR.branches[bd.id].name}${n > 1 ? ` ×${n}` : ''}`, cost * n, d.dps ? Math.round(d.dps) : null));
         b.setEnabled(this.sim.money >= cost);
       });
     } else {

@@ -32,3 +32,24 @@ export function nextBulkStep(sim: Game, selected: Unit): BulkStep | null {
   }
   return pick && pick.cost <= sim.money ? pick : null;
 }
+
+/** 고른 가전과 종류가 같고 지금 갈림길에 와 있는(Lv3, 갈래 전) 가전. 고른 가전이 맨 앞 */
+export function forkGroup(sim: Game, selected: Unit): Unit[] {
+  const atFork = (u: Unit) => u.def.id === selected.def.id && sim.upgradeOptions(u).length === 2;
+  if (!atFork(selected)) return [];
+  return [selected, ...sim.units.filter((u) => u !== selected && atFork(u))];
+}
+
+/**
+ * 갈림길 '모두': 플레이어가 고른 갈래를 갈림길에 와 있는 같은 종류 가전에 한꺼번에 적용한다.
+ * 고른 가전부터, 돈이 되는 만큼. 갈래를 정하는 것은 언제나 플레이어다 (대신 골라 주지 않는다).
+ * 갈래를 바꾼 가전들을 돌려준다
+ */
+export function forkAll(sim: Game, selected: Unit, branch: 0 | 1): Unit[] {
+  const done: Unit[] = [];
+  for (const u of forkGroup(sim, selected)) {
+    if (!sim.apply({ type: 'upgrade', uid: u.uid, branch }).ok) break;
+    done.push(u);
+  }
+  return done;
+}
