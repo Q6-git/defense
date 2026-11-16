@@ -294,7 +294,7 @@ export class GameScene extends Phaser.Scene {
     this.pickerLayer = layer;
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
     const box = card(this, width / 2, height / 2, 640, 700, 'center', THEME.bar);
-    const title = text(this, width / 2, 58, `🔌 ${STR.title}`, 36).setOrigin(0.5);
+    const title = fitText(text(this, width / 2, 58, `🔌 ${STR.title}`, 36).setOrigin(0.5), 600);
     layer.add([dim, box, title]);
     const bestiaryBtn = button(this, 1120, 252, 230, 52, STR.bestiaryButton(this.progress.seen.length, BESTIARY.length), () => this.showBestiary(), THEME.green, 19);
     layer.add(bestiaryBtn.container);
@@ -1150,7 +1150,8 @@ export class GameScene extends Phaser.Scene {
     const name = STR.units[id];
     const br = u && u.branch !== null ? def.branches![u.branch] : null;
     const title = br ? `${br.emoji} ${STR.branches[br.id].full}` : `${def.emoji} ${name.name}`;
-    this.info.title.setText(`${title}${u ? `  ${STR.level(level + 1)}${u.stars ? ` ${STR.stars(u.stars)}` : ''}` : ''}`);
+    // 이름이 긴 언어에서는 글씨를 줄여 패널 폭에 맞춘다
+    fitText(this.info.title.setFontSize(20).setText(`${title}${u ? `  ${STR.level(level + 1)}${u.stars ? ` ${STR.stars(u.stars)}` : ''}` : ''}`), PANEL_W - 48, 12);
     const s = STR.stats;
     const opts = u ? this.sim.upgradeOptions(u) : [];
     const atFork = opts.length === 2;
@@ -1200,7 +1201,12 @@ export class GameScene extends Phaser.Scene {
       if (lv.globalSlow) lines.push(`${s.globalSlow} ${to(lv.globalSlow, nx?.globalSlow, pct)}`);
       if (lv.globalVuln) lines.push(`${s.globalVuln} ${to(lv.globalVuln, nx?.globalVuln, (v) => `+${pct(v)}`)}`);
     }
-    this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
+    // 줄이 많으면(갈래 설명 + 지원 수치) 아래 버튼을 가리지 않게 글씨를 줄인다
+    const key = lines.join('\n');
+    if (this.info.stats.text !== key || this.info.stats.getData('lang') !== lang()) {
+      this.info.stats.setData('lang', lang()).setFontSize(15).setText(key).setWordWrapWidth(PANEL_W - 48, true);
+      for (let fs = 15; this.info.stats.height > 142 && fs > 10; fs--) this.info.stats.setFontSize(fs - 1);
+    }
     const showControls = u !== null;
     this.info.upgrade.container.setVisible(showControls && !atFork);
     // '모두'는 종류와 갈래가 같은 가전이 2대 이상일 때만
@@ -1702,7 +1708,7 @@ export class GameScene extends Phaser.Scene {
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
     const box = card(this, width / 2, height / 2, 800, 600, 'center', THEME.bar);
     const title = text(this, width / 2 - 370, 92, STR.gachaTitle, 30).setOrigin(0, 0.5);
-    const parts = text(this, width / 2, 92, STR.gachaParts(p.parts), 20, THEME.gold).setOrigin(0.5);
+    const parts = text(this, width / 2 + 230, 92, STR.gachaParts(p.parts), 20, THEME.gold).setOrigin(1, 0.5);
     const close = button(this, width / 2 + 310, 92, 130, 44, STR.close, () => this.scene.restart({}), THEME.neutral, 18);
     const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}${META.enabled ? `   ·   ${STR.gachaDupNote}` : ''}`, 15, THEME.textSoft).setOrigin(0.5);
     layer.add([dim, box, title, parts, close.container, info]);
