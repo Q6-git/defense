@@ -1571,13 +1571,15 @@ export class GameScene extends Phaser.Scene {
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.55).setOrigin(0).setInteractive();
     // 왼쪽: 이번 판 카드 목록, 오른쪽: 일시정지 메뉴
     const cx = 920;
-    const box = card(this, cx, height / 2, 420, 370, 'center', THEME.bar);
-    const title = text(this, cx, height / 2 - 130, `⏸️ ${STR.paused}`, 34).setOrigin(0.5);
-    const resume = button(this, cx, height / 2 - 50, 320, 54, STR.resume, () => this.setPaused(false), THEME.green, 21);
-    const restart = button(this, cx, height / 2 + 20, 320, 50, STR.restartRun, () => this.leaveRun(true), THEME.neutral, 18);
-    const quit = button(this, cx, height / 2 + 84, 320, 50, STR.quit, () => this.leaveRun(false), THEME.red, 18);
-    const hint = text(this, cx, height / 2 + 148, STR.pauseHint, 14, THEME.textSoft).setOrigin(0.5);
-    this.pauseLayer = this.add.container(0, 0, [dim, box, title, resume.container, restart.container, quit.container, hint, ...this.cardListPanel(360, height / 2)]).setDepth(70);
+    const box = card(this, cx, height / 2, 420, 510, 'center', THEME.bar);
+    const title = text(this, cx, height / 2 - 205, `⏸️ ${STR.paused}`, 34).setOrigin(0.5);
+    const resume = button(this, cx, height / 2 - 130, 320, 54, STR.resume, () => this.setPaused(false), THEME.green, 21);
+    const restart = button(this, cx, height / 2 - 62, 320, 50, STR.restartRun, () => this.leaveRun(true), THEME.neutral, 18);
+    const quit = button(this, cx, height / 2, 320, 50, STR.quit, () => this.leaveRun(false), THEME.red, 18);
+    // 플레이 중에도 음량을 바꿀 수 있게 (배경음은 일시정지 중에도 계속 나서 바로 들린다)
+    const volume = this.volumeRows(cx, height / 2 + 78);
+    const hint = fitText(text(this, cx, height / 2 + 218, STR.pauseHint, 14, THEME.textSoft).setOrigin(0.5), 390);
+    this.pauseLayer = this.add.container(0, 0, [dim, box, title, resume.container, restart.container, quit.container, ...volume, hint, ...this.cardListPanel(360, height / 2)]).setDepth(70);
   }
 
   /** 새로 달성한 업적이 있으면 알림을 띄우고 진행 상황을 저장한다 */
@@ -1778,10 +1780,15 @@ export class GameScene extends Phaser.Scene {
       b.bg.setStrokeStyle(on ? 4 : 2, on ? THEME.selected : THEME.cardLine);
       layer.add(b.container);
     });
-    // 음량: 배경음과 효과음을 따로, − / + 로 한 칸씩
-    const volumeRow = (ch: Channel, label: string, y: number, test: () => void) => {
-      const name = text(this, width / 2 - 210, y, label, 19).setOrigin(0, 0.5);
-      const bar = text(this, width / 2 + 70, y, '', 22, THEME.gold).setOrigin(0.5);
+    layer.add(this.volumeRows(width / 2, 194 + LANGS.length * 56 + 30));
+  }
+
+  /** 음량 조절 두 줄 (배경음, 효과음): − / + 로 한 칸씩. 설정 화면과 일시정지 화면이 함께 쓴다. cx는 가운데, y는 첫 줄 */
+  private volumeRows(cx: number, y: number): Phaser.GameObjects.GameObject[] {
+    const out: Phaser.GameObjects.GameObject[] = [];
+    const row = (ch: Channel, label: string, ry: number) => {
+      const name = fitText(text(this, cx - 180, ry, label, 19).setOrigin(0, 0.5), 140);
+      const bar = text(this, cx + 75, ry, '', 22, THEME.gold).setOrigin(0.5);
       const show = () => {
         const n = Math.round(sfx.volume(ch) * VOLUME_STEPS);
         bar.setText(`${'■'.repeat(n)}${'□'.repeat(VOLUME_STEPS - n)}`);
@@ -1789,16 +1796,17 @@ export class GameScene extends Phaser.Scene {
       const change = (d: number) => {
         sfx.setVolume(ch, sfx.volume(ch) + d / VOLUME_STEPS);
         show();
-        test();
+        // 효과음은 바꾼 크기로 한 번 들려준다 (배경음은 틀어져 있어서 바로 들린다)
+        if (ch === 'sfx') sfx.play('coin');
       };
-      const down = button(this, width / 2 - 30, y, 48, 44, '−', () => change(-1), THEME.neutral, 24);
-      const up = button(this, width / 2 + 170, y, 48, 44, '+', () => change(1), THEME.neutral, 24);
+      const down = button(this, cx - 10, ry, 48, 44, '−', () => change(-1), THEME.neutral, 24);
+      const up = button(this, cx + 160, ry, 48, 44, '+', () => change(1), THEME.neutral, 24);
       show();
-      layer.add([name, bar, down.container, up.container]);
+      out.push(name, bar, down.container, up.container);
     };
-    const vy = 194 + LANGS.length * 56 + 30;
-    volumeRow('bgm', STR.bgm, vy, () => undefined);
-    volumeRow('sfx', STR.sound, vy + 58, () => sfx.play('coin'));
+    row('bgm', STR.bgm, y);
+    row('sfx', STR.sound, y + 56);
+    return out;
   }
 
   /** 지금 상황에 맞는 배경음을 고른다: 시작 화면, 웨이브(대기 중에는 잔잔하게), 보스, 「L을 가져가!」 */
