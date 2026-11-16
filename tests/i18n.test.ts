@@ -20,12 +20,13 @@ function allText(v: unknown): string {
   return '';
 }
 
-const others = LANGS.map((l) => l.id).filter((id) => id !== 'ko');
+const others = (Object.keys(STRINGS) as LangId[]).filter((id) => id !== 'ko');
 
 describe('언어', () => {
-  it('설정에 나오는 언어마다 문구 묶음이 있다', () => {
-    expect(LANGS.map((l) => l.id).sort()).toEqual(Object.keys(STRINGS).sort());
-    expect(LANGS.length).toBe(5);
+  it('설정에 나오는 언어는 4개이고 모두 문구 묶음이 있다 (따갈로그어는 문구만 있고 빼 둠)', () => {
+    expect(LANGS.map((l) => l.id)).toEqual(['ko', 'en', 'zh', 'ja']);
+    for (const l of LANGS) expect(STRINGS[l.id], l.id).toBeDefined();
+    expect(Object.keys(STRINGS)).toContain('tl');
   });
 
   it.each(others)('%s: 한국어와 키가 모두 같다 (카드·적·업적 등 목록 포함)', (id) => {
@@ -56,8 +57,9 @@ describe('언어', () => {
     expect(detectLang(['ko-KR', 'en-US'])).toBe('ko');
     expect(detectLang(['ja'])).toBe('ja');
     expect(detectLang(['zh-CN'])).toBe('zh');
-    expect(detectLang(['fil-PH'])).toBe('tl');
-    expect(detectLang(['tl'])).toBe('tl');
+    // 빼 둔 언어는 건너뛴다
+    expect(detectLang(['fil-PH'])).toBe('en');
+    expect(detectLang(['tl', 'ko'])).toBe('ko');
     expect(detectLang(['fr-FR', 'ja-JP'])).toBe('ja');
     expect(detectLang(['fr-FR'])).toBe('en');
     expect(detectLang([])).toBe('en');

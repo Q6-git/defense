@@ -9,30 +9,36 @@ import { STR as zh } from './strings.zh';
 
 export type LangId = 'ko' | 'en' | 'zh' | 'ja' | 'tl';
 
-/** 설정 화면에 나오는 순서. 이름은 그 언어로 적는다 */
+/**
+ * 고를 수 있는 언어 (설정 화면에 나오는 순서). 이름은 그 언어로 적는다.
+ * 따갈로그어(tl)는 문구는 있지만 일단 빼 두었다. 다시 넣으려면 { id: 'tl', name: 'Tagalog' } 한 줄을 더한다
+ */
 export const LANGS: { id: LangId; name: string }[] = [
   { id: 'ko', name: '한국어' },
   { id: 'en', name: 'English' },
   { id: 'zh', name: '简体中文' },
   { id: 'ja', name: '日本語' },
-  { id: 'tl', name: 'Tagalog' },
 ];
 
+/** 문구가 준비된 언어 전부 (고를 수 없는 언어도 포함) */
 export const STRINGS: Record<LangId, Strings> = { ko, en, zh, ja, tl };
 
-/** 브라우저 언어 목록에서 지원하는 첫 언어를 고른다. 없으면 영어 (fil은 따갈로그어로 본다) */
+const selectable = (id: string): id is LangId => LANGS.some((l) => l.id === id);
+
+/** 브라우저 언어 목록에서 고를 수 있는 첫 언어를 고른다. 없으면 영어 (fil은 따갈로그어로 본다) */
 export function detectLang(preferred: readonly string[]): LangId {
   for (const p of preferred) {
     const code = p.toLowerCase().split('-')[0];
-    if (code === 'fil') return 'tl';
-    if (code in STRINGS) return code as LangId;
+    const id = code === 'fil' ? 'tl' : code;
+    if (selectable(id)) return id;
   }
   return 'en';
 }
 
 function initial(): LangId {
   const saved = loadLang();
-  if (saved in STRINGS) return saved as LangId;
+  // 전에 고른 언어가 지금은 고를 수 없으면(빼 둔 언어) 브라우저 언어를 따른다
+  if (selectable(saved)) return saved;
   return typeof navigator === 'undefined' ? 'ko' : detectLang(navigator.languages ?? [navigator.language]);
 }
 
