@@ -1,9 +1,27 @@
 import type { PlaceError } from './core/game';
 import type { AbilityId, DifficultyId, TargetMode, UnitId } from './core/types';
 
-// 게임 안에 표시되는 모든 텍스트. 다른 언어를 추가할 때는 같은 키로 파일을 하나 더 만든다.
+// 게임 안에 표시되는 모든 텍스트 (한국어, 기준 언어). 다른 언어는 같은 키로 strings.<언어>.ts에 있고, 고르는 곳은 src/i18n.ts
 export const STR = {
   title: '가전 수비대 vs 하수구 군단',
+  settingsButton: '⚙️ 설정',
+  settingsTitle: '⚙️ 설정',
+  language: '🌐 언어',
+  sound: '🔊 효과음',
+  soundOn: '켜짐',
+  soundOff: '꺼짐',
+  /** 이름을 안 정했을 때 붙는 이름의 앞부분 (뒤에 숫자 4개. 합쳐서 8글자 이하) */
+  namePrefix: '수비대',
+  dpsMax: (n: number) => `(최대 ${n})`,
+  researchPerLevel: (s: string) => `레벨당 ${s}`,
+  /** 가전 도감의 레벨별 한 줄 요약 */
+  codex: {
+    dps: (n: number) => `⚔️DPS ${n}`,
+    buff: (n: number) => `공속 +${n}%`,
+    dmgBuff: (n: number) => `공격력 +${n}%`,
+    income: (n: number) => `수입 💰${n}`,
+    globalSlow: (n: number) => `전체 감속 ${n}%`,
+  },
   hp: '❤️',
   money: '💰',
   wave: (n: number, total: number) => `🌊 ${n}/${total}`,
@@ -318,6 +336,9 @@ export const STR = {
     knockback: '밀어내기',
     freeze: '얼리기',
     bounty: '주변 처치 보상',
+    seconds: (v: string) => `${v}초`,
+    dotLine: (dps: number, sec: number) => `초당 ${dps} (${sec}초)`,
+    chainCount: (n: number) => `${n}마리`,
   },
   pierceArmor: '방어 무시',
   placeHint: '맵을 눌러 설치하세요 · 계속 놓을 수 있어요 (Esc·우클릭으로 끝)',
@@ -350,3 +371,6 @@ const TARGET_NAMES: Record<TargetMode, string> = {
   strong: '가장 강한',
   close: '가장 가까운',
 };
+
+/** 모든 언어 파일이 맞춰야 하는 모양 */
+export type Strings = typeof STR;

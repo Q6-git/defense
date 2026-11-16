@@ -13,7 +13,7 @@ import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achieve
 import { loadBest, loadDeck, loadName, loadProgress, loadRanking, loadSetup, saveBest, saveDeck, saveName, saveProgress, saveRanking, saveSetup, type RunSetup } from '../storage';
 import { addRank, cleanName, randomName, rankList, topUnits, type RankEntry } from '../ranking';
 import { fetchOnline, onlineEnabled, renameOnline, submitOnline } from '../online/ranking';
-import { STR } from '../strings.ko';
+import { LANGS, lang, setLang, STR } from '../i18n';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
@@ -22,7 +22,7 @@ import { bulkGroup, nextBulkStep } from '../core/bulk';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
-import { baseScale, button, card, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
+import { baseScale, button, card, fitText, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
 
 const PANEL_X = 1040;
 const PANEL_W = 240;
@@ -44,7 +44,7 @@ function easeOutBack(x: number): number {
 
 /** 갈래별 공격 모양: 빠른 공격은 투사체 대신 빛나는 탄도로 그린다 */
 /** DPS 표시: 오르는 가전(그릴)은 최대치도 */
-const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.max > d.dps + 0.5 ? `(최대 ${Math.round(d.max)})` : ''}`;
+const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.max > d.dps + 0.5 ? STR.dpsMax(Math.round(d.max)) : ''}`;
 
 /** 한 판에 들고 갈 수 있는 가전 수 */
 const DECK_SIZE = 6;
@@ -302,6 +302,8 @@ export class GameScene extends Phaser.Scene {
     layer.add(rankBtn.container);
     const researchBtn = button(this, 1120, 380, 230, 52, STR.researchButton, () => this.showResearch(), THEME.red, 19);
     layer.add(researchBtn.container);
+    const settingsBtn = button(this, 1120, 444, 230, 52, STR.settingsButton, () => this.showSettings(), THEME.neutral, 19);
+    layer.add(settingsBtn.container);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
     const deckBtn = button(this, 1120, 124, 230, 52, STR.deckButton, () => this.showDeck(), THEME.blue, 19);
@@ -340,7 +342,7 @@ export class GameScene extends Phaser.Scene {
       const x = width / 2 + (i - (MAP_ORDER.length - 1) / 2) * gap;
       const b = button(this, x, 160, gap - 8, 66, '', () => this.changeSetup({ map: id }), id === this.setup.map ? 0xfff0c8 : THEME.white, 16);
       const m = STR.maps[id];
-      b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(14).setLineSpacing(2);
+      fitText(b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(14).setLineSpacing(2), gap - 16);
       b.bg.setStrokeStyle(id === this.setup.map ? 4 : 2, id === this.setup.map ? THEME.selected : THEME.cardLine);
       layer.add(b.container);
     });
@@ -613,7 +615,7 @@ export class GameScene extends Phaser.Scene {
       const y = 122 + Math.floor(i / 2) * 76;
       const btn = button(this, x, y, 104, 68, '', () => this.choosePlacing(id), THEME.white, 14);
       const ic = icon(this, -33, 0, id, def.emoji, 36);
-      btn.label.setPosition(18, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center');
+      fitText(btn.label.setPosition(18, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center'), 64);
       btn.container.add(ic);
       return { id, btn };
     });
@@ -626,7 +628,7 @@ export class GameScene extends Phaser.Scene {
       const y = 352;
       const btn = button(this, x, y, 104, 56, '', () => this.useAbility(id), THEME.purple, 16);
       const ic = icon(this, -30, 0, `ab_${id}`, def.emoji, 40);
-      btn.label.setPosition(16, 0).setText(STR.abilities[id].name);
+      fitText(btn.label.setPosition(16, 0).setText(STR.abilities[id].name), 62);
       const shade = this.add.rectangle(-52, 24, 104, 52, 0x2b2230, 0.55).setOrigin(0, 1);
       const timer = text(this, 0, -2, '', 22, THEME.textOnDark).setOrigin(0.5);
       btn.container.add([ic, shade, timer]);
@@ -1184,12 +1186,12 @@ export class GameScene extends Phaser.Scene {
       if (lv.splash) lines.push(`${s.splash} ${Math.round(lv.splash)}`);
       if (lv.slow) lines.push(`${s.slow} ${to(1 - lv.slow, nx?.slow === undefined ? undefined : 1 - nx.slow, pct)}`);
       if (lv.knockback) lines.push(`${s.knockback} ${to(lv.knockback, nx?.knockback, (v) => String(Math.round(v)))}`);
-      if (lv.freeze) lines.push(`${s.freeze} ${to(lv.freeze, nx?.freeze, (v) => `${n1(v)}초`)}`);
+      if (lv.freeze) lines.push(`${s.freeze} ${to(lv.freeze, nx?.freeze, (v) => s.seconds(n1(v)))}`);
       if (lv.buff) lines.push(`${s.buff} ${to(lv.buff, nx?.buff, pct)}`);
       if (lv.income) lines.push(`${s.income} ${to(lv.income, nx?.income, (v) => `💰${v}`)}`);
       if (lv.bounty) lines.push(`${s.bounty} ${to(lv.bounty.mul - 1, nx?.bounty ? nx.bounty.mul - 1 : undefined, (v) => `+${pct(v)}`)}`);
-      if (lv.dot) lines.push(`${s.dot} 초당 ${lv.dot.dps} (${lv.dot.duration}초)`);
-      if (lv.chainHits) lines.push(`${s.chain} ${lv.chainHits}마리`);
+      if (lv.dot) lines.push(`${s.dot} ${s.dotLine(lv.dot.dps, lv.dot.duration)}`);
+      if (lv.chainHits) lines.push(`${s.chain} ${s.chainCount(lv.chainHits)}`);
       if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${to(lv.dmgBuff, nx?.dmgBuff, pct)}`);
       if (lv.shred) lines.push(`${s.shred} ${lv.shred}`);
       if (lv.globalSlow) lines.push(`${s.globalSlow} ${to(lv.globalSlow, nx?.globalSlow, pct)}`);
@@ -1736,6 +1738,37 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** 설정 화면: 언어와 효과음 */
+  private showSettings(): void {
+    const { width, height } = this.sim.cfg.map;
+    const layer = this.modalLayer();
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 560, 560, 'center', THEME.bar);
+    const title = text(this, width / 2 - 250, 122, STR.settingsTitle, 30).setOrigin(0, 0.5);
+    const close = button(this, width / 2 + 190, 122, 130, 44, STR.close, () => layer.destroy(), THEME.green, 18);
+    const langLabel = text(this, width / 2, 176, STR.language, 18, THEME.textSoft).setOrigin(0.5);
+    layer.add([dim, box, title, close.container, langLabel]);
+    LANGS.forEach((l, i) => {
+      const on = l.id === lang();
+      // 언어 이름은 그 언어로 적는다 (지금 언어를 못 읽어도 찾을 수 있게). 고르면 화면을 새 언어로 다시 그린다
+      const b = button(this, width / 2, 226 + i * 58, 420, 50, l.name, () => {
+        if (on) return;
+        setLang(l.id);
+        this.scene.restart({});
+      }, on ? 0xfff0c8 : THEME.white, 20);
+      b.bg.setStrokeStyle(on ? 4 : 2, on ? THEME.selected : THEME.cardLine);
+      layer.add(b.container);
+    });
+    const soundY = 226 + LANGS.length * 58 + 44;
+    const soundLabel = text(this, width / 2, soundY - 40, STR.sound, 18, THEME.textSoft).setOrigin(0.5);
+    const sound = button(this, width / 2, soundY, 420, 50, sfx.muted ? STR.soundOff : STR.soundOn, () => {
+      const muted = sfx.toggleMute();
+      sound.setText(muted ? STR.soundOff : STR.soundOn);
+      this.muteBtn.setText(muted ? '🔇' : '🔊');
+    }, THEME.blue, 20);
+    layer.add([soundLabel, sound.container]);
+  }
+
   /** 연구 화면: 부품으로 올리는 영구 강화 */
   private showResearch(): void {
     const { width, height } = this.sim.cfg.map;
@@ -1758,7 +1791,7 @@ export class GameScene extends Phaser.Scene {
       const row = new RoundBox(this, width / 2, y, 760, 62, lv >= max ? 0xfff0c8 : THEME.white, 12).setStrokeStyle(2, lv >= max ? THEME.selected : THEME.cardLine);
       const name = text(this, width / 2 - 360, y - 12, `${r.emoji} ${info.name}`, 19).setOrigin(0, 0.5);
       const now = lv > 0 ? `  (${info.now(r.step * lv)})` : '';
-      const desc = text(this, width / 2 - 360, y + 14, `${max > 1 ? `레벨당 ${info.desc(r.step)}` : info.desc(r.step)}${now}`, 14, THEME.textSoft).setOrigin(0, 0.5);
+      const desc = text(this, width / 2 - 360, y + 14, `${max > 1 ? STR.researchPerLevel(info.desc(r.step)) : info.desc(r.step)}${now}`, 14, THEME.textSoft).setOrigin(0, 0.5);
       const level = text(this, width / 2 + 150, y, STR.researchLevel(lv, max), 17, lv ? THEME.gold : THEME.textSoft).setOrigin(0.5);
       const buy = button(this, width / 2 + 285, y, 150, 44, cost === null ? STR.researchDone : STR.researchBuy(cost), () => {
         if (!buyResearch(p, r.id)) return sfx.play('error');
@@ -1955,11 +1988,11 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
       // 레벨별 성능: 공격형은 DPS, 지원형은 효과
       const main = (lv: UnitLevel) => {
         const d = this.sim.dps(id, lv);
-        if (d.dps) return `⚔️DPS ${Math.round(d.dps)}`;
-        if (lv.buff) return `공속 +${Math.round(lv.buff * 100)}%`;
-        if (lv.dmgBuff) return `공격력 +${Math.round(lv.dmgBuff * 100)}%`;
-        if (lv.income) return `수입 💰${lv.income}`;
-        if (lv.globalSlow) return `전체 감속 ${Math.round(lv.globalSlow * 100)}%`;
+        if (d.dps) return STR.codex.dps(Math.round(d.dps));
+        if (lv.buff) return STR.codex.buff(Math.round(lv.buff * 100));
+        if (lv.dmgBuff) return STR.codex.dmgBuff(Math.round(lv.dmgBuff * 100));
+        if (lv.income) return STR.codex.income(lv.income);
+        if (lv.globalSlow) return STR.codex.globalSlow(Math.round(lv.globalSlow * 100));
         return '';
       };
       const lines = def.levels.map((_, i) => STR.levelLine(i + 1, main(this.sim.levelStats(id, i)), Math.round(def.levels[i].range), def.levels[i].cost));
@@ -2150,7 +2183,7 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
   /** 랭킹에 쓰는 이름. 아직 안 정했으면 '수비대1234' 같은 이름을 하나 지어 둔다 */
   private playerName(): string {
     let name = loadName();
-    if (!name) saveName((name = randomName()));
+    if (!name) saveName((name = randomName(Math.random, STR.namePrefix)));
     return name;
   }
 

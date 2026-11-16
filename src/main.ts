@@ -2,7 +2,7 @@ import '@fontsource/jua';
 import Phaser from 'phaser';
 import { GameScene } from './scenes/GameScene';
 import { prepareSprites, spriteUrls } from './spriteLoader';
-import { STR } from './strings.ko';
+import { STR } from './i18n';
 
 /** 화면에 나올 수 있는 글자를 모두 모은다 (함수로 된 문구는 소스 안의 글자를 쓴다) */
 function allText(v: unknown): string {
