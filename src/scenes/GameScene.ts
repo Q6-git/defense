@@ -1213,8 +1213,10 @@ export class GameScene extends Phaser.Scene {
         const bd = def.branches![i];
         // 갈래 DPS는 버튼 안에 (설명 줄이 길어서 패널에는 자리가 없다)
         const d = this.sim.dps(id, this.sim.levelStats(id, level, i as 0 | 1), u);
-        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, bd.cost, d.dps ? Math.round(d.dps) : null));
-        b.setEnabled(this.sim.money >= bd.cost);
+        // 실제로 내는 값 (갈림길 할인·업그레이드 세일 카드 반영)
+        const cost = opts[i].cost;
+        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, cost, d.dps ? Math.round(d.dps) : null));
+        b.setEnabled(this.sim.money >= cost);
       });
     } else {
       const cost = opts[0]?.cost ?? null;
