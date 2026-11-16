@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import { SPRITES } from '../sprites';
 
 /** 둥근 한글 글꼴 '주아'. 못 불러오면 시스템 글꼴로 대신 그린다 */
-export const FONT = 'Jua, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", NanumSquareRound, sans-serif';
+export const FONT = 'Jua, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", NanumSquareRound, '
+  // 주아에 없는 글자(일본어 가나, 한자)는 기기의 글꼴로 그린다
+  + '"Hiragino Sans", "Yu Gothic", Meiryo, "Noto Sans JP", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", sans-serif';
 
 /** 밝은 캐주얼 테마 색. 화면 전체 색은 여기서만 바꾼다 */
 export const THEME = {
@@ -32,6 +34,12 @@ export const THEME = {
 
 export function text(scene: Phaser.Scene, x: number, y: number, s: string, size = 18, color: string = THEME.text) {
   return scene.add.text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color });
+}
+
+/** 글자가 maxW보다 넓으면 들어갈 때까지 글씨를 줄인다 (언어마다 길이가 달라서). 가장 작게는 min */
+export function fitText<T extends Phaser.GameObjects.Text>(label: T, maxW: number, min = 9): T {
+  for (let fs = parseInt(String(label.style.fontSize), 10); label.width > maxW && fs > min; fs--) label.setFontSize(fs - 1);
+  return label;
 }
 
 /** 밝은 색이면 true (그 위에는 진한 글자를 쓴다) */

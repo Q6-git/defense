@@ -3,6 +3,8 @@ import { defaultConfig } from '../src/config';
 import type { CardDef } from '../src/core/cards';
 import { Game } from '../src/core/game';
 import { CARDS } from '../src/data/cards';
+import type { UnitId } from '../src/core/types';
+import { STR } from '../src/strings.ko';
 
 const card = (id: string) => CARDS.find((c) => c.id === id)!;
 
@@ -162,12 +164,156 @@ describe('보상 카드', () => {
     expect(g.hp).toBe(hp - 7);
   });
 
-  it('카드 29장: id가 겹치지 않고 등급별 장수가 맞다', () => {
-    expect(new Set(CARDS.map((c) => c.id)).size).toBe(29);
+  it('카드 41장: id가 겹치지 않고 등급별 장수가 맞고, 모두 이름과 설명이 있다', () => {
+    expect(new Set(CARDS.map((c) => c.id)).size).toBe(41);
     const count = (f: (c: CardDef) => boolean) => CARDS.filter(f).length;
-    expect(count((c) => c.rarity === 'common')).toBe(11);
-    expect(count((c) => c.rarity === 'rare' && !c.risk)).toBe(7);
-    expect(count((c) => !!c.risk)).toBe(5);
-    expect(count((c) => c.rarity === 'legend')).toBe(6);
+    expect(count((c) => c.rarity === 'common')).toBe(17);
+    expect(count((c) => c.rarity === 'rare' && !c.risk)).toBe(11);
+    expect(count((c) => !!c.risk)).toBe(6);
+    expect(count((c) => c.rarity === 'legend')).toBe(7);
+    for (const c of CARDS) expect(STR.cards[c.id]?.name, c.id).toBeTruthy();
+  });
+
+  it('덱에 없는 가전 전용 카드는 나오지 않는다', () => {
+    const offered = (deck: UnitId[] | undefined) => {
+      const seen = new Set<string>();
+      for (let seed = 1; seed <= 60; seed++) {
+        const g = new Game({ ...defaultConfig(), seed, deck });
+        g.wave = 2;
+        g.phase = 'intermission';
+        g.apply({ type: 'startWave' });
+        clear(g);
+        for (const c of g.offer ?? []) seen.add(c.id);
+      }
+      return seen;
+    };
+    const deck: UnitId[] = ['stove', 'iron', 'washer'];
+    const seen = offered(deck);
+    expect(seen.size).toBeGreaterThan(10);
+    for (const id of seen) {
+      const needs = card(id).needs;
+      if (needs) expect(needs.some((u) => deck.includes(u)), id).toBe(true);
+    }
+    expect(seen.has('toast')).toBe(false);
+    // 덱을 모르면(테스트·봇) 모든 카드가 후보다
+    expect(offered(undefined).has('toast')).toBe(true);
+  });
+
+  it('뽑기 가전 카드: 공격력, 보조배터리 버프, 에어컨 감속', () => {
+    const g = game();
+    g.apply({ type: 'place', unit: 'stove', x: 560, y: 240 });
+    g.apply({ type: 'place', unit: 'battery', x: 300, y: 240 });
+    g.apply({ type: 'place', unit: 'aircon', x: 360, y: 240 });
+    const [stove, battery, aircon] = g.units;
+    give(g, 'bluefire');
+    give(g, 'cells');
+    give(g, 'filter');
+    expect(g.stats(stove).damage).toBeCloseTo(6 * 1.2);
+    expect(g.stats(battery).dmgBuff).toBeCloseTo(0.28);
+    expect(g.stats(aircon).globalSlow).toBeCloseTo(0.24);
+  });
+
+  it('다시 뽑기: 돈을 내고 새 카드로 바꾸고, 내민 카드마다 한 번만 된다', () => {
+    const g = new Game({ ...defaultConfig(), seed: 5, startMoney: 1000, cardRerollCost: 60 });
+    g.wave = 2;
+    g.phase = 'intermission';
+    g.apply({ type: 'startWave' });
+    clear(g);
+    const first = g.offer!;
+    const money = g.money;
+    expect(g.apply({ type: 'rerollCards' }).ok).toBe(true);
+    expect(g.money).toBe(money - 60);
+    expect(g.offer!.length).toBe(3);
+    expect(g.offer!.some((c) => first.includes(c))).toBe(false);
+    expect(g.apply({ type: 'rerollCards' })).toEqual({ ok: false, reason: 'used' });
+    // 다음 카드 때는 다시 할 수 있다
+    g.apply({ type: 'skipCard' });
+    for (let i = 0; i < 3; i++) {
+      g.apply({ type: 'startWave' });
+      clear(g);
+    }
+    expect(g.offer).not.toBeNull();
+    g.money = 10;
+    expect(g.apply({ type: 'rerollCards' })).toEqual({ ok: false, reason: 'money' });
+    g.money = 60;
+    expect(g.apply({ type: 'rerollCards' }).ok).toBe(true);
+    // 비용이 정해지지 않은 판에서는 다시 뽑을 수 없다
+    const plain = game();
+    plain.offer = [card('toast')];
+    expect(plain.apply({ type: 'rerollCards' }).ok).toBe(false);
+  });
+
+  it('발화: 크리티컬로 맞은 적이 불탄다', () => {
+    const g = new Game({ ...defaultConfig(), seed: 5, startMoney: 1e6, critChance: 1 });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    give(g, 'ignite');
+    g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
+    const e = g.spawnEnemy('grease', 570);
+    g.update(1 / 60);
+    const hit = 12 * 2.5;
+    expect(e.burnDps).toBeCloseTo(hit * 0.25);
+    expect(e.burnTime).toBeGreaterThan(2.9);
+  });
+
+  it('끈끈이 보상: 감속 중에 죽은 적은 돈을 더 준다', () => {
+    const g = game();
+    give(g, 'sticky');
+    g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
+    g.spawnEnemy('grease', 0); // 웨이브가 끝나지 않도록 (클리어 보너스가 섞이지 않게)
+    const kill = (slowed: boolean) => {
+      const e = g.spawnEnemy('grease', 570);
+      e.hp = 1;
+      if (slowed) e.slowTime = 1;
+      const money = g.money;
+      g.update(1 / 60);
+      expect(g.enemies.includes(e)).toBe(false);
+      return g.money - money;
+    };
+    const plain = kill(false);
+    g.update(1); // 토스터 재장전
+    expect(kill(true)).toBe(plain + 2);
+  });
+
+  it('보상 판매: 가전을 팔면 다음 설치 한 번이 반값이다', () => {
+    const g = game();
+    give(g, 'tradein');
+    g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
+    expect(g.placeCost('microwave')).toBe(220);
+    g.apply({ type: 'sell', uid: g.units[0].uid });
+    expect(g.placeCost('microwave')).toBe(110);
+    const money = g.money;
+    g.apply({ type: 'place', unit: 'microwave', x: 560, y: 240 });
+    expect(g.money).toBe(money - 110);
+    expect(g.units[0].invested).toBe(110);
+    expect(g.placeCost('microwave')).toBe(220);
+  });
+
+  it('선제 공격: 체력이 가득한 적에게만 피해가 늘어난다', () => {
+    const g = game();
+    give(g, 'firsthit');
+    g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
+    const e = g.spawnEnemy('grease', 570);
+    const hp = e.hp;
+    g.update(1 / 60);
+    expect(hp - e.hp).toBeCloseTo(12 * 1.4);
+    const mid = e.hp;
+    g.update(0.75);
+    expect(mid - e.hp).toBeCloseTo(12);
+  });
+
+  it('마무리 일격: 체력 12% 이하가 된 적은 바로 죽고, 보스는 아니다', () => {
+    const g = game();
+    give(g, 'execute');
+    g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
+    const e = g.spawnEnemy('grease', 570);
+    e.hp = e.maxHp * 0.12 + 10;
+    g.update(1 / 60);
+    expect(g.enemies.includes(e)).toBe(false);
+    const boss = g.spawnEnemy('boss', 570);
+    boss.hp = boss.maxHp * 0.12 + 10;
+    g.update(1);
+    expect(g.enemies.includes(boss)).toBe(true);
   });
 });

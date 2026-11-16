@@ -39,10 +39,14 @@ export interface Progress {
   killsBy: Record<string, number>;
   /** 가전별 누적 설치 수 (가전 도감) */
   placedBy: Record<string, number>;
+  /** 가전별 숙련도 (영구 강화 레벨) */
+  mastery: Record<string, number>;
+  /** 연구 레벨 (id는 src/meta.ts의 RESEARCH) */
+  research: Record<string, number>;
 }
 
 export function emptyProgress(): Progress {
-  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0, seen: [], killsBy: {}, placedBy: {} };
+  return { kills: 0, legends: [], branches: [], done: [], parts: 0, owned: [], pity: 0, sixseven: 0, seen: [], killsBy: {}, placedBy: {}, mastery: {}, research: {} };
 }
 
 export interface AchievementDef {

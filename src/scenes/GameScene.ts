@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
-import { Game, type GameEvent } from '../core/game';
+import { Game, MASTERY, type GameEvent } from '../core/game';
+import { applyMeta, META, buyMastery, buyResearch, masteryCost, masteryLevel, RESEARCH, researchCost, researchLevel } from '../meta';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId, type UnitLevel } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
@@ -12,16 +13,16 @@ import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achieve
 import { loadBest, loadDeck, loadName, loadProgress, loadRanking, loadSetup, saveBest, saveDeck, saveName, saveProgress, saveRanking, saveSetup, type RunSetup } from '../storage';
 import { addRank, cleanName, randomName, rankList, topUnits, type RankEntry } from '../ranking';
 import { fetchOnline, onlineEnabled, renameOnline, submitOnline } from '../online/ranking';
-import { STR } from '../strings.ko';
+import { LANGS, lang, setLang, STR } from '../i18n';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
 import { ANIM_FRAME, MODEL_ANIMS } from '../view3d/anims';
-import { bulkBranch, nextBulkStep } from '../core/bulk';
+import { bulkGroup, nextBulkStep } from '../core/bulk';
 import { Board3D, HOME, panView, zoomView, type Mark } from '../view3d/board';
 import { OBSTACLE_SPRITE } from '../sprites';
 import { drawRange, Fx } from './fx';
-import { baseScale, button, card, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
+import { baseScale, button, card, fitText, icon, RoundBox, text, THEME, type Button, type Icon } from './ui';
 
 const PANEL_X = 1040;
 const PANEL_W = 240;
@@ -43,7 +44,7 @@ function easeOutBack(x: number): number {
 
 /** 갈래별 공격 모양: 빠른 공격은 투사체 대신 빛나는 탄도로 그린다 */
 /** DPS 표시: 오르는 가전(그릴)은 최대치도 */
-const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.max > d.dps + 0.5 ? `(최대 ${Math.round(d.max)})` : ''}`;
+const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.max > d.dps + 0.5 ? STR.dpsMax(Math.round(d.max)) : ''}`;
 
 /** 한 판에 들고 갈 수 있는 가전 수 */
 const DECK_SIZE = 6;
@@ -188,7 +189,13 @@ export class GameScene extends Phaser.Scene {
   create(data: { start?: boolean }): void {
     this.setup = loadSetup();
     this.endScreen = [];
-    this.sim = new Game(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId));
+    this.progress = loadProgress();
+    // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
+    const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
+    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, DECK_SIZE) as UnitId[];
+    this.deck = saved.length ? saved : [...UNIT_ORDER];
+    // 연구·숙련도·덱이 반영된 설정으로 판을 만든다
+    this.sim = new Game(applyMeta(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId), this.progress, this.deck));
     // 움직이는 몬스터의 반복 동작 (도감·소개 카드)
     for (const [name, spec] of Object.entries(MODEL_ANIMS)) {
       const key = `${name}_anim`;
@@ -236,11 +243,6 @@ export class GameScene extends Phaser.Scene {
     this.pauseLayer = null;
     this.picking = false;
     this.ranked = false;
-    this.progress = loadProgress();
-    // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
-    const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
-    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, DECK_SIZE) as UnitId[];
-    this.deck = saved.length ? saved : [...UNIT_ORDER];
     this.runParts = 0;
     this.run = {
       map: this.setup.map, difficulty: this.setup.difficulty, endless: this.setup.endless,
@@ -298,6 +300,13 @@ export class GameScene extends Phaser.Scene {
     layer.add(bestiaryBtn.container);
     const rankBtn = button(this, 1120, 316, 230, 52, STR.rankingButton, () => this.showRanking(), THEME.orange, 19);
     layer.add(rankBtn.container);
+    // 연구는 판 밖 성장이 켜져 있을 때만 (META.enabled)
+    if (META.enabled) {
+      const researchBtn = button(this, 1120, 380, 230, 52, STR.researchButton, () => this.showResearch(), THEME.red, 19);
+      layer.add(researchBtn.container);
+    }
+    const settingsBtn = button(this, 1120, META.enabled ? 444 : 380, 230, 52, STR.settingsButton, () => this.showSettings(), THEME.neutral, 19);
+    layer.add(settingsBtn.container);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
     const deckBtn = button(this, 1120, 124, 230, 52, STR.deckButton, () => this.showDeck(), THEME.blue, 19);
@@ -336,7 +345,7 @@ export class GameScene extends Phaser.Scene {
       const x = width / 2 + (i - (MAP_ORDER.length - 1) / 2) * gap;
       const b = button(this, x, 160, gap - 8, 66, '', () => this.changeSetup({ map: id }), id === this.setup.map ? 0xfff0c8 : THEME.white, 16);
       const m = STR.maps[id];
-      b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(14).setLineSpacing(2);
+      fitText(b.label.setText(`${m.name}\n${m.desc}`).setAlign('center').setFontSize(14).setLineSpacing(2), gap - 16);
       b.bg.setStrokeStyle(id === this.setup.map ? 4 : 2, id === this.setup.map ? THEME.selected : THEME.cardLine);
       layer.add(b.container);
     });
@@ -609,7 +618,7 @@ export class GameScene extends Phaser.Scene {
       const y = 122 + Math.floor(i / 2) * 76;
       const btn = button(this, x, y, 104, 68, '', () => this.choosePlacing(id), THEME.white, 14);
       const ic = icon(this, -33, 0, id, def.emoji, 36);
-      btn.label.setPosition(18, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center');
+      fitText(btn.label.setPosition(18, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center'), 64);
       btn.container.add(ic);
       return { id, btn };
     });
@@ -622,7 +631,7 @@ export class GameScene extends Phaser.Scene {
       const y = 352;
       const btn = button(this, x, y, 104, 56, '', () => this.useAbility(id), THEME.purple, 16);
       const ic = icon(this, -30, 0, `ab_${id}`, def.emoji, 40);
-      btn.label.setPosition(16, 0).setText(STR.abilities[id].name);
+      fitText(btn.label.setPosition(16, 0).setText(STR.abilities[id].name), 62);
       const shade = this.add.rectangle(-52, 24, 104, 52, 0x2b2230, 0.55).setOrigin(0, 1);
       const timer = text(this, 0, -2, '', 22, THEME.textOnDark).setOrigin(0.5);
       btn.container.add([ic, shade, timer]);
@@ -653,17 +662,16 @@ export class GameScene extends Phaser.Scene {
     this.info = { root, title, stats, upgrade, upgradeAll, branchA, branchB, sell, target };
   }
 
-  /** 고른 가전과 같은 종류를 기본 Lv3 → 갈림길(고른 갈래로) → ★강화 순서로 돈이 되는 만큼 올린다 */
+  /** 고른 가전과 종류·갈래가 같은 가전을 함께 올린다: 갈래 전이면 Lv3까지, 갈래를 골랐으면 ★강화. 갈림길은 직접 고른다 */
   private upgradeAllSame(): void {
     const u = this.selected;
     if (!u) return;
-    const branch = bulkBranch(this.sim, u);
     let n = 0;
     for (let guard = 0; guard < 500; guard++) {
-      const step = nextBulkStep(this.sim, u.def.id, branch);
+      const step = nextBulkStep(this.sim, u);
       if (!step) break;
-      if (!this.sim.apply({ type: 'upgrade', uid: step.unit.uid, branch: step.branch }).ok) break;
-      this.upgradeFx(step.unit, step.branch, step.star);
+      if (!this.sim.apply({ type: 'upgrade', uid: step.unit.uid }).ok) break;
+      this.upgradeFx(step.unit, undefined, step.star);
       n++;
     }
     if (n === 0) {
@@ -671,7 +679,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     sfx.play('upgrade');
-    this.showToast(STR.upgradedAll(STR.units[u.def.id]?.name ?? u.def.id, n));
+    const br = u.branch !== null ? u.def.branches?.[u.branch] : undefined;
+    this.showToast(STR.upgradedAll(br ? STR.branches[br.id].full : (STR.units[u.def.id]?.name ?? u.def.id), n));
   }
 
   private upgradeSelected(branch?: 0 | 1): void {
@@ -1170,26 +1179,34 @@ export class GameScene extends Phaser.Scene {
         const area = def.kind === 'slow' || lv.hitAll || lv.line || lv.splash ? ` ${s.perEnemy}` : '';
         lines.push(`${s.dps} ${dpsText(cur)}${next ? ` → ${dpsText(next)}` : ''}${area}`);
       }
+      // 지원형 수치도 업그레이드·★강화하면 얼마나 오르는지 (→) 보여 준다
+      const nx = u && opts.length === 1 ? (opts[0].star ? this.sim.levelStats(id, level, u.branch, u.stars + 1) : this.sim.levelStats(id, level + 1)) : null;
+      const to = (a: number | undefined, b: number | undefined, f: (v: number) => string) =>
+        `${f(a ?? 0)}${b !== undefined && f(b) !== f(a ?? 0) ? ` → ${f(b)}` : ''}`;
+      const pct = (v: number) => `${Math.round(v * 100)}%`;
       if (lv.damage) lines.push(lv.cooldown ? s.hit(n1(lv.damage), Math.round(lv.cooldown * 100) / 100) : `${s.damage} ${n1(lv.damage)}`);
       if (lv.range) lines.push(`${s.range} ${Math.round(lv.range)}`);
       if (lv.splash) lines.push(`${s.splash} ${Math.round(lv.splash)}`);
-      if (lv.slow) lines.push(`${s.slow} ${Math.round((1 - lv.slow) * 100)}%`);
-      if (lv.buff) lines.push(`${s.buff} ${Math.round(lv.buff * 100)}%`);
-      if (lv.income) lines.push(`${s.income} 💰${lv.income}`);
-      if (lv.dot) lines.push(`${s.dot} 초당 ${lv.dot.dps} (${lv.dot.duration}초)`);
-      if (lv.chainHits) lines.push(`${s.chain} ${lv.chainHits}마리`);
-      if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${Math.round(lv.dmgBuff * 100)}%`);
+      if (lv.slow) lines.push(`${s.slow} ${to(1 - lv.slow, nx?.slow === undefined ? undefined : 1 - nx.slow, pct)}`);
+      if (lv.knockback) lines.push(`${s.knockback} ${to(lv.knockback, nx?.knockback, (v) => String(Math.round(v)))}`);
+      if (lv.freeze) lines.push(`${s.freeze} ${to(lv.freeze, nx?.freeze, (v) => s.seconds(n1(v)))}`);
+      if (lv.buff) lines.push(`${s.buff} ${to(lv.buff, nx?.buff, pct)}`);
+      if (lv.income) lines.push(`${s.income} ${to(lv.income, nx?.income, (v) => `💰${v}`)}`);
+      if (lv.bounty) lines.push(`${s.bounty} ${to(lv.bounty.mul - 1, nx?.bounty ? nx.bounty.mul - 1 : undefined, (v) => `+${pct(v)}`)}`);
+      if (lv.dot) lines.push(`${s.dot} ${s.dotLine(lv.dot.dps, lv.dot.duration)}`);
+      if (lv.chainHits) lines.push(`${s.chain} ${s.chainCount(lv.chainHits)}`);
+      if (lv.dmgBuff) lines.push(`${s.dmgBuff} ${to(lv.dmgBuff, nx?.dmgBuff, pct)}`);
       if (lv.shred) lines.push(`${s.shred} ${lv.shred}`);
-      if (lv.globalSlow) lines.push(`${s.globalSlow} ${Math.round(lv.globalSlow * 100)}%`);
-      if (lv.globalVuln) lines.push(`${s.globalVuln} +${Math.round(lv.globalVuln * 100)}%`);
+      if (lv.globalSlow) lines.push(`${s.globalSlow} ${to(lv.globalSlow, nx?.globalSlow, pct)}`);
+      if (lv.globalVuln) lines.push(`${s.globalVuln} ${to(lv.globalVuln, nx?.globalVuln, (v) => `+${pct(v)}`)}`);
     }
     this.info.stats.setText(lines.join('\n')).setWordWrapWidth(PANEL_W - 48, true);
     const showControls = u !== null;
     this.info.upgrade.container.setVisible(showControls && !atFork);
-    // '모두'는 같은 종류가 2대 이상일 때만
-    const same = u ? this.sim.units.filter((x) => x.def.id === u.def.id).length : 0;
+    // '모두'는 종류와 갈래가 같은 가전이 2대 이상일 때만
+    const same = u ? bulkGroup(this.sim, u).length : 0;
     this.info.upgradeAll.container.setVisible(showControls && !atFork && same >= 2);
-    if (u) this.info.upgradeAll.setEnabled(nextBulkStep(this.sim, u.def.id, bulkBranch(this.sim, u)) !== null);
+    if (u) this.info.upgradeAll.setEnabled(nextBulkStep(this.sim, u) !== null);
     this.info.branchA.container.setVisible(showControls && atFork);
     this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
@@ -1201,8 +1218,10 @@ export class GameScene extends Phaser.Scene {
         const bd = def.branches![i];
         // 갈래 DPS는 버튼 안에 (설명 줄이 길어서 패널에는 자리가 없다)
         const d = this.sim.dps(id, this.sim.levelStats(id, level, i as 0 | 1), u);
-        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, bd.cost, d.dps ? Math.round(d.dps) : null));
-        b.setEnabled(this.sim.money >= bd.cost);
+        // 실제로 내는 값 (갈림길 할인·업그레이드 세일 카드 반영)
+        const cost = opts[i].cost;
+        b.setText(STR.branchButton(bd.emoji, STR.branches[bd.id].name, cost, d.dps ? Math.round(d.dps) : null));
+        b.setEnabled(this.sim.money >= cost);
       });
     } else {
       const cost = opts[0]?.cost ?? null;
@@ -1612,21 +1631,27 @@ export class GameScene extends Phaser.Scene {
       this.showDeck();
     };
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
-    const box = card(this, width / 2, height / 2, 800, 520, 'center', THEME.bar);
-    const title = text(this, width / 2 - 370, 132, STR.deckTitle, 30).setOrigin(0, 0.5);
-    const hint = text(this, width / 2, 180, STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
-    const warn = text(this, width / 2, 560, '', 17, THEME.danger).setOrigin(0.5);
+    const p = this.progress;
+    // 숙련도가 켜져 있으면 카드 아래에 강화 줄이 붙어서 창이 더 크다
+    const meta = META.enabled;
+    const top = meta ? 86 : 132;
+    const box = card(this, width / 2, height / 2, 800, meta ? 620 : 520, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, top, STR.deckTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2 + 230, top, meta ? STR.gachaParts(p.parts) : '', 18, THEME.gold).setOrigin(1, 0.5);
+    const hint = text(this, width / 2, top + (meta ? 44 : 48), STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
+    const note = text(this, width / 2, 154, meta ? STR.masteryHint(Math.round(MASTERY.power * 100), Math.round(MASTERY.support * 100)) : '', 14, THEME.textSoft).setOrigin(0.5);
+    const warn = text(this, width / 2, meta ? 648 : 560, '', 17, THEME.danger).setOrigin(0.5);
     // 닫으면 덱을 저장하고 시작 화면을 다시 그린다 (상점이 새 덱으로 바뀐다)
-    const close = button(this, width / 2 + 310, 132, 130, 44, STR.close, () => {
+    const close = button(this, width / 2 + 310, top, 130, 44, STR.close, () => {
       saveDeck(this.deck);
       this.scene.restart({});
     }, THEME.green, 18);
-    layer.add([dim, box, title, hint, warn, close.container]);
+    layer.add([dim, box, title, parts, hint, note, warn, close.container]);
     const all: UnitId[] = [...UNIT_ORDER, ...GACHA_UNITS];
     all.forEach((id, i) => {
       const def = this.sim.cfg.units[id];
       const x = width / 2 + ((i % 6) - 2.5) * 125;
-      const y = 285 + Math.floor(i / 6) * 160;
+      const y = meta ? 250 + Math.floor(i / 6) * 225 : 285 + Math.floor(i / 6) * 160;
       const owned = UNIT_ORDER.includes(id) || this.progress.owned.includes(id);
       const inDeck = this.deck.includes(id);
       const rarity = GACHA_POOL[id];
@@ -1637,6 +1662,22 @@ export class GameScene extends Phaser.Scene {
       const sub = text(this, x, y + 48, owned ? (rarity ? STR.gachaRarity[rarity] : `💰${def.levels[0].cost}`) : STR.locked, 12, THEME.textSoft).setOrigin(0.5);
       layer.add([bg, ic, name, sub]);
       if (!owned) return;
+      // 숙련도: 카드 아래에 레벨과 강화 버튼
+      const lv = masteryLevel(p, id);
+      const cost = masteryCost(p, id);
+      const tag = text(this, x, y + 84, `${'★'.repeat(lv)}${'☆'.repeat(MASTERY.max - lv)}`, 15, lv ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const up = button(this, x, y + 114, 108, 36, cost === null ? STR.masteryMax : STR.masteryBuy(cost), () => {
+        if (!buyMastery(p, id)) return sfx.play('error');
+        saveProgress(p);
+        sfx.play('upgrade');
+        reopen();
+      }, cost === null ? THEME.neutral : THEME.purple, 15);
+      up.setEnabled(cost !== null && p.parts >= cost);
+      if (meta) layer.add([tag, up.container]);
+      else {
+        tag.destroy();
+        up.container.destroy();
+      }
       bg.setInteractive(new Phaser.Geom.Rectangle(-56, -70, 112, 140), Phaser.Geom.Rectangle.Contains);
       if (bg.input) bg.input.cursor = 'pointer';
       bg.on('pointerup', () => {
@@ -1663,13 +1704,13 @@ export class GameScene extends Phaser.Scene {
     const title = text(this, width / 2 - 370, 92, STR.gachaTitle, 30).setOrigin(0, 0.5);
     const parts = text(this, width / 2, 92, STR.gachaParts(p.parts), 20, THEME.gold).setOrigin(0.5);
     const close = button(this, width / 2 + 310, 92, 130, 44, STR.close, () => this.scene.restart({}), THEME.neutral, 18);
-    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}`, 15, THEME.textSoft).setOrigin(0.5);
+    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}${META.enabled ? `   ·   ${STR.gachaDupNote}` : ''}`, 15, THEME.textSoft).setOrigin(0.5);
     layer.add([dim, box, title, parts, close.container, info]);
     const doPull = (n: 1 | 10) => {
       const r = pull(p, n);
       if (!r) return sfx.play('error');
       saveProgress(p);
-      sfx.play(r.some((x) => !x.duplicate) ? 'win' : 'coin');
+      sfx.play(r.some((x) => !x.duplicate || x.mastery) ? 'win' : 'coin');
       layer.destroy();
       this.showGacha(r);
     };
@@ -1684,7 +1725,9 @@ export class GameScene extends Phaser.Scene {
       const def = this.sim.cfg.units[r.unit as UnitId];
       const bg = new RoundBox(this, 0, 0, 66, 96, r.duplicate ? THEME.white : 0xfff0c8, 12).setStrokeStyle(4, RARITY_COLOR[r.rarity]);
       const ic = icon(this, 0, -14, r.unit, def.emoji, 50);
-      const tag = text(this, 0, 32, r.duplicate ? STR.gachaDup(r.refund) : STR.gachaNew, r.duplicate ? 11 : 15, r.duplicate ? THEME.textSoft : THEME.danger).setOrigin(0.5);
+      const tag = r.mastery
+        ? text(this, 0, 32, STR.gachaMastery, 13, THEME.gold).setOrigin(0.5)
+        : text(this, 0, 32, r.duplicate ? STR.gachaDup(r.refund) : STR.gachaNew, r.duplicate ? 11 : 15, r.duplicate ? THEME.textSoft : THEME.danger).setOrigin(0.5);
       const c = this.add.container(x, 330, [bg, ic, tag]).setScale(0);
       layer.add(c);
       this.tweens.add({ targets: c, scale: 1, delay: i * 70, duration: 240, ease: 'Back.easeOut' });
@@ -1700,8 +1743,75 @@ export class GameScene extends Phaser.Scene {
       const ic = icon(this, x, y - 34, id, def.emoji, 56).setAlpha(owned ? 1 : 0.35);
       const name = text(this, x, y + 10, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
       const rar = text(this, x, y + 32, STR.gachaRarity[rarity], 13, THEME.textSoft).setOrigin(0.5);
-      const st = text(this, x, y + 54, owned ? `✅ ${STR.gachaOwned}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const st = text(this, x, y + 54, owned ? `✅ ${META.enabled ? STR.masteryTag(masteryLevel(p, id), MASTERY.max) : STR.gachaOwned}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
       layer.add([bg, ic, name, rar, st]);
+    });
+  }
+
+  /** 설정 화면: 언어와 효과음 */
+  private showSettings(): void {
+    const { width, height } = this.sim.cfg.map;
+    const layer = this.modalLayer();
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 560, 560, 'center', THEME.bar);
+    const title = text(this, width / 2 - 250, 122, STR.settingsTitle, 30).setOrigin(0, 0.5);
+    const close = button(this, width / 2 + 190, 122, 130, 44, STR.close, () => layer.destroy(), THEME.green, 18);
+    const langLabel = text(this, width / 2, 176, STR.language, 18, THEME.textSoft).setOrigin(0.5);
+    layer.add([dim, box, title, close.container, langLabel]);
+    LANGS.forEach((l, i) => {
+      const on = l.id === lang();
+      // 언어 이름은 그 언어로 적는다 (지금 언어를 못 읽어도 찾을 수 있게). 고르면 화면을 새 언어로 다시 그린다
+      const b = button(this, width / 2, 226 + i * 58, 420, 50, l.name, () => {
+        if (on) return;
+        setLang(l.id);
+        this.scene.restart({});
+      }, on ? 0xfff0c8 : THEME.white, 20);
+      b.bg.setStrokeStyle(on ? 4 : 2, on ? THEME.selected : THEME.cardLine);
+      layer.add(b.container);
+    });
+    const soundY = 226 + LANGS.length * 58 + 44;
+    const soundLabel = text(this, width / 2, soundY - 40, STR.sound, 18, THEME.textSoft).setOrigin(0.5);
+    const sound = button(this, width / 2, soundY, 420, 50, sfx.muted ? STR.soundOff : STR.soundOn, () => {
+      const muted = sfx.toggleMute();
+      sound.setText(muted ? STR.soundOff : STR.soundOn);
+      this.muteBtn.setText(muted ? '🔇' : '🔊');
+    }, THEME.blue, 20);
+    layer.add([soundLabel, sound.container]);
+  }
+
+  /** 연구 화면: 부품으로 올리는 영구 강화 */
+  private showResearch(): void {
+    const { width, height } = this.sim.cfg.map;
+    const p = this.progress;
+    const layer = this.modalLayer();
+    const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
+    const box = card(this, width / 2, height / 2, 800, 640, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, 76, STR.researchTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2 + 230, 76, STR.gachaParts(p.parts), 18, THEME.gold).setOrigin(1, 0.5);
+    // 닫으면 시작 화면을 다시 그린다 (연구가 다음 판 설정에 반영된다)
+    const close = button(this, width / 2 + 310, 76, 130, 44, STR.close, () => this.scene.restart({}), THEME.green, 18);
+    const hint = text(this, width / 2, 118, STR.researchHint, 16, THEME.textSoft).setOrigin(0.5);
+    layer.add([dim, box, title, parts, close.container, hint]);
+    RESEARCH.forEach((r, i) => {
+      const y = 180 + i * 72;
+      const lv = researchLevel(p, r.id);
+      const max = r.costs.length;
+      const cost = researchCost(p, r.id);
+      const info = STR.research[r.id];
+      const row = new RoundBox(this, width / 2, y, 760, 62, lv >= max ? 0xfff0c8 : THEME.white, 12).setStrokeStyle(2, lv >= max ? THEME.selected : THEME.cardLine);
+      const name = text(this, width / 2 - 360, y - 12, `${r.emoji} ${info.name}`, 19).setOrigin(0, 0.5);
+      const now = lv > 0 ? `  (${info.now(r.step * lv)})` : '';
+      const desc = text(this, width / 2 - 360, y + 14, `${max > 1 ? STR.researchPerLevel(info.desc(r.step)) : info.desc(r.step)}${now}`, 14, THEME.textSoft).setOrigin(0, 0.5);
+      const level = text(this, width / 2 + 150, y, STR.researchLevel(lv, max), 17, lv ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const buy = button(this, width / 2 + 285, y, 150, 44, cost === null ? STR.researchDone : STR.researchBuy(cost), () => {
+        if (!buyResearch(p, r.id)) return sfx.play('error');
+        saveProgress(p);
+        sfx.play('upgrade');
+        layer.destroy();
+        this.showResearch();
+      }, cost === null ? THEME.neutral : THEME.purple, 17);
+      buy.setEnabled(cost !== null && p.parts >= cost);
+      layer.add([row, name, desc, level, buy.container]);
     });
   }
 
@@ -1888,11 +1998,11 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
       // 레벨별 성능: 공격형은 DPS, 지원형은 효과
       const main = (lv: UnitLevel) => {
         const d = this.sim.dps(id, lv);
-        if (d.dps) return `⚔️DPS ${Math.round(d.dps)}`;
-        if (lv.buff) return `공속 +${Math.round(lv.buff * 100)}%`;
-        if (lv.dmgBuff) return `공격력 +${Math.round(lv.dmgBuff * 100)}%`;
-        if (lv.income) return `수입 💰${lv.income}`;
-        if (lv.globalSlow) return `전체 감속 ${Math.round(lv.globalSlow * 100)}%`;
+        if (d.dps) return STR.codex.dps(Math.round(d.dps));
+        if (lv.buff) return STR.codex.buff(Math.round(lv.buff * 100));
+        if (lv.dmgBuff) return STR.codex.dmgBuff(Math.round(lv.dmgBuff * 100));
+        if (lv.income) return STR.codex.income(lv.income);
+        if (lv.globalSlow) return STR.codex.globalSlow(Math.round(lv.globalSlow * 100));
         return '';
       };
       const lines = def.levels.map((_, i) => STR.levelLine(i + 1, main(this.sim.levelStats(id, i)), Math.round(def.levels[i].range), def.levels[i].cost));
@@ -1992,7 +2102,8 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
     offer.forEach((c, i) => {
       const kind = c.risk ? 'risk' : c.rarity;
       const color = colors[kind];
-      const x = width / 2 + (i - (offer.length - 1) / 2) * 290;
+      // 4장이면 간격을 좁혀 맵 폭 안에 넣는다
+      const x = width / 2 + (i - (offer.length - 1) / 2) * (offer.length > 3 ? 276 : 290);
       const y = 370;
       const pick = () => {
         if (gm.apply({ type: 'pickCard', index: i }).ok) close();
@@ -2015,10 +2126,21 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
       this.tweens.add({ targets: cont, y, alpha: 1, delay: i * 90, duration: 260, ease: 'Back.easeOut' });
       bg.on('pointerover', () => cont.setScale(1.04)).on('pointerout', () => cont.setScale(1));
     });
-    const skip = button(this, width / 2, 630, 300, 50, STR.cardSkip(gm.cfg.cardSkipMoney ?? 0), () => {
+    const rerollCost = gm.cfg.cardRerollCost;
+    const canReroll = rerollCost !== undefined;
+    const skip = button(this, width / 2 + (canReroll ? 160 : 0), 630, 300, 50, STR.cardSkip(gm.cfg.cardSkipMoney ?? 0), () => {
       if (gm.apply({ type: 'skipCard' }).ok) close();
     }, THEME.neutral, 18);
     layer.add(skip.container);
+    if (canReroll) {
+      // 다시 뽑기: 성공하면 cardOffer 이벤트가 새 카드로 이 화면을 다시 띄운다
+      const reroll = button(this, width / 2 - 160, 630, 300, 50, gm.rerolled ? STR.cardRerolled : STR.cardReroll(rerollCost), () => {
+        if (gm.apply({ type: 'rerollCards' }).ok) close();
+        else sfx.play('error');
+      }, THEME.blue, 18);
+      reroll.setEnabled(!gm.rerolled && gm.money >= rerollCost);
+      layer.add(reroll.container);
+    }
     sfx.play('clear');
   }
 
@@ -2071,7 +2193,7 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
   /** 랭킹에 쓰는 이름. 아직 안 정했으면 '수비대1234' 같은 이름을 하나 지어 둔다 */
   private playerName(): string {
     let name = loadName();
-    if (!name) saveName((name = randomName()));
+    if (!name) saveName((name = randomName(Math.random, STR.namePrefix)));
     return name;
   }
 

@@ -54,6 +54,6 @@ export function cleanName(s: string): string {
 }
 
 /** 이름을 안 정했을 때 쓰는 이름: 수비대 + 숫자 4개 */
-export function randomName(rand: () => number = Math.random): string {
-  return `수비대${String(Math.floor(rand() * 10000)).padStart(4, '0')}`;
+export function randomName(rand: () => number = Math.random, prefix = '수비대'): string {
+  return `${prefix}${String(Math.floor(rand() * 10000)).padStart(4, '0')}`;
 }

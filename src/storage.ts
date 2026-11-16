@@ -107,6 +107,15 @@ export function saveRanking(list: RankEntry[]): void {
   set('ranking', JSON.stringify(list));
 }
 
+/** 고른 언어 (없으면 빈 문자열: 브라우저 언어를 따른다) */
+export function loadLang(): string {
+  return get('lang') ?? '';
+}
+
+export function saveLang(id: string): void {
+  set('lang', id);
+}
+
 export function loadName(): string {
   return get('name') ?? '';
 }

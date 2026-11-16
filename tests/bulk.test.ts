@@ -1,68 +1,103 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../src/config';
-import { bulkBranch, nextBulkStep } from '../src/core/bulk';
+import { bulkGroup, nextBulkStep } from '../src/core/bulk';
 import { Game } from '../src/core/game';
+import type { Unit } from '../src/core/types';
 
-function setup(money: number) {
+function setup(money: number, n = 4) {
   const g = new Game({ ...defaultConfig(), seed: 1, startMoney: 1e6, critChance: 0, cards: [] });
-  for (const [x, y] of [[560, 240], [640, 240], [720, 240]]) expect(g.apply({ type: 'place', unit: 'toaster', x, y }).ok).toBe(true);
+  for (let i = 0; i < n; i++) expect(g.apply({ type: 'place', unit: 'toaster', x: 560 + i * 80, y: 240 }).ok).toBe(true);
   g.money = money;
   return g;
 }
 
+/** Lv3까지 올리고 갈래를 고른다 */
+function fork(g: Game, u: Unit, branch: 0 | 1) {
+  g.apply({ type: 'upgrade', uid: u.uid });
+  g.apply({ type: 'upgrade', uid: u.uid });
+  expect(g.apply({ type: 'upgrade', uid: u.uid, branch }).ok).toBe(true);
+}
+
 /** '모두'를 한 번 누른 것처럼 끝까지 올린다 */
-function bulk(g: Game, branch: 0 | 1 | null) {
+function bulk(g: Game, selected: Unit) {
   for (let i = 0; i < 500; i++) {
-    const s = nextBulkStep(g, 'toaster', branch);
+    const s = nextBulkStep(g, selected);
     if (!s) break;
-    expect(g.apply({ type: 'upgrade', uid: s.unit.uid, branch: s.branch }).ok).toBe(true);
+    expect(g.apply({ type: 'upgrade', uid: s.unit.uid }).ok).toBe(true);
   }
 }
 
-describe("'모두' 업그레이드 순서", () => {
-  it('기본 Lv3을 먼저 모두 채운다', () => {
+describe("'모두' 업그레이드", () => {
+  it('갈래 전 가전을 고르면 갈래 전 가전만 Lv3까지 오르고, 갈림길은 넘지 않는다', () => {
     const g = setup(1e6);
-    const [a] = g.units;
-    // 한 대만 갈래·★까지 올려 둔다
-    g.apply({ type: 'upgrade', uid: a.uid });
-    g.apply({ type: 'upgrade', uid: a.uid });
-    g.apply({ type: 'upgrade', uid: a.uid, branch: 1 });
-    const first = nextBulkStep(g, 'toaster', 1)!;
-    expect(first.star).toBe(false);
-    expect(first.unit).not.toBe(a);
+    const [a, b, c, d] = g.units;
+    fork(g, a, 1);
+    bulk(g, b);
+    expect([b, c, d].every((u) => u.level === 2 && u.branch === null)).toBe(true);
+    expect(a.stars).toBe(0);
+    expect(nextBulkStep(g, b)).toBeNull();
   });
 
-  it('모두 Lv3이 되면 고른 갈래로 갈림길을 넘고, 그다음 ★강화', () => {
+  it('갈래를 고른 가전을 고르면 같은 갈래끼리만 ★강화된다 (싼 것부터 고르게)', () => {
     const g = setup(1e6);
-    const [a, b, c] = g.units;
-    g.apply({ type: 'upgrade', uid: a.uid });
-    g.apply({ type: 'upgrade', uid: a.uid });
-    g.apply({ type: 'upgrade', uid: a.uid, branch: 1 });
-    expect(bulkBranch(g, b)).toBe(1);
-    const order: string[] = [];
-    for (let i = 0; i < 6; i++) {
-      const s = nextBulkStep(g, 'toaster', 1)!;
-      order.push(s.star ? 'star' : s.branch !== undefined ? 'fork' : 'base');
-      g.apply({ type: 'upgrade', uid: s.unit.uid, branch: s.branch });
-    }
-    expect(order).toEqual(['base', 'base', 'base', 'base', 'fork', 'fork']);
-    expect([b.branch, c.branch]).toEqual([1, 1]);
-    expect(nextBulkStep(g, 'toaster', 1)!.star).toBe(true);
+    const [a, b, c, d] = g.units;
+    fork(g, a, 1);
+    fork(g, b, 1);
+    fork(g, c, 0);
+    expect(bulkGroup(g, a)).toEqual([a, b]);
+    g.money = g.starCost(a) * 2 + g.starCost(a) * 1.5 + 5;
+    bulk(g, a);
+    expect([a.stars, b.stars]).toEqual([2, 1]);
+    expect(c.stars).toBe(0);
+    expect(d.level).toBe(0);
   });
 
-  it('앞 순위가 남았는데 돈이 모자라면 ★강화로 넘어가지 않는다', () => {
+  it('돈이 모자라면 멈춘다', () => {
     const g = setup(1e6);
     const [a] = g.units;
-    g.apply({ type: 'upgrade', uid: a.uid });
-    g.apply({ type: 'upgrade', uid: a.uid });
-    g.apply({ type: 'upgrade', uid: a.uid, branch: 0 });
+    fork(g, a, 0);
     g.money = 0;
-    expect(nextBulkStep(g, 'toaster', 0)).toBeNull();
+    expect(nextBulkStep(g, a)).toBeNull();
+    expect(nextBulkStep(g, g.units[1])).toBeNull();
+  });
+});
+
+describe('지원형 가전의 ★강화', () => {
+  const lv4 = (unit: 'fan' | 'aircon' | 'wifi' | 'washer' | 'battery', branch: 0 | 1, stars: number) => {
+    const g = new Game({ ...defaultConfig(), seed: 1, startMoney: 1e9, critChance: 0, cards: [] });
+    g.apply({ type: 'place', unit, x: 560, y: 240 });
+    const u = g.units[0];
+    fork(g, u, branch);
+    for (let i = 0; i < stars; i++) g.apply({ type: 'upgrade', uid: u.uid });
+    return { g, u, s: g.stats(u) };
+  };
+
+  it('선풍기: 밀어내기·얼리기·감속 지속이 별마다 10%씩 세진다', () => {
+    expect(lv4('fan', 0, 2).s.knockback).toBeCloseTo(45 * 1.2);
+    const frost = lv4('fan', 1, 5).s;
+    expect(frost.freeze).toBeCloseTo(1.5);
+    expect(frost.frozenVuln).toBeCloseTo(1.6);
+    expect(frost.slowDuration).toBeCloseTo(1.4 * 1.5);
+    expect(frost.slow).toBe(0.4);
   });
 
-  it('갈래를 아무도 안 골랐으면 Lv3에서 멈춘다', () => {
-    const g = setup(1e6);
-    bulk(g, bulkBranch(g, g.units[0]));
-    expect(g.units.every((u) => u.level === 2 && u.branch === null)).toBe(true);
+  it('와이파이·보조배터리·세탁기: 버프와 수입이 오른다', () => {
+    expect(lv4('wifi', 0, 3).s.buff).toBeCloseTo(0.6 * 1.3);
+    expect(lv4('wifi', 1, 4).s.hackVuln).toBeCloseTo(1.35);
+    expect(lv4('battery', 1, 2).s.dmgBuff).toBeCloseTo(0.9 * 1.2);
+    expect(lv4('washer', 0, 2).s.income).toBe(180);
+    expect(lv4('washer', 0, 2).s.interest!.max).toBe(180);
+    expect(lv4('washer', 1, 4).s.bounty!.mul).toBeCloseTo(1.7);
+  });
+
+  it('급냉 에어컨: 전체 감속 60% 한도에 닿으면 더 강화할 수 없다', () => {
+    const { g, u, s } = lv4('aircon', 0, 10);
+    expect(u.stars).toBe(4);
+    expect(s.globalSlow).toBeCloseTo(0.6);
+    expect(g.upgradeOptions(u)).toEqual([]);
+    // 제습은 받는 피해 증가가 계속 올라서 끝까지 강화된다
+    const d = lv4('aircon', 1, 10);
+    expect(d.u.stars).toBe(10);
+    expect(d.s.globalVuln).toBeCloseTo(0.5);
   });
 });
