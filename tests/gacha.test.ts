@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { emptyProgress } from '../src/achievements';
 import { defaultConfig } from '../src/config';
 import { Game, MASTERY } from '../src/core/game';
@@ -6,6 +6,7 @@ import type { UnitId } from '../src/core/types';
 import { GACHA_UNITS } from '../src/data/units';
 import { STR } from '../src/strings.ko';
 import { GACHA, GACHA_POOL, pull, waveReward } from '../src/gacha';
+import { META } from '../src/meta';
 
 /** 정해진 값을 차례로 돌려주는 난수 */
 const seq = (...v: number[]) => {
@@ -32,7 +33,18 @@ describe('뽑기', () => {
     expect(rarity(0.31)).toBe('rare');
   });
 
-  it('이미 가진 가전이 나오면 숙련도가 한 레벨 오르고, 최대 레벨이면 부품으로 환급된다', () => {
+  it('이미 가진 가전이 나오면 부품으로 환급된다', () => {
+    const p = { ...emptyProgress(), parts: 200, owned: ['stove'] };
+    const r = pull(p, 1, seq(0.5, 0))!;
+    expect(r[0]).toMatchObject({ duplicate: true, mastery: false, refund: GACHA.refund.rare });
+    expect(p.parts).toBe(200 - 100 + GACHA.refund.rare);
+    expect(p.owned).toEqual(['stove']);
+    expect(p.mastery).toEqual({});
+  });
+
+  it('숙련도가 켜져 있으면: 중복은 숙련도 +1, 최대 레벨이면 부품으로 환급', () => {
+    META.enabled = true;
+    onTestFinished(() => void (META.enabled = false));
     const p = { ...emptyProgress(), parts: 200, owned: ['stove'] };
     const r = pull(p, 1, seq(0.5, 0))!;
     expect(r[0]).toMatchObject({ duplicate: true, mastery: true, refund: 0 });
@@ -58,9 +70,7 @@ describe('뽑기', () => {
   it('10회 뽑기는 900 부품', () => {
     const p = { ...emptyProgress(), parts: 900 };
     expect(pull(p, 10, seq(0.9, 0))!.length).toBe(10);
-    // 첫 장은 새 가전, 다음 5장은 숙련도 +1, 나머지 4장은 환급
-    expect(p.mastery.stove).toBe(MASTERY.max);
-    expect(p.parts).toBe(4 * GACHA.refund.rare);
+    expect(p.parts).toBe(9 * GACHA.refund.rare); // 첫 장만 새 가전, 나머지 9장은 환급
   });
 
   it('뽑기 대상은 6종이고, 판 보상은 난이도 배율을 따른다', () => {

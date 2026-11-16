@@ -1,6 +1,7 @@
 // 뽑기와 판 보상. 엔진·화면에 의존하지 않는 순수 로직이다.
 import type { Progress } from './achievements';
 import { MASTERY } from './core/game';
+import { META } from './meta';
 
 export type GachaRarity = 'rare' | 'hero' | 'legend';
 
@@ -41,8 +42,8 @@ function roll(p: Progress, rng: () => number): PullResult {
   const options = Object.keys(GACHA_POOL).filter((u) => GACHA_POOL[u] === rarity);
   const unit = options[Math.floor(rng() * options.length)];
   const duplicate = p.owned.includes(unit);
-  // 중복은 그 가전의 숙련도를 한 레벨 올리고, 이미 최대면 부품으로 돌려준다
-  const mastery = duplicate && (p.mastery[unit] ?? 0) < MASTERY.max;
+  // 중복은 부품으로 돌려준다. 숙련도가 켜져 있으면(META.enabled) 그 가전의 숙련도를 한 레벨 올리고, 이미 최대일 때만 돌려준다
+  const mastery = META.enabled && duplicate && (p.mastery[unit] ?? 0) < MASTERY.max;
   const refund = duplicate && !mastery ? GACHA.refund[rarity] : 0;
   if (mastery) p.mastery[unit] = (p.mastery[unit] ?? 0) + 1;
   else if (duplicate) p.parts += refund;

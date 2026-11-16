@@ -1,14 +1,38 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { emptyProgress } from '../src/achievements';
 import { defaultConfig } from '../src/config';
 import { Game, MASTERY } from '../src/core/game';
 import type { UnitId } from '../src/core/types';
 import { UNIT_ORDER } from '../src/data/units';
-import { applyMeta, buyMastery, buyResearch, masteryCost, MASTERY_COSTS, RESEARCH, researchCost, REROLL_COST } from '../src/meta';
+import { applyMeta, META, buyMastery, buyResearch, masteryCost, MASTERY_COSTS, RESEARCH, researchCost, REROLL_COST } from '../src/meta';
 import { STR } from '../src/strings.ko';
 
 const game = (p = emptyProgress(), deck: UnitId[] = [...UNIT_ORDER]) =>
   new Game({ ...applyMeta(defaultConfig(), p, deck), seed: 1, startMoney: 1e6, critChance: 0, cards: [] });
+
+// 지금은 꺼 두는 기능이라, 켰을 때의 동작은 스위치를 켜고 확인한다
+beforeAll(() => void (META.enabled = true));
+afterAll(() => void (META.enabled = false));
+
+describe('판 밖 성장 스위치', () => {
+  it('꺼져 있으면 저장된 연구·숙련도가 판에 반영되지 않는다 (덱과 다시 뽑기 비용만 정해진다)', () => {
+    const p = { ...emptyProgress(), parts: 100000, mastery: { toaster: 5 } };
+    for (const r of RESEARCH) while (buyResearch(p, r.id));
+    META.enabled = false;
+    try {
+      const base = defaultConfig();
+      const cfg = applyMeta(base, p, ['toaster']);
+      expect([cfg.startMoney, cfg.startHp, cfg.sellRate]).toEqual([base.startMoney, base.startHp, base.sellRate]);
+      expect(cfg.abilities).toEqual(base.abilities);
+      expect(cfg.mastery).toBeUndefined();
+      expect(cfg.cardChoices).toBeUndefined();
+      expect([cfg.deck, cfg.cardRerollCost]).toEqual([['toaster'], REROLL_COST]);
+      expect(new Game({ ...cfg, seed: 1 }).levelStats('toaster', 0).damage).toBe(12);
+    } finally {
+      META.enabled = true;
+    }
+  });
+});
 
 describe('가전 숙련도', () => {
   it('부품으로 한 레벨씩 올리고, 부품이 모자라거나 최대 레벨이면 못 올린다', () => {

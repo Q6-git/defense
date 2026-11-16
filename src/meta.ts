@@ -3,6 +3,13 @@ import type { Progress } from './achievements';
 import { MASTERY, type GameConfig } from './core/game';
 import type { AbilityId, UnitId } from './core/types';
 
+/**
+ * 판 밖 성장(연구·숙련도) 스위치. 지금은 꺼 둔다: 올린 상태의 난이도와 랭킹 영향을 확인한 뒤에 연다.
+ * 꺼져 있으면 연구·숙련도 화면이 안 보이고, 저장된 값이 있어도 판에 반영되지 않으며, 뽑기 중복은 부품으로 환급된다.
+ * 켜려면 enabled를 true로.
+ */
+export const META = { enabled: false };
+
 /** 숙련도 레벨별 비용 (1레벨부터). 뽑기에서 중복이 나와도 한 레벨 오른다 */
 export const MASTERY_COSTS = [40, 70, 110, 160, 220];
 
@@ -68,6 +75,8 @@ export function buyResearch(p: Progress, id: ResearchId): boolean {
 
 /** 연구·숙련도·덱을 한 판의 설정에 반영한다 */
 export function applyMeta(cfg: GameConfig, p: Progress, deck: UnitId[]): GameConfig {
+  // 꺼져 있으면 덱(카드 후보)과 다시 뽑기 비용만 정한다
+  if (!META.enabled) return { ...cfg, deck, cardRerollCost: REROLL_COST };
   const lv = (id: ResearchId) => researchLevel(p, id);
   const step = (id: ResearchId) => RESEARCH.find((r) => r.id === id)!.step * lv(id);
   const abilities = { ...cfg.abilities };

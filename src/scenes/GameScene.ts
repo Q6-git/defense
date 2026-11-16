@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
 import { Game, MASTERY, type GameEvent } from '../core/game';
-import { applyMeta, buyMastery, buyResearch, masteryCost, masteryLevel, RESEARCH, researchCost, researchLevel } from '../meta';
+import { applyMeta, META, buyMastery, buyResearch, masteryCost, masteryLevel, RESEARCH, researchCost, researchLevel } from '../meta';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId, type UnitLevel } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
@@ -300,9 +300,12 @@ export class GameScene extends Phaser.Scene {
     layer.add(bestiaryBtn.container);
     const rankBtn = button(this, 1120, 316, 230, 52, STR.rankingButton, () => this.showRanking(), THEME.orange, 19);
     layer.add(rankBtn.container);
-    const researchBtn = button(this, 1120, 380, 230, 52, STR.researchButton, () => this.showResearch(), THEME.red, 19);
-    layer.add(researchBtn.container);
-    const settingsBtn = button(this, 1120, 444, 230, 52, STR.settingsButton, () => this.showSettings(), THEME.neutral, 19);
+    // 연구는 판 밖 성장이 켜져 있을 때만 (META.enabled)
+    if (META.enabled) {
+      const researchBtn = button(this, 1120, 380, 230, 52, STR.researchButton, () => this.showResearch(), THEME.red, 19);
+      layer.add(researchBtn.container);
+    }
+    const settingsBtn = button(this, 1120, META.enabled ? 444 : 380, 230, 52, STR.settingsButton, () => this.showSettings(), THEME.neutral, 19);
     layer.add(settingsBtn.container);
     const ach = button(this, 1120, 60, 230, 52, STR.achButton(this.progress.done.length, ACHIEVEMENTS.length), () => this.showAchievements(), THEME.yellow, 19);
     layer.add(ach.container);
@@ -1629,14 +1632,17 @@ export class GameScene extends Phaser.Scene {
     };
     const dim = this.add.rectangle(0, 0, width, height, THEME.overlay, 0.7).setOrigin(0).setInteractive();
     const p = this.progress;
-    const box = card(this, width / 2, height / 2, 800, 620, 'center', THEME.bar);
-    const title = text(this, width / 2 - 370, 86, STR.deckTitle, 30).setOrigin(0, 0.5);
-    const parts = text(this, width / 2 + 230, 86, STR.gachaParts(p.parts), 18, THEME.gold).setOrigin(1, 0.5);
-    const hint = text(this, width / 2, 130, STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
-    const note = text(this, width / 2, 154, STR.masteryHint(Math.round(MASTERY.power * 100), Math.round(MASTERY.support * 100)), 14, THEME.textSoft).setOrigin(0.5);
-    const warn = text(this, width / 2, 648, '', 17, THEME.danger).setOrigin(0.5);
+    // 숙련도가 켜져 있으면 카드 아래에 강화 줄이 붙어서 창이 더 크다
+    const meta = META.enabled;
+    const top = meta ? 86 : 132;
+    const box = card(this, width / 2, height / 2, 800, meta ? 620 : 520, 'center', THEME.bar);
+    const title = text(this, width / 2 - 370, top, STR.deckTitle, 30).setOrigin(0, 0.5);
+    const parts = text(this, width / 2 + 230, top, meta ? STR.gachaParts(p.parts) : '', 18, THEME.gold).setOrigin(1, 0.5);
+    const hint = text(this, width / 2, top + (meta ? 44 : 48), STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
+    const note = text(this, width / 2, 154, meta ? STR.masteryHint(Math.round(MASTERY.power * 100), Math.round(MASTERY.support * 100)) : '', 14, THEME.textSoft).setOrigin(0.5);
+    const warn = text(this, width / 2, meta ? 648 : 560, '', 17, THEME.danger).setOrigin(0.5);
     // 닫으면 덱을 저장하고 시작 화면을 다시 그린다 (상점이 새 덱으로 바뀐다)
-    const close = button(this, width / 2 + 310, 86, 130, 44, STR.close, () => {
+    const close = button(this, width / 2 + 310, top, 130, 44, STR.close, () => {
       saveDeck(this.deck);
       this.scene.restart({});
     }, THEME.green, 18);
@@ -1645,7 +1651,7 @@ export class GameScene extends Phaser.Scene {
     all.forEach((id, i) => {
       const def = this.sim.cfg.units[id];
       const x = width / 2 + ((i % 6) - 2.5) * 125;
-      const y = 250 + Math.floor(i / 6) * 225;
+      const y = meta ? 250 + Math.floor(i / 6) * 225 : 285 + Math.floor(i / 6) * 160;
       const owned = UNIT_ORDER.includes(id) || this.progress.owned.includes(id);
       const inDeck = this.deck.includes(id);
       const rarity = GACHA_POOL[id];
@@ -1667,7 +1673,11 @@ export class GameScene extends Phaser.Scene {
         reopen();
       }, cost === null ? THEME.neutral : THEME.purple, 15);
       up.setEnabled(cost !== null && p.parts >= cost);
-      layer.add([tag, up.container]);
+      if (meta) layer.add([tag, up.container]);
+      else {
+        tag.destroy();
+        up.container.destroy();
+      }
       bg.setInteractive(new Phaser.Geom.Rectangle(-56, -70, 112, 140), Phaser.Geom.Rectangle.Contains);
       if (bg.input) bg.input.cursor = 'pointer';
       bg.on('pointerup', () => {
@@ -1694,7 +1704,7 @@ export class GameScene extends Phaser.Scene {
     const title = text(this, width / 2 - 370, 92, STR.gachaTitle, 30).setOrigin(0, 0.5);
     const parts = text(this, width / 2, 92, STR.gachaParts(p.parts), 20, THEME.gold).setOrigin(0.5);
     const close = button(this, width / 2 + 310, 92, 130, 44, STR.close, () => this.scene.restart({}), THEME.neutral, 18);
-    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}   ·   ${STR.gachaDupNote}`, 15, THEME.textSoft).setOrigin(0.5);
+    const info = text(this, width / 2, 140, `${STR.gachaRates}   ·   ${STR.gachaPity(GACHA.pity - p.pity)}${META.enabled ? `   ·   ${STR.gachaDupNote}` : ''}`, 15, THEME.textSoft).setOrigin(0.5);
     layer.add([dim, box, title, parts, close.container, info]);
     const doPull = (n: 1 | 10) => {
       const r = pull(p, n);
@@ -1733,7 +1743,7 @@ export class GameScene extends Phaser.Scene {
       const ic = icon(this, x, y - 34, id, def.emoji, 56).setAlpha(owned ? 1 : 0.35);
       const name = text(this, x, y + 10, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
       const rar = text(this, x, y + 32, STR.gachaRarity[rarity], 13, THEME.textSoft).setOrigin(0.5);
-      const st = text(this, x, y + 54, owned ? `✅ ${STR.masteryTag(masteryLevel(p, id), MASTERY.max)}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
+      const st = text(this, x, y + 54, owned ? `✅ ${META.enabled ? STR.masteryTag(masteryLevel(p, id), MASTERY.max) : STR.gachaOwned}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
       layer.add([bg, ic, name, rar, st]);
     });
   }
