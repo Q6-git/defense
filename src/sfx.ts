@@ -188,14 +188,15 @@ class Sfx {
         for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
         this.applyVolumes();
         // 탭을 벗어나면 소리를 멈춘다 (배경음이 혼자 계속 나지 않게)
-        document.addEventListener('visibilitychange', () => void (document.hidden ? ctx.suspend() : ctx.resume()));
+        document.addEventListener('visibilitychange', () => (document.hidden ? ctx.suspend() : ctx.resume()).catch(() => undefined));
         this.timer = setInterval(() => this.pump(), 60);
       } catch {
         this.ctx = null;
         return;
       }
     }
-    if (this.ctx.state === 'suspended' && !document.hidden) void this.ctx.resume();
+    // 'suspended'뿐 아니라 iOS의 'interrupted'(전화·다른 앱 소리)도 다음 터치에 다시 켠다
+    if (this.ctx.state !== 'running' && this.ctx.state !== 'closed' && !document.hidden) this.ctx.resume().catch(() => undefined);
   }
 
   toggleMute(): boolean {

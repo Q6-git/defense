@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
 import { Game, MASTERY, type GameEvent } from '../core/game';
-import { applyMeta, buyResearch, enhance, enhanceChance, enhanceCost, ENHANCE_GREAT, masteryLevel, masteryTier, META, RESEARCH, researchCost, researchLevel } from '../meta';
+import { applyMeta, buyResearch, enhance, enhanceChance, enhanceCost, enhanceKinds, ENHANCE_GREAT, ENHANCE_PITY, masteryLevel, masteryTier, META, RESEARCH, researchCost, researchLevel } from '../meta';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId, type UnitLevel } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
@@ -13,7 +13,7 @@ import { ACHIEVEMENTS, evaluate, type Progress, type RunStats } from '../achieve
 import { loadBest, loadDeck, loadName, loadProgress, loadRanking, loadSetup, saveBest, saveDeck, saveName, saveProgress, saveRanking, saveSetup, type RunSetup } from '../storage';
 import { addRank, cleanName, randomName, rankList, topUnits, type RankEntry } from '../ranking';
 import { fetchOnline, onlineEnabled, renameOnline, submitOnline } from '../online/ranking';
-import { LANGS, lang, setLang, STR } from '../i18n';
+import { LANGS, lang, loadFontFor, setLang, STR } from '../i18n';
 import { spriteUrls } from '../spriteLoader';
 import type { Grid } from '../core/types';
 import { BESTIARY, firstWave } from '../bestiary';
@@ -1158,7 +1158,7 @@ export class GameScene extends Phaser.Scene {
       btn.setEnabled(gm.money >= cost);
       // 할인 카드를 고르면 가격표가 바뀐다
       const label = `${STR.units[id].name}\n💰${cost}`;
-      if (btn.label.text !== label) btn.label.setText(label);
+      if (btn.label.text !== label) fitText(btn.label.setFontSize(14).setText(label), 64);
       btn.bg.setStrokeStyle(this.placing === id ? 3 : 2, this.placing === id ? 0xffd35a : 0xffffff, this.placing === id ? 1 : 0.25);
     }
     for (const a of this.abilityBtns) {
@@ -1812,9 +1812,13 @@ export class GameScene extends Phaser.Scene {
       const on = l.id === lang();
       // 언어 이름은 그 언어로 적는다 (지금 언어를 못 읽어도 찾을 수 있게). 고르면 화면을 새 언어로 다시 그린다
       const b = button(this, width / 2, 194 + i * 56, 420, 48, l.name, () => {
-        if (on) return;
-        setLang(l.id);
-        this.scene.restart({});
+        if (on || layer.getData('busy')) return;
+        // 새 언어의 글꼴 파일을 받은 뒤에 다시 그린다 (안 그러면 한글 일부가 다른 글꼴로 남는다)
+        layer.setData('busy', true);
+        void loadFontFor(l.id).then(() => {
+          setLang(l.id);
+          this.scene.restart({});
+        });
       }, on ? 0xfff0c8 : THEME.white, 20);
       b.bg.setStrokeStyle(on ? 4 : 2, on ? THEME.selected : THEME.cardLine);
       layer.add(b.container);
@@ -1896,18 +1900,21 @@ export class GameScene extends Phaser.Scene {
     layer.add([dim, box, title, back.container, parts]);
     if (tier) layer.add(this.tierFrame(cx, iy, 204, 204, tier, 28));
     layer.add([plate, pic, level]);
-    // 강화 효과: 공격형은 공격력·수입, 지원형(버프·전체 효과)은 지원 효과
-    const support = def.kind === 'buff' || def.kind === 'aura';
-    const per = (support ? MASTERY.support : MASTERY.power) * 100;
-    const pct = (n: number) => Math.round(n * per);
-    const effect = text(this, cx, 438, cost === null ? STR.enhanceEffectMax(pct(lv)) : STR.enhanceEffect(pct(lv), pct(lv + 1)), 18).setOrigin(0.5);
+    // 강화 효과: 이 가전에 실제로 있는 항목만. 공격력·화상·수입은 power, 버프·감속·밀어내기 같은 지원 효과는 support 비율
+    const { power, support } = enhanceKinds(def);
+    const line = (label: string, per: number) => {
+      const pct = (n: number) => Math.round(n * per * 100);
+      return cost === null ? STR.enhanceEffectMax(label, pct(lv)) : STR.enhanceEffect(label, pct(lv), pct(lv + 1));
+    };
+    const effects = [power ? line(STR.enhancePower, MASTERY.power) : '', support ? line(STR.enhanceSupport, MASTERY.support) : ''].filter(Boolean);
+    const effect = fitText(text(this, cx, effects.length > 1 ? 430 : 438, effects.join('\n'), effects.length > 1 ? 16 : 18).setOrigin(0.5).setAlign('center').setLineSpacing(2), 500);
     layer.add(effect);
     if (cost === null) {
       layer.add(text(this, cx, 520, STR.enhanceMax, 30, hex(tierColor(3))).setOrigin(0.5).setStroke('#ffffff', 6));
       return;
     }
     const chance = enhanceChance(p, id);
-    const bonus = Math.round((p.masteryFail[id] ?? 0) * 3);
+    const bonus = Math.round((p.masteryFail[id] ?? 0) * ENHANCE_PITY * 100);
     const chanceText = fitText(text(this, cx, 474, STR.enhanceChance(Math.round(chance * 100), bonus), 22, chance >= 1 ? THEME.text : THEME.danger).setOrigin(0.5), 500);
     const great = fitText(text(this, cx, 504, lv + 2 <= MASTERY.max ? STR.enhanceGreat(Math.round(ENHANCE_GREAT * 100)) : '', 14, THEME.textSoft).setOrigin(0.5), 500);
     const go = button(this, cx, 572, 320, 62, STR.enhanceGo(cost), () => {
