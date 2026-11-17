@@ -51,7 +51,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
     ],
     branches: [
       { id: 'suction', emoji: '💨', cost: 550, damage: 60, range: 130, cooldown: 0.3, hitAll: true },
-      { id: 'crusher', emoji: '🦾', cost: 550, damage: 200, range: 100, cooldown: 0.35, pierceArmor: true },
+      { id: 'crusher', emoji: '🦾', cost: 550, damage: 240, range: 130, cooldown: 0.35, pierceArmor: true },
     ],
   },
   wifi: {
