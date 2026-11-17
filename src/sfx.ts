@@ -99,6 +99,28 @@ const SOUNDS = {
   clear: { gap: 0.3, tones: [...tune('triangle', [N.E5, N.A5, N.E6], 0.09, 0.09, 2.2), { wave: 'sine', from: N.A5 * 2, to: N.A5 * 2, dur: 0.3, vol: 0.02, delay: 0.18 }] },
   win: { gap: 1, tones: [...tune('triangle', [N.C5, N.E5, N.G5, N.C6], 0.15, 0.11, 1.9), ...tune('triangle', [N.E5, N.G5, N.C6, N.E6], 0.15, 0.06, 1.9), { wave: 'sine', from: 131, to: 131, dur: 0.9, vol: 0.12 }] },
   lose: { gap: 1, tones: [...tune('triangle', [392, 330, 262, 196], 0.2, 0.11, 1.6), { wave: 'sine', from: 98, to: 49, dur: 1.0, vol: 0.14, delay: 0.6 }] },
+  // ── 가전 강화
+  /** 두드리는 중: 점점 올라가는 떨림 */
+  enhanceTry: {
+    gap: 0.2,
+    tones: [{ wave: 'square', from: 180, to: 520, dur: 0.7, vol: 0.035, lowpass: 1800 }, ...tune('triangle', [330, 330, 392, 392, 440, 440, 494, 494], 0.085, 0.05, 0.6)],
+    bursts: [{ dur: 0.7, vol: 0.03, filter: 'bandpass', freq: 500, freqTo: 3000, q: 2 }],
+  },
+  enhanceOk: { gap: 0.2, tones: [...tune('triangle', [N.C5, N.E5, N.G5, N.C6, N.E6], 0.07, 0.11, 2.4), ...tune('sine', [N.C6, N.E6, N.G6, N.C6 * 2, N.E6 * 2], 0.07, 0.035, 2.4)] },
+  enhanceGreat: {
+    gap: 0.2,
+    tones: [
+      ...tune('triangle', [N.C5, N.E5, N.G5, N.C6, N.E6, N.G6, N.C6 * 2], 0.08, 0.12, 2.6),
+      ...tune('square', [N.C5, N.E5, N.G5, N.C6, N.E6, N.G6, N.C6 * 2], 0.08, 0.03, 2.6, 4000),
+      { wave: 'sine', from: 131, to: 131, dur: 1.0, vol: 0.14 },
+    ],
+    bursts: [{ dur: 0.5, vol: 0.05, filter: 'highpass', freq: 5000, delay: 0.5 }],
+  },
+  enhanceFail: {
+    gap: 0.2,
+    tones: [{ wave: 'triangle', from: 330, to: 120, dur: 0.45, vol: 0.12 }, { wave: 'sine', from: 110, to: 55, dur: 0.5, vol: 0.12, delay: 0.1 }],
+    bursts: [{ dur: 0.4, vol: 0.06, filter: 'lowpass', freq: 900, freqTo: 200 }],
+  },
   // ── 밈
   /** 「L을 가져가!」의 L 포즈: 놀리는 가락 (솔-미-라-솔-미) */
   taunt: { gap: 0.6, tones: [...tune('square', [N.C5, N.A4, N.D5, N.C5, N.A4], 0.1, 0.06, 0.9, 3000), ...tune('triangle', [N.C6, N.A5, N.D5 * 2, N.C6, N.A5], 0.1, 0.03, 0.9)] },

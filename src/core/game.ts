@@ -139,10 +139,10 @@ export interface UpgradeOption {
 export const STAR = { max: 10, power: 0.25, support: 0.1, costMul: 1.5 };
 
 /**
- * 숙련도: 판 밖에서 부품으로 올리는 가전별 영구 강화. ★강화와 같은 항목이 오른다.
- * 레벨당 공격력·지속 피해·수입 +4%(공격형), 버프·감속 효과 +2%(지원형)
+ * 가전 강화(숙련도): 판 밖에서 부품으로 올리는 가전별 영구 강화 (+1 ~ +10). ★강화와 같은 항목이 오른다.
+ * 단계당 공격력·지속 피해·수입 +2%(공격형), 버프·감속 같은 지원 효과 +1%(지원형). 확률과 비용은 src/meta.ts
  */
-export const MASTERY = { max: 5, power: 0.04, support: 0.02 };
+export const MASTERY = { max: 10, power: 0.02, support: 0.01 };
 
 /** 전자레인지 해동 폭탄이 남기는 불 장판 */
 export interface Zone {

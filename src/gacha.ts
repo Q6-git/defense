@@ -1,7 +1,5 @@
 // 뽑기와 판 보상. 엔진·화면에 의존하지 않는 순수 로직이다.
 import type { Progress } from './achievements';
-import { MASTERY } from './core/game';
-import { META } from './meta';
 
 export type GachaRarity = 'rare' | 'hero' | 'legend';
 
@@ -11,7 +9,7 @@ export const GACHA = {
   /** 이 횟수 안에 전설이 안 나오면 그 회차에 전설 확정 */
   pity: 30,
   rates: { rare: 0.7, hero: 0.25, legend: 0.05 } as Record<GachaRarity, number>,
-  /** 이미 가진 가전이 나왔는데 숙련도가 이미 최대면 돌려받는 부품 */
+  /** 이미 가진 가전이 나오면 돌려받는 부품 (강화에 쓴다) */
   refund: { rare: 30, hero: 60, legend: 150 } as Record<GachaRarity, number>,
 };
 
@@ -23,10 +21,8 @@ export const GACHA_POOL: Record<string, GachaRarity> = {
 export interface PullResult {
   unit: string;
   rarity: GachaRarity;
-  /** 이미 가진 가전인지 */
+  /** 이미 가진 가전이라 부품으로 환급됐는지 */
   duplicate: boolean;
-  /** 중복이라 숙련도가 한 레벨 올랐는지 (최대 레벨이면 부품으로 환급) */
-  mastery: boolean;
   refund: number;
 }
 
@@ -42,13 +38,10 @@ function roll(p: Progress, rng: () => number): PullResult {
   const options = Object.keys(GACHA_POOL).filter((u) => GACHA_POOL[u] === rarity);
   const unit = options[Math.floor(rng() * options.length)];
   const duplicate = p.owned.includes(unit);
-  // 중복은 부품으로 돌려준다. 숙련도가 켜져 있으면(META.enabled) 그 가전의 숙련도를 한 레벨 올리고, 이미 최대일 때만 돌려준다
-  const mastery = META.enabled && duplicate && (p.mastery[unit] ?? 0) < MASTERY.max;
-  const refund = duplicate && !mastery ? GACHA.refund[rarity] : 0;
-  if (mastery) p.mastery[unit] = (p.mastery[unit] ?? 0) + 1;
-  else if (duplicate) p.parts += refund;
+  const refund = duplicate ? GACHA.refund[rarity] : 0;
+  if (duplicate) p.parts += refund;
   else p.owned.push(unit);
-  return { unit, rarity, duplicate, mastery, refund };
+  return { unit, rarity, duplicate, refund };
 }
 
 /** n회(1 또는 10) 뽑는다. 부품이 모자라면 null */

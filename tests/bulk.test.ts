@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '../src/config';
-import { bulkGroup, nextBulkStep } from '../src/core/bulk';
+import { bulkGroup, forkAll, forkGroup, nextBulkStep } from '../src/core/bulk';
 import { Game } from '../src/core/game';
 import type { Unit } from '../src/core/types';
 
@@ -59,6 +59,48 @@ describe("'모두' 업그레이드", () => {
     g.money = 0;
     expect(nextBulkStep(g, a)).toBeNull();
     expect(nextBulkStep(g, g.units[1])).toBeNull();
+  });
+});
+
+describe("갈림길 '모두'", () => {
+  /** Lv3까지만 올린다 (갈림길 앞) */
+  const toFork = (g: Game, u: Unit) => {
+    g.apply({ type: 'upgrade', uid: u.uid });
+    g.apply({ type: 'upgrade', uid: u.uid });
+  };
+
+  it('고른 갈래가 갈림길에 와 있는 같은 종류 가전에만 적용된다', () => {
+    const g = setup(1e6);
+    const [a, b, c, d] = g.units;
+    expect(g.apply({ type: 'place', unit: 'fan', x: 300, y: 240 }).ok).toBe(true);
+    const fan = g.units[4];
+    [a, b, c, fan].forEach((u) => toFork(g, u)); // d는 Lv1
+    fork(g, c, 0); // c는 이미 다른 갈래
+    expect(forkGroup(g, b)).toEqual([b, a]);
+    expect(forkAll(g, b, 1)).toEqual([b, a]);
+    expect([a.branch, b.branch, c.branch, d.branch, fan.branch]).toEqual([1, 1, 0, null, null]);
+    expect(d.level).toBe(0);
+  });
+
+  it('돈이 모자라면 고른 가전부터 되는 만큼만', () => {
+    const g = setup(1e6);
+    const [a, b, c] = g.units;
+    [a, b, c].forEach((u) => toFork(g, u));
+    g.money = 450 * 2 + 10;
+    expect(forkAll(g, c, 0)).toEqual([c, a]);
+    expect(b.branch).toBeNull();
+    expect(g.money).toBe(10);
+    g.money = 0;
+    expect(forkAll(g, b, 0)).toEqual([]);
+  });
+
+  it('갈림길에 있지 않은 가전을 고르면 아무 일도 없다', () => {
+    const g = setup(1e6);
+    const [a, b] = g.units;
+    toFork(g, b);
+    expect(forkGroup(g, a)).toEqual([]);
+    expect(forkAll(g, a, 0)).toEqual([]);
+    expect(b.branch).toBeNull();
   });
 });
 

@@ -50,8 +50,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 350, damage: 55, range: 100, cooldown: 0.24 },
     ],
     branches: [
-      { id: 'suction', emoji: '💨', cost: 550, damage: 40, range: 110, cooldown: 0.3, hitAll: true },
-      { id: 'crusher', emoji: '🦾', cost: 550, damage: 200, range: 100, cooldown: 0.35, pierceArmor: true },
+      { id: 'suction', emoji: '💨', cost: 550, damage: 60, range: 130, cooldown: 0.3, hitAll: true },
+      { id: 'crusher', emoji: '🦾', cost: 550, damage: 240, range: 130, cooldown: 0.35, pierceArmor: true },
     ],
   },
   wifi: {
@@ -87,7 +87,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 300, damage: 16, range: 120, cooldown: 0.45, dot: { dps: 58, duration: 3 } },
     ],
     branches: [
-      { id: 'flamer', emoji: '🌋', cost: 500, damage: 14, range: 130, cooldown: 0.5, hitAll: true, dot: { dps: 35, duration: 3 } },
+      { id: 'flamer', emoji: '🌋', cost: 500, damage: 18, range: 140, cooldown: 0.5, hitAll: true, dot: { dps: 46, duration: 3 } },
       { id: 'pressure', emoji: '🍲', cost: 500, damage: 60, range: 135, cooldown: 1.4, dot: { dps: 150, duration: 4 }, defaultTarget: 'strong' },
     ],
   },
@@ -142,12 +142,12 @@ export const UNITS: Record<UnitId, UnitDef> = {
   dishwasher: {
     id: 'dishwasher', kind: 'single', emoji: '🚿', color: 0x4f9fe0, radius: 20,
     levels: [
-      { cost: 260, damage: 36, range: 260, cooldown: 1.5, line: 24 },
-      { cost: 280, damage: 65, range: 280, cooldown: 1.4, line: 24 },
-      { cost: 460, damage: 115, range: 300, cooldown: 1.3, line: 26 },
+      { cost: 260, damage: 52, range: 260, cooldown: 1.5, line: 30 },
+      { cost: 280, damage: 94, range: 280, cooldown: 1.4, line: 30 },
+      { cost: 460, damage: 165, range: 300, cooldown: 1.3, line: 32 },
     ],
     branches: [
-      { id: 'jet', emoji: '🌊', cost: 650, damage: 130, range: 300, cooldown: 1.0, line: 56 },
+      { id: 'jet', emoji: '🌊', cost: 650, damage: 200, range: 300, cooldown: 1.0, line: 56 },
       { id: 'sterilize', emoji: '🧪', cost: 650, damage: 600, range: 340, cooldown: 1.6, pierceArmor: true, defaultTarget: 'strong' },
     ],
   },
