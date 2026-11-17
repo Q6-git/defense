@@ -115,7 +115,7 @@ describe('지원형 가전의 ★강화', () => {
   };
 
   it('선풍기: 밀어내기·얼리기·감속 지속이 별마다 10%씩 세진다', () => {
-    expect(lv4('fan', 0, 2).s.knockback).toBeCloseTo(45 * 1.2);
+    expect(lv4('fan', 0, 2).s.knockback).toBeCloseTo(60 * 1.2);
     const frost = lv4('fan', 1, 5).s;
     expect(frost.freeze).toBeCloseTo(1.5);
     expect(frost.frozenVuln).toBeCloseTo(1.6);
