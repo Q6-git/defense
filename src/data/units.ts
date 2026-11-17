@@ -26,7 +26,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 250, damage: 7, range: 140, cooldown: 0.9, slow: 0.4, slowDuration: 1.4 },
     ],
     branches: [
-      { id: 'typhoon', emoji: '🌪️', cost: 400, damage: 22, range: 165, cooldown: 1.5, slow: 0.4, slowDuration: 1.4, knockback: 60 },
+      { id: 'typhoon', emoji: '🌪️', cost: 400, damage: 10, range: 150, cooldown: 1.8, slow: 0.4, slowDuration: 1.4, knockback: 45 },
       { id: 'frost', emoji: '❄️', cost: 400, damage: 10, range: 150, cooldown: 1.8, slow: 0.4, slowDuration: 1.4, freeze: 1.0, frozenVuln: 1.4 },
     ],
   },
