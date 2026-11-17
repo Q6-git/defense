@@ -1,12 +1,11 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { emptyProgress } from '../src/achievements';
 import { defaultConfig } from '../src/config';
-import { Game, MASTERY } from '../src/core/game';
+import { Game } from '../src/core/game';
 import type { UnitId } from '../src/core/types';
 import { GACHA_UNITS } from '../src/data/units';
 import { STR } from '../src/strings.ko';
 import { GACHA, GACHA_POOL, pull, waveReward } from '../src/gacha';
-import { META } from '../src/meta';
 
 /** 정해진 값을 차례로 돌려주는 난수 */
 const seq = (...v: number[]) => {
@@ -20,7 +19,7 @@ describe('뽑기', () => {
     expect(pull(p, 1, seq(0.5, 0))).toBeNull();
     p.parts = 100;
     const r = pull(p, 1, seq(0.5, 0))!;
-    expect(r[0]).toEqual({ unit: 'stove', rarity: 'rare', duplicate: false, mastery: false, refund: 0 });
+    expect(r[0]).toEqual({ unit: 'stove', rarity: 'rare', duplicate: false, refund: 0 });
     expect(p.parts).toBe(0);
     expect(p.owned).toEqual(['stove']);
   });
@@ -36,26 +35,10 @@ describe('뽑기', () => {
   it('이미 가진 가전이 나오면 부품으로 환급된다', () => {
     const p = { ...emptyProgress(), parts: 200, owned: ['stove'] };
     const r = pull(p, 1, seq(0.5, 0))!;
-    expect(r[0]).toMatchObject({ duplicate: true, mastery: false, refund: GACHA.refund.rare });
+    expect(r[0]).toMatchObject({ duplicate: true, refund: GACHA.refund.rare });
     expect(p.parts).toBe(200 - 100 + GACHA.refund.rare);
     expect(p.owned).toEqual(['stove']);
     expect(p.mastery).toEqual({});
-  });
-
-  it('숙련도가 켜져 있으면: 중복은 숙련도 +1, 최대 레벨이면 부품으로 환급', () => {
-    META.enabled = true;
-    onTestFinished(() => void (META.enabled = false));
-    const p = { ...emptyProgress(), parts: 200, owned: ['stove'] };
-    const r = pull(p, 1, seq(0.5, 0))!;
-    expect(r[0]).toMatchObject({ duplicate: true, mastery: true, refund: 0 });
-    expect(p.mastery.stove).toBe(1);
-    expect(p.parts).toBe(100);
-    expect(p.owned).toEqual(['stove']);
-    p.mastery.stove = MASTERY.max;
-    const r2 = pull(p, 1, seq(0.5, 0))!;
-    expect(r2[0]).toMatchObject({ duplicate: true, mastery: false, refund: GACHA.refund.rare });
-    expect(p.mastery.stove).toBe(MASTERY.max);
-    expect(p.parts).toBe(GACHA.refund.rare);
   });
 
   it('30회 안에 전설이 안 나오면 30회째는 전설 확정이고, 전설이 나오면 횟수가 초기화된다', () => {
