@@ -83,6 +83,12 @@ export function masteryTier(level: number): 0 | 1 | 2 | 3 {
   return level >= MASTERY.max ? 3 : level >= 8 ? 2 : level >= 5 ? 1 : 0;
 }
 
+/** 덱에 들고 갈 수 있는 가전 수. 지옥 난이도를 깨면(업적 '지옥에서 온 수비대') 한 칸 늘어난다 */
+export const DECK = { base: 6, hell: 7 };
+export function deckSize(p: Progress): number {
+  return p.done.includes('clear_hell') ? DECK.hell : DECK.base;
+}
+
 export type ResearchId = 'allowance' | 'outlet' | 'plunger' | 'overload' | 'resale' | 'reroll' | 'choice';
 
 export interface ResearchDef {

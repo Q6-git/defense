@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { defaultConfig } from '../config';
 import { Game, MASTERY, type GameEvent } from '../core/game';
-import { applyMeta, buyResearch, enhance, enhanceChance, enhanceCost, enhanceKinds, ENHANCE_GREAT, ENHANCE_PITY, masteryLevel, masteryTier, META, RESEARCH, researchCost, researchLevel } from '../meta';
+import { applyMeta, buyResearch, DECK, deckSize, enhance, enhanceChance, enhanceCost, enhanceKinds, ENHANCE_GREAT, ENHANCE_PITY, masteryLevel, masteryTier, META, RESEARCH, researchCost, researchLevel } from '../meta';
 import { TARGET_MODES, type AbilityId, type DifficultyId, type Enemy, type EnemyId, type Unit, type UnitId, type UnitLevel } from '../core/types';
 import { ABILITY_ORDER } from '../data/abilities';
 import { DIFFICULTIES, DIFFICULTY_ORDER } from '../data/difficulty';
@@ -46,8 +46,6 @@ function easeOutBack(x: number): number {
 /** DPS 표시: 오르는 가전(그릴)은 최대치도 */
 const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.max > d.dps + 0.5 ? STR.dpsMax(Math.round(d.max)) : ''}`;
 
-/** 한 판에 들고 갈 수 있는 가전 수 */
-const DECK_SIZE = 6;
 /** 덱 편성 화면의 한 줄 칸 수 (가전 13종이 두 줄) */
 const DECK_COLS = 7;
 const RARITY_COLOR: Record<string, number> = { rare: 0x5aa9e6, hero: 0xa57be0, legend: 0xf5a623 };
@@ -153,6 +151,8 @@ export class GameScene extends Phaser.Scene {
   private pickerLayer?: Phaser.GameObjects.Container;
   private speed = 1;
   private shopBtns: { id: UnitId; btn: Button }[] = [];
+  /** 상점 버튼 글씨 크기 (7칸이면 작게) */
+  private shopFont = 14;
   private abilityBtns: AbilityButton[] = [];
   private toast!: Phaser.GameObjects.Text;
   private toastTimer = 0;
@@ -205,7 +205,7 @@ export class GameScene extends Phaser.Scene {
     this.progress = loadProgress();
     // 저장된 덱에서 지금 가진 가전만 남긴다. 없으면 기본 6종
     const have = new Set<string>([...UNIT_ORDER, ...this.progress.owned]);
-    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, DECK_SIZE) as UnitId[];
+    const saved = (loadDeck() ?? []).filter((u) => have.has(u)).slice(0, deckSize(this.progress)) as UnitId[];
     this.deck = saved.length ? saved : [...UNIT_ORDER];
     // 연구·숙련도·덱이 반영된 설정으로 판을 만든다
     this.sim = new Game(applyMeta(defaultConfig(this.setup.difficulty, this.setup.endless, this.setup.map as MapId), this.progress, this.deck));
@@ -627,19 +627,24 @@ export class GameScene extends Phaser.Scene {
 
   private buildShop(): void {
     text(this, PANEL_X + 16, 66, STR.shop, 16, THEME.textSoft);
+    // 6칸까지는 2열 3줄, 7칸이면 버튼을 낮게 해서 4줄 (스킬 버튼과 정보 창 자리는 그대로)
+    const compact = this.deck.length > 6;
+    const h = compact ? 52 : 68;
+    const font = compact ? 13 : 14;
+    this.shopFont = font;
     this.shopBtns = this.deck.map((id, i) => {
       const def = this.sim.cfg.units[id];
       const x = PANEL_X + 64 + (i % 2) * 112;
-      const y = 122 + Math.floor(i / 2) * 76;
-      const btn = button(this, x, y, 104, 68, '', () => this.choosePlacing(id), THEME.white, 14);
-      const ic = icon(this, -33, 0, id, def.emoji, 36);
+      const y = compact ? 112 + Math.floor(i / 2) * 58 : 122 + Math.floor(i / 2) * 76;
+      const btn = button(this, x, y, 104, h, '', () => this.choosePlacing(id), THEME.white, font);
+      const ic = icon(this, -33, 0, id, def.emoji, compact ? 30 : 36);
       fitText(btn.label.setPosition(18, 0).setText(`${STR.units[id].name}\n💰${def.levels[0].cost}`).setAlign('center'), 64);
       btn.container.add(ic);
       // 강화한 가전은 상점에서도 +단계가 보이고, +5부터는 등급 색 테두리가 붙는다
       const mastery = this.sim.cfg.mastery?.[id] ?? 0;
       const tier = masteryTier(mastery);
-      if (tier) btn.container.addAt(this.tierFrame(0, -2, 108, 68, tier, 16), 0);
-      if (mastery > 0) btn.container.add(text(this, 50, -33, STR.enhanceLevel(mastery), 14, tier ? hex(tierColor(tier)) : THEME.textSoft).setOrigin(1, 0).setStroke('#ffffff', 4));
+      if (tier) btn.container.addAt(this.tierFrame(0, -2, 108, h, tier, 16), 0);
+      if (mastery > 0) btn.container.add(text(this, 50, -h / 2 + 1, STR.enhanceLevel(mastery), compact ? 12 : 14, tier ? hex(tierColor(tier)) : THEME.textSoft).setOrigin(1, 0).setStroke('#ffffff', 4));
       return { id, btn };
     });
   }
@@ -1160,7 +1165,7 @@ export class GameScene extends Phaser.Scene {
       btn.setEnabled(gm.money >= cost);
       // 할인 카드를 고르면 가격표가 바뀐다
       const label = `${STR.units[id].name}\n💰${cost}`;
-      if (btn.label.text !== label) fitText(btn.label.setFontSize(14).setText(label), 64);
+      if (btn.label.text !== label) fitText(btn.label.setFontSize(this.shopFont).setText(label), 64);
       btn.bg.setStrokeStyle(this.placing === id ? 3 : 2, this.placing === id ? 0xffd35a : 0xffffff, this.placing === id ? 1 : 0.25);
     }
     for (const a of this.abilityBtns) {
@@ -1633,9 +1638,10 @@ export class GameScene extends Phaser.Scene {
   private checkAchievements(): void {
     for (const a of evaluate(this.run, this.progress)) {
       const slot = this.popups++;
-      const label = STR.achUnlocked(STR.achievements[a.id]?.name ?? a.id, a.reward);
-      const box = new RoundBox(this, 0, 0, 520, 50, THEME.yellow, 16, 4);
-      const t = text(this, 0, -2, label, 20).setOrigin(0.5);
+      // 지옥 클리어는 덱 칸이 늘어난다는 것도 함께 알린다
+      const label = `${STR.achUnlocked(STR.achievements[a.id]?.name ?? a.id, a.reward)}${a.id === 'clear_hell' ? `  ${STR.deckSlotUnlocked(DECK.hell)}` : ''}`;
+      const box = new RoundBox(this, 0, 0, 620, 50, THEME.yellow, 16, 4);
+      const t = fitText(text(this, 0, -2, label, 20).setOrigin(0.5), 600);
       const c = this.add.container(520, -40, [box, t]).setDepth(75);
       this.tweens.chain({
         targets: c,
@@ -1654,7 +1660,7 @@ export class GameScene extends Phaser.Scene {
     saveProgress(this.progress);
   }
 
-  /** 덱 편성 화면: 가진 가전 중 최대 6종을 고른다 */
+  /** 덱 편성 화면: 가진 가전 중 최대 6종(지옥을 깨면 7종)을 고른다 */
   /**
    * 시작 화면 위에 뜨는 창(도감·업적·덱·뽑기). 창이 열려 있는 동안 아래 시작 화면 버튼은 눌리지 않게 막는다.
    * (Phaser는 마지막 렌더 순서로 맨 위 물체를 고르는데, 그리는 도중에 누르면 아래 버튼이 눌릴 수 있다)
@@ -1696,7 +1702,9 @@ export class GameScene extends Phaser.Scene {
     const box = card(this, width / 2, height / 2, 800, meta ? 620 : 520, 'center', THEME.bar);
     const title = text(this, width / 2 - 370, top, STR.deckTitle, 30).setOrigin(0, 0.5);
     const parts = text(this, width / 2 + 230, top, meta ? STR.gachaParts(p.parts) : '', 18, THEME.gold).setOrigin(1, 0.5);
-    const hint = text(this, width / 2, top + (meta ? 44 : 48), STR.deckHint(this.deck.length, DECK_SIZE), 18, THEME.textSoft).setOrigin(0.5);
+    // 아직 6칸이면 지옥을 깨면 7칸이 된다는 것도 알려 준다
+    const size = deckSize(p);
+    const hint = fitText(text(this, width / 2, top + (meta ? 44 : 48), `${STR.deckHint(this.deck.length, size)}${size < DECK.hell ? `   ${STR.deckMoreSlot(DECK.hell)}` : ''}`, 18, THEME.textSoft).setOrigin(0.5), 760);
     const note = fitText(text(this, width / 2, 154, meta ? STR.enhanceHint(Math.round(MASTERY.power * 100), Math.round(MASTERY.support * 100)) : '', 14, THEME.textSoft).setOrigin(0.5), 760);
     const warn = text(this, width / 2, meta ? 648 : 560, '', 17, THEME.danger).setOrigin(0.5);
     // 닫으면 덱을 저장하고 시작 화면을 다시 그린다 (상점이 새 덱으로 바뀐다)
@@ -1743,7 +1751,7 @@ export class GameScene extends Phaser.Scene {
           if (this.deck.length <= 1) return warn.setText(STR.deckMin);
           this.deck = this.deck.filter((u) => u !== id);
         } else {
-          if (this.deck.length >= DECK_SIZE) return warn.setText(STR.deckFull);
+          if (this.deck.length >= size) return warn.setText(STR.deckFull);
           this.deck = [...this.deck, id];
         }
         sfx.play('place');
