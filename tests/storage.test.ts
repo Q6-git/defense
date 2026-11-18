@@ -29,7 +29,8 @@ describe('예전 버전 저장 데이터', () => {
     const cfg = applyMeta(defaultConfig(), p, [...UNIT_ORDER]);
     expect(new Game(cfg).levelStats('toaster', 0).damage).toBe(12);
     expect(enhanceChance(p, 'toaster')).toBe(1);
-    expect(enhance(p, 'toaster')?.level).toBe(1);
+    // 난수를 정해 둔다 (그냥 두면 10% 확률로 대성공이 나와 +2가 된다)
+    expect(enhance(p, 'toaster', () => 0.5)?.level).toBe(1);
     saveProgress(p);
     expect(loadProgress().mastery.toaster).toBe(1);
   });
@@ -47,7 +48,7 @@ describe('예전 버전 저장 데이터', () => {
     const g = new Game(applyMeta(defaultConfig(), p, [...UNIT_ORDER]));
     expect(g.levelStats('toaster', 0).damage).toBeCloseTo(12 * 1.2);
     expect(g.levelStats('fan', 0).damage).toBe(2);
-    expect(enhance(p, 'toaster')).toBeNull();
+    expect(enhance(p, 'toaster', () => 0.5)).toBeNull();
   });
 
   it('언어를 고른 적이 없으면 빈 값 (브라우저 언어를 따른다)', () => {
