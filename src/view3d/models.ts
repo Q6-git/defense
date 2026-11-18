@@ -193,16 +193,27 @@ const aircon: Model = () => {
 };
 
 const dishwasher: Model = () => {
-  // 식기세척기: 정육면체 + 남색 조작부 + 비눗방울
+  // 식기세척기(전설): 흰 몸 + 남색 조작부 + 모든 모서리 금테, 금 손잡이, 빛나는 표시등과 비눗방울
   const shell = plastic(0xdfe9f2);
-  const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, roughness: 0.05, transparent: true, opacity: 0.6 });
+  const gold = metal(0xf5c542);
+  const glow = (color: number, emissive: number) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: 1.4 });
+  const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, emissive: 0x7fd8ff, emissiveIntensity: 0.35, roughness: 0.05, transparent: true, opacity: 0.7 });
   const head = group(
     rbox(1.25, 1.2, 0.95, 0.16, shell),
     at(rbox(1.15, 0.22, 0.05, 0.05, plastic(0x2f5fa8)), 0, 0.42, 0.47),
-    at(rbox(0.9, 0.05, 0.05, 0.02, metal(0xb8c2cc)), 0, 0.22, 0.5),
+    at(rbox(0.6, 0.04, 0.03, 0.02, glow(0x9ff4ff, 0x4fe0ff)), -0.1, 0.42, 0.5),
+    at(sphere(0.05, glow(0xffe27a, 0xffc21f)), 0.42, 0.42, 0.5),
+    at(rbox(0.6, 0.07, 0.07, 0.03, gold), 0, 0.22, 0.5),
     at(face(1.0), 0, -0.15, 0.48),
     at(sphere(0.14, bubble), 0.35, 0.75, 0.1), at(sphere(0.1, bubble), 0.12, 0.85, -0.1), at(sphere(0.08, bubble), 0.5, 0.95, -0.05),
   );
+  // 모서리 열두 개에 금테 (둥근 모서리 안쪽으로 조금 들여서)
+  const t = 0.05, gx = 0.59, gy = 0.565, gz = 0.44;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) head.add(at(rbox(t, 1.12, t, 0.02, gold), sx * gx, 0, sz * gz));
+  for (const sy of [-1, 1]) {
+    for (const sz of [-1, 1]) head.add(at(rbox(1.17, t, t, 0.02, gold), 0, sy * gy, sz * gz));
+    for (const sx of [-1, 1]) head.add(at(rbox(t, t, 0.87, 0.02, gold), sx * gx, sy * gy, 0));
+  }
   return appliance(head, 0x2f5fa8, 1.1, 0xdfe9f2);
 };
 
