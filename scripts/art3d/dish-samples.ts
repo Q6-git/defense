@@ -87,11 +87,33 @@ const coinWasher = () => {
   return body(head, 0xc9862a, 0xfff6dc);
 };
 
+/** 6. 지금 모양에 전설 장식만: 금 손잡이·금테, 빛나는 표시등, 반짝이는 거품 */
+const legendTouch = () => {
+  const shell = plastic(0xdfe9f2);
+  const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, emissive: 0x7fd8ff, emissiveIntensity: 0.35, roughness: 0.05, transparent: true, opacity: 0.7 });
+  const head = group(
+    rbox(1.25, 1.2, 0.95, 0.16, shell),
+    at(rbox(1.15, 0.22, 0.05, 0.05, plastic(0x2f5fa8)), 0, 0.42, 0.47),
+    at(rbox(0.6, 0.04, 0.03, 0.02, glow(0x9ff4ff, 0x4fe0ff, 1.4)), -0.1, 0.42, 0.5),
+    at(sphere(0.05, glow(0xffe27a, 0xffc21f, 1.4)), 0.42, 0.42, 0.5),
+    at(rbox(0.6, 0.07, 0.07, 0.03, GOLD()), 0, 0.22, 0.5),
+    // 앞면 둘레만 가는 금테 (윗면 전체를 금색으로 덮으면 노란 세탁기와 헷갈린다)
+    at(rbox(1.21, 0.04, 0.03, 0.02, GOLD()), 0, 0.58, 0.48),
+    at(rbox(1.21, 0.04, 0.03, 0.02, GOLD()), 0, -0.58, 0.48),
+    at(rbox(0.04, 1.16, 0.03, 0.02, GOLD()), 0.6, 0, 0.48),
+    at(rbox(0.04, 1.16, 0.03, 0.02, GOLD()), -0.6, 0, 0.48),
+    at(face(1.0), 0, -0.15, 0.48),
+    at(sphere(0.14, bubble), 0.35, 0.75, 0.1), at(sphere(0.1, bubble), 0.12, 0.85, -0.1), at(sphere(0.08, bubble), 0.5, 0.95, -0.05),
+  );
+  return body(head, 0x2f5fa8, 0xdfe9f2);
+};
+
 export const DISH_SAMPLES: Record<string, () => THREE.Object3D> = {
   'd1_지금': MODELS.dishwasher,
   'd2_크롬아쿠아': chrome,
   'd3_바다기사': ocean,
   'd4_접시왕관': crown,
+  'd6_남색+전설장식': legendTouch,
   'w1_세탁기지금': MODELS.washer,
   'w2_금빛코인': coinWasher,
 };

@@ -89,19 +89,20 @@ const wifi: Model = () => {
 };
 
 const washer: Model = () => {
-  // 동전 세탁기: 정육면체 + 둥근 유리문(안에 거품) + 동전 투입구와 금화
-  const shell = plastic(0xf7f7fb);
-  const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3f5, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.85 });
+  // 동전 세탁기: 크림색 노란 몸 + 둥근 유리문 + 동전 투입구, 머리 위에 금화 더미 (흰 식기세척기와 헷갈리지 않게)
+  const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3f5, roughness: 0.05, transparent: true, opacity: 0.85 });
+  const gold = metal(0xf5c542);
   const head = group(
-    rbox(1.2, 1.2, 0.95, 0.16, shell),
-    at(rbox(1.1, 0.24, 0.05, 0.05, plastic(0xe8c547)), 0, 0.45, 0.47),
-    at(torus(0.36, 0.06, plastic(0xc9cbd6)), 0, -0.12, 0.48),
+    rbox(1.2, 1.2, 0.95, 0.16, plastic(0xffe08a)),
+    at(rbox(1.1, 0.22, 0.05, 0.05, plastic(0xc9862a)), 0, 0.45, 0.47),
+    at(rbox(0.22, 0.05, 0.04, 0.02, plastic(0x3a2a20)), 0.32, 0.45, 0.5),
+    at(torus(0.36, 0.07, metal(0xd8dde6)), 0, -0.12, 0.48),
     at(cyl(0.34, 0.34, 0.04, glass, 32), 0, -0.12, 0.47, Math.PI / 2),
-    at(sphere(0.1, plastic(0xffffff, 0.2)), -0.12, -0.22, 0.5), at(sphere(0.07, plastic(0xffffff, 0.2)), 0.1, -0.05, 0.5),
     at(face(0.75, { spread: 0.2 }), 0, -0.12, 0.52),
-    at(cyl(0.18, 0.18, 0.05, metal(0xffcf3a)), 0.35, 0.68, 0, 0, 0, Math.PI / 2 - 0.3),
   );
-  return appliance(head, 0xe8c547, 1.1, 0xf7f7fb);
+  for (let i = 0; i < 4; i++) head.add(at(cyl(0.17, 0.17, 0.06, gold, 28), -0.25 + (i % 2) * 0.04, 0.64 + i * 0.065, 0));
+  head.add(at(cyl(0.17, 0.17, 0.06, gold, 28), 0.25, 0.64, 0.05));
+  return appliance(head, 0xc9862a, 1.1, 0xfff6dc);
 };
 
 const stove: Model = () => {
@@ -192,17 +193,17 @@ const aircon: Model = () => {
 };
 
 const dishwasher: Model = () => {
-  // 식기세척기: 정육면체 + 위쪽 조작부 + 비눗방울
+  // 식기세척기: 정육면체 + 남색 조작부 + 비눗방울
   const shell = plastic(0xdfe9f2);
   const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, roughness: 0.05, transparent: true, opacity: 0.6 });
   const head = group(
     rbox(1.25, 1.2, 0.95, 0.16, shell),
-    at(rbox(1.15, 0.22, 0.05, 0.05, plastic(0x4f9fe0)), 0, 0.42, 0.47),
+    at(rbox(1.15, 0.22, 0.05, 0.05, plastic(0x2f5fa8)), 0, 0.42, 0.47),
     at(rbox(0.9, 0.05, 0.05, 0.02, metal(0xb8c2cc)), 0, 0.22, 0.5),
     at(face(1.0), 0, -0.15, 0.48),
     at(sphere(0.14, bubble), 0.35, 0.75, 0.1), at(sphere(0.1, bubble), 0.12, 0.85, -0.1), at(sphere(0.08, bubble), 0.5, 0.95, -0.05),
   );
-  return appliance(head, 0x4f9fe0, 1.1, 0xdfe9f2);
+  return appliance(head, 0x2f5fa8, 1.1, 0xdfe9f2);
 };
 
 // ───────── 하수구 군단
