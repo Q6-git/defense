@@ -88,7 +88,7 @@ const coinWasher = () => {
 };
 
 /** 6. 지금 모양에 전설 장식만: 금 손잡이·금테, 빛나는 표시등, 반짝이는 거품 */
-const legendTouch = () => {
+const legendTouch = (extra?: (head: THREE.Group) => void) => {
   const shell = plastic(0xdfe9f2);
   const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, emissive: 0x7fd8ff, emissiveIntensity: 0.35, roughness: 0.05, transparent: true, opacity: 0.7 });
   const head = group(
@@ -105,15 +105,38 @@ const legendTouch = () => {
     at(face(1.0), 0, -0.15, 0.48),
     at(sphere(0.14, bubble), 0.35, 0.75, 0.1), at(sphere(0.1, bubble), 0.12, 0.85, -0.1), at(sphere(0.08, bubble), 0.5, 0.95, -0.05),
   );
+  extra?.(head);
   return body(head, 0x2f5fa8, 0xdfe9f2);
 };
+
+// 몸통 상자 크기의 절반 (rbox 1.25 × 1.2 × 0.95)
+const HX = 0.625, HY = 0.6, HZ = 0.475;
+
+/** 7. 윗면·옆면을 금색 판으로 덮는다 (앞면은 흰색 그대로) */
+const goldPanels = () => legendTouch((head) => {
+  head.add(at(rbox(1.21, 0.03, 0.91, 0.02, GOLD()), 0, HY + 0.005, 0));
+  for (const sx of [-1, 1]) head.add(at(rbox(0.03, 1.12, 0.91, 0.02, GOLD()), sx * (HX + 0.005), 0, 0));
+});
+
+/** 8. 모든 모서리에 금테 (윗면·옆면 테두리) */
+const goldEdges = () => legendTouch((head) => {
+  const t = 0.05, i = 0.035; // 테 굵기, 둥근 모서리 안쪽으로 들이는 정도
+  const gx = HX - i, gy = HY - i, gz = HZ - i;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) head.add(at(rbox(t, 1.12, t, 0.02, GOLD()), sx * gx, 0, sz * gz)); // 세로 모서리
+  for (const sy of [-1, 1]) {
+    for (const sz of [-1, 1]) head.add(at(rbox(1.17, t, t, 0.02, GOLD()), 0, sy * gy, sz * gz)); // 가로(좌우) 모서리
+    for (const sx of [-1, 1]) head.add(at(rbox(t, t, 0.87, 0.02, GOLD()), sx * gx, sy * gy, 0)); // 앞뒤 모서리
+  }
+});
 
 export const DISH_SAMPLES: Record<string, () => THREE.Object3D> = {
   'd1_지금': MODELS.dishwasher,
   'd2_크롬아쿠아': chrome,
   'd3_바다기사': ocean,
   'd4_접시왕관': crown,
-  'd6_남색+전설장식': legendTouch,
+  'd6_남색+전설장식': () => legendTouch(),
+  'd7_윗옆금색': goldPanels,
+  'd8_모서리금테': goldEdges,
   'w1_세탁기지금': MODELS.washer,
   'w2_금빛코인': coinWasher,
 };
