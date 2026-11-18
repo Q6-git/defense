@@ -144,17 +144,17 @@ const battery: Model = () => {
 };
 
 const swatter: Model = () => {
-  // 전기 모기채: 타원 테 + 전기가 흐르는 그물 머리, 손잡이에 얼굴
-  const frame = plastic(0x2f8fd8);
+  // 전기 모기채: 빨간 타원 테 + 전기가 흐르는 그물 머리, 손잡이에 얼굴 (파란 선풍기와 헷갈리지 않게 빨강)
+  const frame = plastic(0xe5484d);
   const zap = new THREE.MeshStandardMaterial({ color: 0xfff27a, emissive: 0xffd21f, emissiveIntensity: 0.9 });
-  const net = new THREE.MeshStandardMaterial({ color: 0xe6f7ff, emissive: 0x9fdcff, emissiveIntensity: 0.35, transparent: true, opacity: 0.8, roughness: 0.3 });
+  const net = new THREE.MeshStandardMaterial({ color: 0xfff6e6, emissive: 0xffe0a0, emissiveIntensity: 0.3, transparent: true, opacity: 0.8, roughness: 0.3 });
   const racket = group(at(torus(0.62, 0.07, frame), 0, 0, 0), at(cyl(0.6, 0.6, 0.02, net, 32), 0, 0, 0, Math.PI / 2));
   racket.scale.set(1, 1.25, 1);
   for (const x of [-0.3, 0, 0.3]) racket.add(at(rbox(0.025, 1.1 - Math.abs(x) * 0.9, 0.03, 0.01, zap), x, 0, 0.02));
   for (const y of [-0.25, 0.05, 0.35]) racket.add(at(rbox(1.05 - Math.abs(y) * 0.8, 0.025, 0.03, 0.01, zap), 0, y * 0.8, 0.02));
   const grip = group(rbox(0.5, 0.62, 0.4, 0.14, plastic(0xf4f7fb)), at(face(0.8), 0, 0.02, 0.21), at(rbox(0.14, 0.08, 0.05, 0.03, zap), 0, -0.2, 0.21));
   const head = group(at(racket, 0, 0.62, 0), at(grip, 0, -0.42, 0));
-  return appliance(head, 0x2f8fd8, 1.25, 0xf4f7fb);
+  return appliance(head, 0xe5484d, 1.25, 0xf4f7fb);
 };
 
 const iron: Model = () => {

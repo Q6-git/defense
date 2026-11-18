@@ -117,7 +117,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
   },
   // 전기 모기채: 싸고 초반에 강하지만 Lv2까지만 있다 (갈림길·★강화 없음). 팔면 전액 돌려받아 중반에 큰 가전으로 갈아탄다
   swatter: {
-    id: 'swatter', kind: 'single', emoji: '🏸', color: 0x4fc3f7, radius: 16, refund: 1,
+    id: 'swatter', kind: 'single', emoji: '🏸', color: 0xef5350, radius: 16, refund: 1,
     levels: [
       { cost: 60, damage: 8, range: 90, cooldown: 0.6, hitAll: true },
       { cost: 60, damage: 14, range: 95, cooldown: 0.55, hitAll: true },
