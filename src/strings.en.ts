@@ -373,5 +373,6 @@ export const STR: Strings = {
     iron: { name: 'Iron', desc: 'Slow but heavy hit, shreds armor' },
     aircon: { name: 'Air Con', desc: 'Slows all enemies on the map (max 1)' },
     dishwasher: { name: 'Dishwasher', desc: 'A long piercing water jet' },
+    swatter: { name: 'Bug Zapper', desc: 'Cheap and strong early. Zaps every enemy in range. Up to Lv2, full refund when sold' },
   },
 };

@@ -61,7 +61,7 @@ export function baseMods(): Mods {
   return {
     damage: {
       toaster: 1, fan: 1, microwave: 1, vacuum: 1, wifi: 1, washer: 1,
-      stove: 1, strip: 1, battery: 1, iron: 1, aircon: 1, dishwasher: 1,
+      stove: 1, strip: 1, battery: 1, iron: 1, aircon: 1, dishwasher: 1, swatter: 1,
     },
     allDamage: 1, allRange: 1, fanRange: 1, splash: 1, vacuumSpeed: 1, wifiBuff: 0,
     reward: 1, placeCost: 1, upgradeCost: 1, branchCost: 1,

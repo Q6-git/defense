@@ -502,7 +502,7 @@ export class Game {
   }
 
   sellValue(u: Unit): number {
-    return Math.floor(u.invested * Math.max(this.cfg.sellRate, this.mods.sellRate));
+    return Math.floor(u.invested * (u.def.refund ?? Math.max(this.cfg.sellRate, this.mods.sellRate)));
   }
 
   private place(id: UnitId, x: number, y: number): CommandResult {

@@ -204,7 +204,7 @@ describe('강화 화면에 보여 주는 항목', () => {
     const plain = game();
     for (const id of Object.keys(UNITS) as (keyof typeof UNITS)[]) {
       const { power, support } = enhanceKinds(UNITS[id]);
-      const levels = [0, 1, 2].map((lv) => [g.levelStats(id, lv), plain.levelStats(id, lv)] as const);
+      const levels = UNITS[id].levels.map((_, lv) => [g.levelStats(id, lv), plain.levelStats(id, lv)] as const);
       const powerUp = levels.some(([a, b]) => a.damage > b.damage || (a.income ?? 0) > (b.income ?? 0) || (a.dot?.dps ?? 0) > (b.dot?.dps ?? 0));
       const supportUp = levels.some(([a, b]) => (a.buff ?? 0) > (b.buff ?? 0) || (a.dmgBuff ?? 0) > (b.dmgBuff ?? 0) || (a.globalSlow ?? 0) > (b.globalSlow ?? 0) || (a.slowDuration ?? 0) > (b.slowDuration ?? 0));
       if (!power) expect(powerUp, id).toBe(false);

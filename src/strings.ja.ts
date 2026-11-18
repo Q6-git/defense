@@ -373,5 +373,6 @@ export const STR: Strings = {
     iron: { name: 'アイロン', desc: '遅いが強い一撃、防御を削る' },
     aircon: { name: 'エアコン', desc: 'マップ全体の敵を遅くする (最大1台)' },
     dishwasher: { name: '食洗機', desc: '一直線の水流で長く貫通' },
+    swatter: { name: '電撃ラケット', desc: '安くて序盤に強い。射程内の敵すべてに電撃。Lv2まで、売ると全額返金' },
   },
 };

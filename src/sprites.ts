@@ -18,6 +18,7 @@ export const SPRITES: Record<string, string> = {
   iron: 'iron.png',
   aircon: 'aircon.png',
   dishwasher: 'dishwasher.png',
+  swatter: 'swatter.png',
   // 하수구 군단 (적 id와 같은 이름)
   goo: 'goo.png',
   rat: 'rat.png',

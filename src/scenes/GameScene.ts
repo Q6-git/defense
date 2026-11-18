@@ -48,6 +48,8 @@ const dpsText = (d: { dps: number; max: number }) => `${Math.round(d.dps)}${d.ma
 
 /** 한 판에 들고 갈 수 있는 가전 수 */
 const DECK_SIZE = 6;
+/** 덱 편성 화면의 한 줄 칸 수 (가전 13종이 두 줄) */
+const DECK_COLS = 7;
 const RARITY_COLOR: Record<string, number> = { rare: 0x5aa9e6, hero: 0xa57be0, legend: 0xf5a623 };
 /** 강화 단계 테두리 색: 은(+5), 금(+8). 무지개(+10)는 시간에 따라 색이 돈다 (tierColor) */
 const TIER_COLOR = [0, 0xa9b6c6, 0xffd21f];
@@ -1259,7 +1261,8 @@ export class GameScene extends Phaser.Scene {
     this.info.branchA.container.setVisible(showControls && atFork);
     this.info.branchB.container.setVisible(showControls && atFork);
     this.info.sell.container.setVisible(showControls);
-    const attacks = def.kind === 'single' || def.kind === 'splash';
+    // 사거리 안 모두를 때리는 가전(모기채·흡입·화염 방사)은 타겟팅이 의미 없어 버튼을 숨긴다
+    const attacks = (def.kind === 'single' || def.kind === 'splash') && !lv.hitAll;
     this.info.target.container.setVisible(showControls && attacks);
     if (!u) return;
     if (atFork) {
@@ -1705,32 +1708,35 @@ export class GameScene extends Phaser.Scene {
     const all: UnitId[] = [...UNIT_ORDER, ...GACHA_UNITS];
     all.forEach((id, i) => {
       const def = this.sim.cfg.units[id];
-      const x = width / 2 + ((i % 6) - 2.5) * 125;
-      const y = meta ? 250 + Math.floor(i / 6) * 225 : 285 + Math.floor(i / 6) * 160;
+      // 가전 13종이 두 줄에 들어가도록 한 줄에 DECK_COLS칸
+      const x = width / 2 + ((i % DECK_COLS) - (DECK_COLS - 1) / 2) * 110;
+      const y = meta ? 250 + Math.floor(i / DECK_COLS) * 225 : 285 + Math.floor(i / DECK_COLS) * 160;
       const owned = UNIT_ORDER.includes(id) || this.progress.owned.includes(id);
       const inDeck = this.deck.includes(id);
       const rarity = GACHA_POOL[id];
-      const bg = new RoundBox(this, x, y, 112, 140, !owned ? THEME.neutral : inDeck ? 0xfff0c8 : THEME.white, 14)
+      const bg = new RoundBox(this, x, y, 100, 140, !owned ? THEME.neutral : inDeck ? 0xfff0c8 : THEME.white, 14)
         .setStrokeStyle(inDeck ? 5 : 3, inDeck ? THEME.selected : rarity ? RARITY_COLOR[rarity] : THEME.cardLine);
-      const ic = icon(this, x, y - 26, id, def.emoji, 62).setAlpha(owned ? 1 : 0.35);
-      const name = text(this, x, y + 26, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
-      const sub = text(this, x, y + 48, owned ? (rarity ? STR.gachaRarity[rarity] : `💰${def.levels[0].cost}`) : STR.locked, 12, THEME.textSoft).setOrigin(0.5);
+      const ic = icon(this, x, y - 26, id, def.emoji, 58).setAlpha(owned ? 1 : 0.35);
+      const name = fitText(text(this, x, y + 24, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5), 92);
+      // 설치비는 모든 가전에, 뽑기 가전은 등급도 (못 뽑은 가전은 자물쇠)
+      const tags = [`💰${def.levels[0].cost}`, ...(rarity ? [STR.gachaRarity[rarity]] : [])].join(' · ');
+      const sub = fitText(text(this, x, y + 46, owned ? tags : `🔒 ${tags}`, 12, THEME.textSoft).setOrigin(0.5), 92);
       layer.add([bg, ic, name, sub]);
       if (!owned) return;
       // 강화: 카드 아래에 단계와 강화 화면으로 가는 버튼. +5부터는 카드에 등급 색 테두리
       if (meta) {
         const lv = masteryLevel(p, id);
         const tier = masteryTier(lv);
-        if (tier) layer.add(this.tierFrame(x, y, 124, 152, tier, 18));
+        if (tier) layer.add(this.tierFrame(x, y, 110, 152, tier, 18));
         const tag = text(this, x, y + 86, STR.enhanceLevel(lv), 20, tier ? hex(tierColor(tier)) : lv ? THEME.text : THEME.textSoft).setOrigin(0.5).setStroke('#ffffff', 4);
-        const up = button(this, x, y + 116, 108, 36, STR.enhanceButton, () => {
+        const up = button(this, x, y + 116, 96, 36, STR.enhanceButton, () => {
           saveDeck(this.deck);
           layer.destroy();
           this.showEnhance(id);
         }, lv >= MASTERY.max ? THEME.neutral : THEME.purple, 15);
         layer.add([tag, up.container]);
       }
-      bg.setInteractive(new Phaser.Geom.Rectangle(-56, -70, 112, 140), Phaser.Geom.Rectangle.Contains);
+      bg.setInteractive(new Phaser.Geom.Rectangle(-50, -70, 100, 140), Phaser.Geom.Rectangle.Contains);
       if (bg.input) bg.input.cursor = 'pointer';
       bg.on('pointerup', () => {
         if (inDeck) {
@@ -1785,13 +1791,13 @@ export class GameScene extends Phaser.Scene {
     // 수집 현황
     GACHA_UNITS.forEach((id, i) => {
       const def = this.sim.cfg.units[id];
-      const x = width / 2 + (i - 2.5) * 125;
+      const x = width / 2 + (i - (GACHA_UNITS.length - 1) / 2) * 108;
       const y = 500;
       const owned = p.owned.includes(id);
       const rarity = GACHA_POOL[id];
-      const bg = new RoundBox(this, x, y, 112, 150, owned ? THEME.white : THEME.neutral, 14).setStrokeStyle(3, RARITY_COLOR[rarity]);
-      const ic = icon(this, x, y - 34, id, def.emoji, 56).setAlpha(owned ? 1 : 0.35);
-      const name = text(this, x, y + 10, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5);
+      const bg = new RoundBox(this, x, y, 100, 150, owned ? THEME.white : THEME.neutral, 14).setStrokeStyle(3, RARITY_COLOR[rarity]);
+      const ic = icon(this, x, y - 34, id, def.emoji, 54).setAlpha(owned ? 1 : 0.35);
+      const name = fitText(text(this, x, y + 10, STR.units[id].name, 15, owned ? THEME.text : THEME.textSoft).setOrigin(0.5), 92);
       const rar = text(this, x, y + 32, STR.gachaRarity[rarity], 13, THEME.textSoft).setOrigin(0.5);
       const st = text(this, x, y + 54, owned ? `✅ ${META.enabled && masteryLevel(p, id) ? STR.enhanceLevel(masteryLevel(p, id)) : STR.gachaOwned}` : '🔒', 13, owned ? THEME.gold : THEME.textSoft).setOrigin(0.5);
       layer.add([bg, ic, name, rar, st]);
@@ -2201,7 +2207,7 @@ ${info.tip}`, 15, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
         text(this, dx + 180, 248, `${def.emoji} ${info.name}${rarity ? `  ${STR.gachaRarity[rarity]}` : ''}`, 24).setOrigin(0.5),
         text(this, dx + 20, 272, `${info.desc}\n${STR.roleLabel(STR.roles[def.kind])}`, 14, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
         text(this, dx + 20, 330, lines.join('\n'), 14, THEME.text).setLineSpacing(4),
-        text(this, dx + 20, 405, `${STR.branchesLabel}\n${branches.join('\n')}`, 13, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
+        text(this, dx + 20, 405, branches.length ? `${STR.branchesLabel}\n${branches.join('\n')}` : '', 13, THEME.text).setWordWrapWidth(320, true).setLineSpacing(3),
         text(this, dx + 20, 650, STR.placedCount(p.placedBy[id] ?? 0), 15, THEME.textSoft),
       ]);
     };

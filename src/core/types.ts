@@ -173,7 +173,7 @@ export interface AbilityDef {
 
 export type UnitId =
   | 'toaster' | 'fan' | 'microwave' | 'vacuum' | 'wifi' | 'washer'
-  | 'stove' | 'strip' | 'battery' | 'iron' | 'aircon' | 'dishwasher';
+  | 'stove' | 'strip' | 'battery' | 'iron' | 'aircon' | 'dishwasher' | 'swatter';
 
 /**
  * 유닛 행동 방식
@@ -254,6 +254,8 @@ export interface UnitDef {
   color: number;
   radius: number;
   maxCount?: number;
+  /** 판매 환불 비율. 정하면 기본 비율·카드·연구 대신 이 값을 쓴다 (모기채는 1 = 전액) */
+  refund?: number;
   levels: UnitLevel[];
   /** Lv3 다음에 고르는 두 갈래 */
   branches?: [UnitBranch, UnitBranch];

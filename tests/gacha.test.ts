@@ -56,8 +56,9 @@ describe('뽑기', () => {
     expect(p.parts).toBe(9 * GACHA.refund.rare); // 첫 장만 새 가전, 나머지 9장은 환급
   });
 
-  it('뽑기 대상은 6종이고, 판 보상은 난이도 배율을 따른다', () => {
-    expect(Object.keys(GACHA_POOL).length).toBe(6);
+  it('뽑기 대상은 7종이고, 판 보상은 난이도 배율을 따른다', () => {
+    expect(Object.keys(GACHA_POOL).length).toBe(7);
+    expect(Object.keys(GACHA_POOL).sort()).toEqual([...GACHA_UNITS].sort());
     expect(waveReward(10, 'normal')).toBe(50);
     expect(waveReward(10, 'hell')).toBe(100);
     expect(waveReward(10, 'easy')).toBe(35);
@@ -176,8 +177,10 @@ describe('뽑기 가전 Lv4 갈림길', () => {
     return e;
   };
 
-  it('뽑기 가전 6종 모두 갈래가 두 개 있고, 이름과 설명이 있다', () => {
+  it('뽑기 가전은 모기채만 빼고 갈래가 두 개 있고, 이름과 설명이 있다', () => {
     for (const id of GACHA_UNITS) {
+      expect(STR.units[id].name, id).toBeTruthy();
+      if (id === 'swatter') continue;
       const br = defaultConfig().units[id].branches;
       expect(br?.length, id).toBe(2);
       for (const b of br!) expect(STR.branches[b.id], b.id).toBeDefined();
@@ -221,5 +224,54 @@ describe('뽑기 가전 Lv4 갈림길', () => {
   it('강적용 갈래는 고르는 순간 타겟이 "가장 강한"이 된다', () => {
     const g = game();
     expect(lv4(g, 'iron', 1).target).toBe('strong');
+  });
+});
+
+describe('전기 모기채', () => {
+  const setup = () => {
+    const g = new Game({ ...defaultConfig(), seed: 1, startMoney: 1e6, critChance: 0, cards: [] });
+    g.apply({ type: 'startWave' });
+    g.enemies = [];
+    (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
+    return g;
+  };
+
+  it('싸다: 설치 60, Lv2까지만 있고 갈림길·★강화가 없다', () => {
+    const g = setup();
+    expect(g.placeCost('swatter')).toBe(60);
+    expect(g.apply({ type: 'place', unit: 'swatter', x: 560, y: 240 }).ok).toBe(true);
+    const u = g.units[0];
+    expect(g.upgradeOptions(u)).toEqual([{ branch: null, cost: 60 }]);
+    expect(g.apply({ type: 'upgrade', uid: u.uid }).ok).toBe(true);
+    expect(u.level).toBe(1);
+    expect(g.upgradeOptions(u)).toEqual([]);
+    expect(g.apply({ type: 'upgrade', uid: u.uid })).toEqual({ ok: false, reason: 'maxLevel' });
+  });
+
+  it('사거리 안 모든 적을 한꺼번에 지진다', () => {
+    const g = setup();
+    g.apply({ type: 'place', unit: 'swatter', x: 560, y: 240 });
+    const near = g.units[0];
+    // 배수관에서 모기채에 가장 가까운 지점에 적 셋을 세워 둔다
+    let best = 0;
+    for (let d = 0; d < g.path.length; d += 5) if (Math.hypot(g.path.pointAt(d).x - near.x, g.path.pointAt(d).y - near.y) < Math.hypot(g.path.pointAt(best).x - near.x, g.path.pointAt(best).y - near.y)) best = d;
+    const es = [-10, 0, 10].map((dd) => g.spawnEnemy('grease', best + dd));
+    for (const e of es) e.def = { ...e.def, speed: 0 };
+    const hp = es.map((e) => e.hp);
+    g.update(1 / 60);
+    es.forEach((e, i) => expect(hp[i] - e.hp).toBeCloseTo(8));
+  });
+
+  it('팔면 투자한 돈을 전부 돌려받는다 (중고 거래 카드·연구와 상관없이)', () => {
+    const g = setup();
+    g.apply({ type: 'place', unit: 'swatter', x: 560, y: 240 });
+    g.apply({ type: 'upgrade', uid: g.units[0].uid });
+    const money = g.money;
+    expect(g.sellValue(g.units[0])).toBe(120);
+    g.apply({ type: 'sell', uid: g.units[0].uid });
+    expect(g.money).toBe(money + 120);
+    // 다른 가전은 그대로 60%
+    g.apply({ type: 'place', unit: 'toaster', x: 560, y: 240 });
+    expect(g.sellValue(g.units[0])).toBe(60);
   });
 });
