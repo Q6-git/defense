@@ -219,7 +219,7 @@ export class Game {
   globalVuln = 1;
   private breakerUsed = false;
   private modVersion = 0;
-  private statCache = new WeakMap<Unit, { key: number; stats: UnitLevel }>();
+  private statCache = new WeakMap<Unit, { key: number; stats: UnitLevel; useful?: boolean }>();
   private rng: () => number;
 
   private nextUid = 1;
@@ -486,8 +486,13 @@ export class Game {
 
   /** ★을 하나 더 올리면 수치가 달라지는지. 한도에 닿아 더 오르지 않으면(급냉 에어컨의 전체 감속 등) 강화를 막는다 */
   private starUseful(u: Unit): boolean {
-    const at = (stars: number) => JSON.stringify(this.levelStats(u.def.id, u.level, u.branch, stars));
-    return at(u.stars) !== at(u.stars + 1);
+    // 정보 창과 '모두' 버튼이 매 프레임 부르므로, 스탯 캐시와 같은 키로 결과를 기억한다
+    this.stats(u);
+    const entry = this.statCache.get(u)!;
+    if (entry.useful === undefined) {
+      entry.useful = JSON.stringify(entry.stats) !== JSON.stringify(this.levelStats(u.def.id, u.level, u.branch, u.stars + 1));
+    }
+    return entry.useful;
   }
 
   /** 다음 ★강화 비용 (10 단위로 반올림) */

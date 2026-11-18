@@ -3,8 +3,8 @@ import { emptyProgress } from '../src/achievements';
 import { defaultConfig } from '../src/config';
 import { Game, MASTERY } from '../src/core/game';
 import type { UnitId } from '../src/core/types';
-import { UNIT_ORDER } from '../src/data/units';
-import { applyMeta, enhance, enhanceChance, enhanceCost, ENHANCE, ENHANCE_GREAT, ENHANCE_PITY, masteryTier, META, buyResearch, RESEARCH, researchCost, REROLL_COST } from '../src/meta';
+import { UNIT_ORDER, UNITS } from '../src/data/units';
+import { applyMeta, enhance, enhanceChance, enhanceKinds, enhanceCost, ENHANCE, ENHANCE_GREAT, ENHANCE_PITY, masteryTier, META, buyResearch, RESEARCH, researchCost, REROLL_COST } from '../src/meta';
 import { STR } from '../src/strings.ko';
 
 const game = (p = emptyProgress(), deck: UnitId[] = [...UNIT_ORDER]) =>
@@ -183,5 +183,33 @@ describe('연구', () => {
     (g as unknown as { spawnQueue: unknown[] }).spawnQueue = [];
     g.update(0.05);
     expect(g.offer?.length).toBe(4);
+  });
+});
+
+describe('강화 화면에 보여 주는 항목', () => {
+  it('실제로 오르는 항목과 같다: 선풍기·세탁기는 둘 다, 와이파이·배터리·에어컨은 지원만, 공격형은 공격만', () => {
+    const kinds = (id: keyof typeof UNITS) => enhanceKinds(UNITS[id]);
+    expect(kinds('toaster')).toEqual({ power: true, support: false });
+    expect(kinds('stove')).toEqual({ power: true, support: false });
+    expect(kinds('fan')).toEqual({ power: true, support: true });
+    expect(kinds('washer')).toEqual({ power: true, support: true });
+    expect(kinds('wifi')).toEqual({ power: false, support: true });
+    expect(kinds('battery')).toEqual({ power: false, support: true });
+    expect(kinds('aircon')).toEqual({ power: false, support: true });
+  });
+
+  it('공격만 오르는 가전은 강화해도 지원 효과가 없고, 지원만 오르는 가전은 공격력이 없다', () => {
+    const p = { ...emptyProgress(), mastery: Object.fromEntries(Object.keys(UNITS).map((id) => [id, 10])) };
+    const g = game(p);
+    const plain = game();
+    for (const id of Object.keys(UNITS) as (keyof typeof UNITS)[]) {
+      const { power, support } = enhanceKinds(UNITS[id]);
+      const levels = [0, 1, 2].map((lv) => [g.levelStats(id, lv), plain.levelStats(id, lv)] as const);
+      const powerUp = levels.some(([a, b]) => a.damage > b.damage || (a.income ?? 0) > (b.income ?? 0) || (a.dot?.dps ?? 0) > (b.dot?.dps ?? 0));
+      const supportUp = levels.some(([a, b]) => (a.buff ?? 0) > (b.buff ?? 0) || (a.dmgBuff ?? 0) > (b.dmgBuff ?? 0) || (a.globalSlow ?? 0) > (b.globalSlow ?? 0) || (a.slowDuration ?? 0) > (b.slowDuration ?? 0));
+      if (!power) expect(powerUp, id).toBe(false);
+      if (!support) expect(supportUp, id).toBe(false);
+      expect(powerUp || supportUp, id).toBe(true);
+    }
   });
 });

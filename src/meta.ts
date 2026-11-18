@@ -1,7 +1,7 @@
 // 판 밖 성장: 부품(🔩)으로 올리는 연구와 가전 강화(숙련도). 엔진·화면에 의존하지 않는 순수 로직이다.
 import type { Progress } from './achievements';
 import { MASTERY, type GameConfig } from './core/game';
-import type { AbilityId, UnitId } from './core/types';
+import type { AbilityId, UnitDef, UnitId, UnitLevel } from './core/types';
 
 /**
  * 판 밖 성장(연구·숙련도) 스위치. 무한 모드 랭킹 판에도 그대로 적용된다 (부품을 모아 키우는 동기).
@@ -64,6 +64,18 @@ export function enhance(p: Progress, unit: string, rng: () => number = Math.rand
   p.mastery[unit] = level + gained;
   p.masteryFail[unit] = 0;
   return { result: gained === 2 ? 'great' : 'success', level: level + gained, gained };
+}
+
+/**
+ * 강화로 오르는 항목의 종류 (core/game.ts levelStats와 같은 기준).
+ * power: 공격력·화상·수입 (단계당 MASTERY.power), support: 버프·감속·밀어내기·얼리기·보상 같은 지원 효과 (MASTERY.support)
+ */
+export function enhanceKinds(def: UnitDef): { power: boolean; support: boolean } {
+  const all: UnitLevel[] = [...def.levels, ...(def.branches ?? [])];
+  return {
+    power: all.some((l) => l.damage > 0 || !!l.income || !!l.dot || !!l.burn || !!l.interest),
+    support: all.some((l) => !!(l.buff || l.dmgBuff || l.globalSlow || l.globalVuln || l.hackVuln || l.slowDuration || l.knockback || l.freeze || l.bounty)),
+  };
 }
 
 /** 강화 단계에 따른 테두리 등급: 0 없음, 1 은(+5), 2 금(+8), 3 무지개(+10) */

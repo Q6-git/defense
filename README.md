@@ -12,6 +12,7 @@ npm run balance    # 봇 플레이어로 밸런스 확인 (--seed=N: 카드 운 
 npx vite-node scripts/branches.ts   # 갈래별 떼거리/강적 상황 벤치마크
 npx vite-node scripts/units.ts      # 가전별 떼거리/강적 상황 벤치마크 (Lv3 한 대와 Lv4 두 갈래, 1000💰당 효율)
 npx vite-node scripts/cc-stack.ts   # 선풍기 여러 대 + 에어컨으로 느린 적·보스를 영원히 묶을 수 없는지 확인
+npx vite-node scripts/fuzz.ts       # 무작위 조작으로 120판을 끝까지 돌려 예외·이상값이 없는지 확인
 npm run build      # dist/ 에 배포용 빌드
 npx vite --port 5199 & node scripts/render3d.cjs   # 3D 캐릭터(scripts/art3d/models.ts)를 public/sprites/*.png로 렌더링
 ```

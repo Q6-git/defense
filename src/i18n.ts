@@ -57,7 +57,26 @@ export function lang(): LangId {
   return current;
 }
 
-/** 언어를 바꾸고 저장한다. 이미 그린 글자는 그대로이므로 화면을 다시 그려야 한다 */
+/** 문구 묶음에서 화면에 나올 수 있는 글자를 모두 모은다 (함수로 된 문구는 소스 안의 글자를 쓴다) */
+function allText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'function') return String(v);
+  if (v && typeof v === 'object') return Object.values(v).map(allText).join('');
+  return '';
+}
+
+/**
+ * 그 언어의 글자가 든 글꼴 파일을 미리 받는다. 한글 글꼴(주아)은 글자 범위별로 쪼개진 파일이라,
+ * 받기 전에 Phaser가 글자를 그리면 일부 글자만 다른 글꼴로 남는다. 늦어도 3초 뒤에는 그냥 진행한다
+ */
+export async function loadFontFor(id: LangId = current): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return;
+  const sample = `${allText(STRINGS[id])}0123456789+-×/%!?.,:()[]`;
+  const load = document.fonts.load('24px Jua', sample).then(() => undefined, () => undefined);
+  await Promise.race([load, new Promise((r) => setTimeout(r, 3000))]);
+}
+
+/** 언어를 바꾸고 저장한다. 이미 그린 글자는 그대로이므로 화면을 다시 그려야 한다 (그 전에 loadFontFor) */
 export function setLang(id: LangId): void {
   current = id;
   STR = STRINGS[id];
