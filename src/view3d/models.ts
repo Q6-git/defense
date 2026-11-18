@@ -27,21 +27,19 @@ const toaster: Model = () => {
 };
 
 const fan: Model = () => {
-  const white = plastic(0x3f8fd0);
-  const blue = plastic(0x5fb7e8);
-  const blade = new THREE.MeshStandardMaterial({ color: 0xa9dcf5, roughness: 0.3, transparent: true, opacity: 0.85 });
-  const head = group(at(torus(0.62, 0.06, white), 0, 0, 0), at(sphere(0.36, plastic(0xf4f7fb), 1, 1, 0.7), 0, 0, 0.05), at(face(1.05, { spread: 0.2 }), 0, 0, 0.3));
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + 0.4;
-    head.add(at(sphere(0.3, blade, 1.25, 0.55, 0.12), Math.cos(a) * 0.36, Math.sin(a) * 0.36, -0.05, 0, 0, a));
+  // 선풍기: 민트색 망 안에 분홍 꽃잎 날개 여섯 장, 가운데 노란 얼굴 (파스텔 꽃 바람개비)
+  const mint = plastic(0x6fd3bd);
+  const petals = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const t = (i / 6) * Math.PI * 2 + Math.PI / 2;
+    petals.add(at(sphere(0.2, plastic(0xffa8c0), 1, 1.35, 0.35), Math.cos(t) * 0.42, Math.sin(t) * 0.42, 0.08, 0, 0, t - Math.PI / 2));
   }
-  // 망 (가로 세로 몇 줄)
-  for (const r of [0.45]) head.add(torus(r, 0.02, white));
+  const head = group(torus(0.66, 0.07, mint), petals, at(sphere(0.32, plastic(0xffe27a), 1, 1, 0.7), 0, 0, 0.1), at(face(0.95, { spread: 0.2 }), 0, 0, 0.32));
   return group(
-    at(cyl(0.07, 0.07, 0.4, white), 0, 0.72, 0),
-    at(rbox(0.6, 0.28, 0.45, 0.12, blue), 0, 0.38, 0),
-    limbs(blue, { width: 0.2 }),
-    at(head, 0, 1.3, 0),
+    at(cyl(0.07, 0.07, 0.42, mint), 0, 0.72, 0),
+    at(rbox(0.6, 0.28, 0.45, 0.12, mint), 0, 0.38, 0),
+    limbs(plastic(0xfff3dc), { width: 0.2 }),
+    at(head, 0, 1.35, 0),
     plugTail(),
   );
 };
@@ -91,19 +89,20 @@ const wifi: Model = () => {
 };
 
 const washer: Model = () => {
-  // 동전 세탁기: 정육면체 + 둥근 유리문(안에 거품) + 동전 투입구와 금화
-  const shell = plastic(0xf7f7fb);
-  const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3f5, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.85 });
+  // 동전 세탁기: 크림색 노란 몸 + 둥근 유리문 + 동전 투입구, 머리 위에 금화 더미 (흰 식기세척기와 헷갈리지 않게)
+  const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3f5, roughness: 0.05, transparent: true, opacity: 0.85 });
+  const gold = metal(0xf5c542);
   const head = group(
-    rbox(1.2, 1.2, 0.95, 0.16, shell),
-    at(rbox(1.1, 0.24, 0.05, 0.05, plastic(0xe8c547)), 0, 0.45, 0.47),
-    at(torus(0.36, 0.06, plastic(0xc9cbd6)), 0, -0.12, 0.48),
+    rbox(1.2, 1.2, 0.95, 0.16, plastic(0xffe08a)),
+    at(rbox(1.1, 0.22, 0.05, 0.05, plastic(0xc9862a)), 0, 0.45, 0.47),
+    at(rbox(0.22, 0.05, 0.04, 0.02, plastic(0x3a2a20)), 0.32, 0.45, 0.5),
+    at(torus(0.36, 0.07, metal(0xd8dde6)), 0, -0.12, 0.48),
     at(cyl(0.34, 0.34, 0.04, glass, 32), 0, -0.12, 0.47, Math.PI / 2),
-    at(sphere(0.1, plastic(0xffffff, 0.2)), -0.12, -0.22, 0.5), at(sphere(0.07, plastic(0xffffff, 0.2)), 0.1, -0.05, 0.5),
     at(face(0.75, { spread: 0.2 }), 0, -0.12, 0.52),
-    at(cyl(0.18, 0.18, 0.05, metal(0xffcf3a)), 0.35, 0.68, 0, 0, 0, Math.PI / 2 - 0.3),
   );
-  return appliance(head, 0xe8c547, 1.1, 0xf7f7fb);
+  for (let i = 0; i < 4; i++) head.add(at(cyl(0.17, 0.17, 0.06, gold, 28), -0.25 + (i % 2) * 0.04, 0.64 + i * 0.065, 0));
+  head.add(at(cyl(0.17, 0.17, 0.06, gold, 28), 0.25, 0.64, 0.05));
+  return appliance(head, 0xc9862a, 1.1, 0xfff6dc);
 };
 
 const stove: Model = () => {
@@ -143,6 +142,20 @@ const battery: Model = () => {
   return appliance(head, 0x5aa83a, 1.15, 0xf0f7e8);
 };
 
+const swatter: Model = () => {
+  // 전기 모기채: 빨간 타원 테 + 전기가 흐르는 그물 머리, 손잡이에 얼굴 (파란 선풍기와 헷갈리지 않게 빨강)
+  const frame = plastic(0xe5484d);
+  const zap = new THREE.MeshStandardMaterial({ color: 0xfff27a, emissive: 0xffd21f, emissiveIntensity: 0.9 });
+  const net = new THREE.MeshStandardMaterial({ color: 0xfff6e6, emissive: 0xffe0a0, emissiveIntensity: 0.3, transparent: true, opacity: 0.8, roughness: 0.3 });
+  const racket = group(at(torus(0.62, 0.07, frame), 0, 0, 0), at(cyl(0.6, 0.6, 0.02, net, 32), 0, 0, 0, Math.PI / 2));
+  racket.scale.set(1, 1.25, 1);
+  for (const x of [-0.3, 0, 0.3]) racket.add(at(rbox(0.025, 1.1 - Math.abs(x) * 0.9, 0.03, 0.01, zap), x, 0, 0.02));
+  for (const y of [-0.25, 0.05, 0.35]) racket.add(at(rbox(1.05 - Math.abs(y) * 0.8, 0.025, 0.03, 0.01, zap), 0, y * 0.8, 0.02));
+  const grip = group(rbox(0.5, 0.62, 0.4, 0.14, plastic(0xf4f7fb)), at(face(0.8), 0, 0.02, 0.21), at(rbox(0.14, 0.08, 0.05, 0.03, zap), 0, -0.2, 0.21));
+  const head = group(at(racket, 0, 0.62, 0), at(grip, 0, -0.42, 0));
+  return appliance(head, 0xe5484d, 1.25, 0xf4f7fb);
+};
+
 const iron: Model = () => {
   // 다리미: 앞코가 뾰족한 발바닥 모양을 위로 뽑은 몸 + 금속 바닥판 + 위쪽 손잡이. 얼굴은 옆면(앞쪽)
   const foot = (scale: number) => {
@@ -180,17 +193,28 @@ const aircon: Model = () => {
 };
 
 const dishwasher: Model = () => {
-  // 식기세척기: 정육면체 + 위쪽 조작부 + 비눗방울
+  // 식기세척기(전설): 흰 몸 + 남색 조작부 + 모든 모서리 금테, 금 손잡이, 빛나는 표시등과 비눗방울
   const shell = plastic(0xdfe9f2);
-  const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, roughness: 0.05, transparent: true, opacity: 0.6 });
+  const gold = metal(0xf5c542);
+  const glow = (color: number, emissive: number) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: 1.4 });
+  const bubble = new THREE.MeshStandardMaterial({ color: 0xcfefff, emissive: 0x7fd8ff, emissiveIntensity: 0.35, roughness: 0.05, transparent: true, opacity: 0.7 });
   const head = group(
     rbox(1.25, 1.2, 0.95, 0.16, shell),
-    at(rbox(1.15, 0.22, 0.05, 0.05, plastic(0x4f9fe0)), 0, 0.42, 0.47),
-    at(rbox(0.9, 0.05, 0.05, 0.02, metal(0xb8c2cc)), 0, 0.22, 0.5),
+    at(rbox(1.15, 0.22, 0.05, 0.05, plastic(0x2f5fa8)), 0, 0.42, 0.47),
+    at(rbox(0.6, 0.04, 0.03, 0.02, glow(0x9ff4ff, 0x4fe0ff)), -0.1, 0.42, 0.5),
+    at(sphere(0.05, glow(0xffe27a, 0xffc21f)), 0.42, 0.42, 0.5),
+    at(rbox(0.6, 0.07, 0.07, 0.03, gold), 0, 0.22, 0.5),
     at(face(1.0), 0, -0.15, 0.48),
     at(sphere(0.14, bubble), 0.35, 0.75, 0.1), at(sphere(0.1, bubble), 0.12, 0.85, -0.1), at(sphere(0.08, bubble), 0.5, 0.95, -0.05),
   );
-  return appliance(head, 0x4f9fe0, 1.1, 0xdfe9f2);
+  // 모서리 열두 개에 금테 (둥근 모서리 안쪽으로 조금 들여서)
+  const t = 0.05, gx = 0.59, gy = 0.565, gz = 0.44;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) head.add(at(rbox(t, 1.12, t, 0.02, gold), sx * gx, 0, sz * gz));
+  for (const sy of [-1, 1]) {
+    for (const sz of [-1, 1]) head.add(at(rbox(1.17, t, t, 0.02, gold), 0, sy * gy, sz * gz));
+    for (const sx of [-1, 1]) head.add(at(rbox(t, t, 0.87, 0.02, gold), sx * gx, sy * gy, 0));
+  }
+  return appliance(head, 0x2f5fa8, 1.1, 0xdfe9f2);
 };
 
 // ───────── 하수구 군단
@@ -474,6 +498,6 @@ const sixseven: Model = () => {
 };
 
 export const MODELS: Record<string, Model> = {
-  toaster, fan, microwave, vacuum, wifi, washer, stove, strip, battery, iron, aircon, dishwasher,
+  toaster, fan, microwave, vacuum, wifi, washer, stove, strip, battery, swatter, iron, aircon, dishwasher,
   goo, rat, roach, grease, splitter, splitling, boss, shield, ghost, healer, charger, dancer, sixseven,
 };

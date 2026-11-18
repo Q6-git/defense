@@ -373,5 +373,6 @@ export const STR: Strings = {
     iron: { name: '熨斗', desc: '慢但单发很重，削减防御' },
     aircon: { name: '空调', desc: '减速全图敌人 (最多1台)' },
     dishwasher: { name: '洗碗机', desc: '直线水柱远距离贯穿' },
+    swatter: { name: '电蚊拍', desc: '便宜，前期很强。电击射程内所有敌人。最高Lv2，出售时全额退款' },
   },
 };

@@ -15,7 +15,7 @@ export const GACHA = {
 
 /** 뽑기로 얻는 가전과 등급 */
 export const GACHA_POOL: Record<string, GachaRarity> = {
-  stove: 'rare', strip: 'rare', battery: 'rare', iron: 'hero', aircon: 'hero', dishwasher: 'legend',
+  stove: 'rare', strip: 'rare', battery: 'rare', swatter: 'rare', iron: 'hero', aircon: 'hero', dishwasher: 'legend',
 };
 
 export interface PullResult {

@@ -374,5 +374,6 @@ export const STR: Strings = {
     iron: { name: 'Plantsa', desc: 'Mabagal pero malakas, bawas armor' },
     aircon: { name: 'Aircon', desc: 'Pinababagal ang lahat sa mapa (max 1)' },
     dishwasher: { name: 'Dishwasher', desc: 'Mahabang tubig na tumatagos' },
+    swatter: { name: 'Raketa sa Lamok', desc: 'Mura at malakas sa simula. Kinukuryente ang lahat sa range. Hanggang Lv2, buong refund kapag ibinenta' },
   },
 };

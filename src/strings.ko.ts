@@ -372,6 +372,7 @@ export const STR = {
     iron: { name: '다리미', desc: '느리지만 강한 한 방, 방어력을 깎는다' },
     aircon: { name: '에어컨', desc: '맵 전체 적을 느리게 (최대 1대)' },
     dishwasher: { name: '식기세척기', desc: '일직선 물줄기로 길게 관통' },
+    swatter: { name: '전기 모기채', desc: '싸고 초반에 강하다. 사거리 안 모든 적을 지진다. Lv2까지, 팔면 전액 환불' },
   } satisfies Record<UnitId, { name: string; desc: string }>,
 };
 

@@ -3,7 +3,7 @@ import type { UnitDef, UnitId } from '../core/types';
 /** 처음부터 가진 가전 (기본 덱) */
 export const UNIT_ORDER: UnitId[] = ['toaster', 'fan', 'microwave', 'vacuum', 'wifi', 'washer'];
 /** 뽑기로 얻는 가전 */
-export const GACHA_UNITS: UnitId[] = ['stove', 'strip', 'battery', 'iron', 'aircon', 'dishwasher'];
+export const GACHA_UNITS: UnitId[] = ['stove', 'strip', 'battery', 'swatter', 'iron', 'aircon', 'dishwasher'];
 
 export const UNITS: Record<UnitId, UnitDef> = {
   toaster: {
@@ -19,7 +19,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
     ],
   },
   fan: {
-    id: 'fan', kind: 'slow', emoji: '🌀', color: 0x5fb7e8, radius: 18,
+    id: 'fan', kind: 'slow', emoji: '🌀', color: 0x6fd3bd, radius: 18,
     levels: [
       { cost: 150, damage: 2, range: 110, cooldown: 1.0, slow: 0.6, slowDuration: 1.2 },
       { cost: 150, damage: 4, range: 125, cooldown: 1.0, slow: 0.5, slowDuration: 1.3 },
@@ -87,8 +87,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
       { cost: 300, damage: 16, range: 120, cooldown: 0.45, dot: { dps: 58, duration: 3 } },
     ],
     branches: [
-      { id: 'flamer', emoji: '🌋', cost: 500, damage: 18, range: 140, cooldown: 0.5, hitAll: true, dot: { dps: 46, duration: 3 } },
-      { id: 'pressure', emoji: '🍲', cost: 500, damage: 60, range: 135, cooldown: 1.4, dot: { dps: 150, duration: 4 }, defaultTarget: 'strong' },
+      { id: 'flamer', emoji: '🌋', cost: 500, damage: 18, range: 150, cooldown: 0.5, hitAll: true, dot: { dps: 46, duration: 3 } },
+      { id: 'pressure', emoji: '🍲', cost: 500, damage: 60, range: 150, cooldown: 1.4, dot: { dps: 190, duration: 4 }, defaultTarget: 'strong' },
     ],
   },
   strip: {
@@ -113,6 +113,14 @@ export const UNITS: Record<UnitId, UnitDef> = {
     branches: [
       { id: 'bigcell', emoji: '🔆', cost: 450, damage: 0, range: 230, cooldown: 0, dmgBuff: 0.5 },
       { id: 'overcharge', emoji: '💥', cost: 450, damage: 0, range: 150, cooldown: 0, dmgBuff: 0.9 },
+    ],
+  },
+  // 전기 모기채: 싸고 초반에 강하지만 Lv2까지만 있다 (갈림길·★강화 없음). 팔면 전액 돌려받아 중반에 큰 가전으로 갈아탄다
+  swatter: {
+    id: 'swatter', kind: 'single', emoji: '🏸', color: 0xef5350, radius: 16, refund: 1,
+    levels: [
+      { cost: 60, damage: 8, range: 90, cooldown: 0.6, hitAll: true },
+      { cost: 60, damage: 14, range: 95, cooldown: 0.55, hitAll: true },
     ],
   },
   iron: {
