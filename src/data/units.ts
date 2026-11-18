@@ -19,7 +19,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
     ],
   },
   fan: {
-    id: 'fan', kind: 'slow', emoji: '🌀', color: 0x5fb7e8, radius: 18,
+    id: 'fan', kind: 'slow', emoji: '🌀', color: 0x6fd3bd, radius: 18,
     levels: [
       { cost: 150, damage: 2, range: 110, cooldown: 1.0, slow: 0.6, slowDuration: 1.2 },
       { cost: 150, damage: 4, range: 125, cooldown: 1.0, slow: 0.5, slowDuration: 1.3 },

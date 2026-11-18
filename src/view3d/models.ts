@@ -27,21 +27,19 @@ const toaster: Model = () => {
 };
 
 const fan: Model = () => {
-  const white = plastic(0x3f8fd0);
-  const blue = plastic(0x5fb7e8);
-  const blade = new THREE.MeshStandardMaterial({ color: 0xa9dcf5, roughness: 0.3, transparent: true, opacity: 0.85 });
-  const head = group(at(torus(0.62, 0.06, white), 0, 0, 0), at(sphere(0.36, plastic(0xf4f7fb), 1, 1, 0.7), 0, 0, 0.05), at(face(1.05, { spread: 0.2 }), 0, 0, 0.3));
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + 0.4;
-    head.add(at(sphere(0.3, blade, 1.25, 0.55, 0.12), Math.cos(a) * 0.36, Math.sin(a) * 0.36, -0.05, 0, 0, a));
+  // 선풍기: 민트색 망 안에 분홍 꽃잎 날개 여섯 장, 가운데 노란 얼굴 (파스텔 꽃 바람개비)
+  const mint = plastic(0x6fd3bd);
+  const petals = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const t = (i / 6) * Math.PI * 2 + Math.PI / 2;
+    petals.add(at(sphere(0.2, plastic(0xffa8c0), 1, 1.35, 0.35), Math.cos(t) * 0.42, Math.sin(t) * 0.42, 0.08, 0, 0, t - Math.PI / 2));
   }
-  // 망 (가로 세로 몇 줄)
-  for (const r of [0.45]) head.add(torus(r, 0.02, white));
+  const head = group(torus(0.66, 0.07, mint), petals, at(sphere(0.32, plastic(0xffe27a), 1, 1, 0.7), 0, 0, 0.1), at(face(0.95, { spread: 0.2 }), 0, 0, 0.32));
   return group(
-    at(cyl(0.07, 0.07, 0.4, white), 0, 0.72, 0),
-    at(rbox(0.6, 0.28, 0.45, 0.12, blue), 0, 0.38, 0),
-    limbs(blue, { width: 0.2 }),
-    at(head, 0, 1.3, 0),
+    at(cyl(0.07, 0.07, 0.42, mint), 0, 0.72, 0),
+    at(rbox(0.6, 0.28, 0.45, 0.12, mint), 0, 0.38, 0),
+    limbs(plastic(0xfff3dc), { width: 0.2 }),
+    at(head, 0, 1.35, 0),
     plugTail(),
   );
 };
