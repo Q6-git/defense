@@ -9,13 +9,14 @@ import { GREASE_SAMPLES } from './grease-samples';
 import { SAMPLES } from './samples';
 import { FAN_SAMPLES } from './fan-samples';
 import { DISH_SAMPLES } from './dish-samples';
+import { MISC_SAMPLES } from './misc-samples';
 import { SIXSEVEN_FRAMES } from './sixseven-frames';
 
 // 그림은 크게 렌더링하므로 곡면을 가장 곱게
 KIT.detail = 1;
 
-// ?set=samples / grease / dancer / sixseven / fan / dish 이면 디자인 후보·동작 프레임을 렌더링한다
-const SETS: Record<string, typeof GAME_MODELS> = { samples: SAMPLES, grease: GREASE_SAMPLES, dancer: DANCER_FRAMES, sixseven: SIXSEVEN_FRAMES, fan: FAN_SAMPLES, dish: DISH_SAMPLES };
+// ?set=samples / grease / dancer / sixseven / fan / dish / misc 이면 디자인 후보·동작 프레임을 렌더링한다
+const SETS: Record<string, typeof GAME_MODELS> = { samples: SAMPLES, grease: GREASE_SAMPLES, dancer: DANCER_FRAMES, sixseven: SIXSEVEN_FRAMES, fan: FAN_SAMPLES, dish: DISH_SAMPLES, misc: MISC_SAMPLES };
 const SET = new URLSearchParams(location.search).get('set') ?? '';
 const MODELS = SETS[SET] ?? GAME_MODELS;
 

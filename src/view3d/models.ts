@@ -180,16 +180,33 @@ const iron: Model = () => {
   return appliance(head, 0xdfe4ee, 1.05);
 };
 
+/** 눈꽃 무늬: 가는 막대 세 개를 60도씩, 끝에 작은 가지 */
+function snowflake(size: number, mat: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI) / 3;
+    g.add(at(rbox(size, size * 0.14, 0.03, size * 0.05, mat), 0, 0, 0, 0, 0, a));
+    for (const s of [-1, 1]) {
+      const x = Math.cos(a) * size * 0.32 * s, y = Math.sin(a) * size * 0.32 * s;
+      for (const t of [-1, 1]) g.add(at(rbox(size * 0.28, size * 0.1, 0.03, size * 0.04, mat), x, y, 0.005, 0, 0, a + t * 0.8));
+    }
+  }
+  return g;
+}
+
 const aircon: Model = () => {
-  // 벽걸이 에어컨: 가로로 긴 몸 + 아래쪽 바람 날개 + 눈꽃 표시
-  const shell = plastic(0xf4f9fd);
+  // 펭귄 에어컨: 남색 등 + 흰 배(앞면) + 주황 부리·발, 머리에 빛나는 눈꽃, 아래 바람 날개
+  const navy = plastic(0x27406e);
+  const orange = plastic(0xff9f2a);
   const head = group(
-    rbox(1.6, 0.7, 0.7, 0.2, shell),
-    at(rbox(1.4, 0.08, 0.2, 0.04, plastic(0x9fd8f0)), 0, -0.3, 0.32, -0.4),
-    at(face(0.95), -0.15, 0.05, 0.36),
-    at(sphere(0.06, new THREE.MeshStandardMaterial({ color: 0x9fe8ff, emissive: 0x5fd0ff, emissiveIntensity: 1 })), 0.6, 0.18, 0.36),
+    rbox(1.55, 0.78, 0.72, 0.24, navy),
+    at(rbox(1.25, 0.58, 0.06, 0.2, plastic(0xffffff)), 0, -0.02, 0.35),
+    at(face(0.95, { spread: 0.24 }), 0, 0.06, 0.39),
+    at(sphere(0.07, orange, 1.4, 0.7, 1), 0, -0.04, 0.42),
+    at(rbox(1.3, 0.08, 0.2, 0.04, plastic(0xcfeaff)), 0, -0.33, 0.33, -0.4),
+    at(snowflake(0.2, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x9fe8ff, emissiveIntensity: 0.9 })), 0.55, 0.47, 0, -Math.PI / 2),
   );
-  return appliance(head, 0x9fd8f0, 1.05, 0xf4f9fd);
+  return group(at(rbox(0.72, 0.3, 0.5, 0.12, navy), 0, 0.4, 0), limbs(orange, { width: 0.22 }), at(head, 0, 1.08, 0), plugTail());
 };
 
 const dishwasher: Model = () => {
@@ -328,13 +345,16 @@ const shield: Model = () => {
 };
 
 const ghost: Model = () => {
-  // 유령: 반투명 하얀 천 + 물결 치는 아랫단
-  const sheet = new THREE.MeshStandardMaterial({ color: 0xeef0fa, roughness: 0.4, transparent: true, opacity: 0.82 });
-  const g = group(at(sphere(0.6, sheet, 1, 1.1, 1), 0, 0.95, 0), at(cyl(0.6, 0.66, 0.6, sheet, 32), 0, 0.5, 0), at(face(1.2, { mouth: 'o', spread: 0.24 }), 0, 1.0, 0.56));
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    g.add(at(sphere(0.18, sheet, 1, 1.2, 1), Math.cos(a) * 0.55, 0.22, Math.sin(a) * 0.55));
-  }
+  // 유령: 둥둥 뜬 머리 + 아래로 휘어 사라지는 꼬리, 푸른빛이 은은하다. 혀를 살짝 내밀고 양팔을 든다
+  const sheet = new THREE.MeshStandardMaterial({ color: 0xcfeeff, emissive: 0x7fcfff, emissiveIntensity: 0.55, roughness: 0.35, transparent: true, opacity: 0.93 });
+  const g = group(
+    at(sphere(0.6, sheet, 1, 0.95, 1), 0, 1.15, 0),
+    at(face(1.25, { spread: 0.22 }), 0, 1.15, 0.56),
+    at(sphere(0.06, plastic(0xff8fb0), 1.2, 0.6, 0.5), 0, 1.0, 0.6),
+    tube([[0, 0.75, 0], [0.18, 0.5, -0.05], [-0.1, 0.25, -0.12], [0.2, 0.05, -0.2]], 0.26, sheet),
+    at(sphere(0.16, sheet), 0.2, 0.05, -0.2),
+  );
+  for (const s of [-1, 1]) g.add(at(sphere(0.14, sheet, 1, 1.4, 1), s * 0.62, 1.0, 0.15, 0, 0, -s * 0.4));
   return g;
 };
 

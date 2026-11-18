@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { emptyProgress } from '../src/achievements';
+import { emptyProgress, evaluate } from '../src/achievements';
 import { defaultConfig } from '../src/config';
 import { Game, MASTERY } from '../src/core/game';
 import type { UnitId } from '../src/core/types';
 import { UNIT_ORDER, UNITS } from '../src/data/units';
-import { applyMeta, enhance, enhanceChance, enhanceKinds, enhanceCost, ENHANCE, ENHANCE_GREAT, ENHANCE_PITY, masteryTier, META, buyResearch, RESEARCH, researchCost, REROLL_COST } from '../src/meta';
+import { applyMeta, deckSize, enhance, enhanceChance, enhanceKinds, enhanceCost, ENHANCE, ENHANCE_GREAT, ENHANCE_PITY, masteryTier, META, buyResearch, RESEARCH, researchCost, REROLL_COST } from '../src/meta';
 import { STR } from '../src/strings.ko';
 
 const game = (p = emptyProgress(), deck: UnitId[] = [...UNIT_ORDER]) =>
@@ -211,5 +211,25 @@ describe('강화 화면에 보여 주는 항목', () => {
       if (!support) expect(supportUp, id).toBe(false);
       expect(powerUp || supportUp, id).toBe(true);
     }
+  });
+});
+
+describe('덱 칸 수', () => {
+  it('처음에는 6칸, 지옥을 깨면(업적) 7칸', () => {
+    const p = emptyProgress();
+    expect(deckSize(p)).toBe(6);
+    p.done.push('clear_hard');
+    expect(deckSize(p)).toBe(6);
+    p.done.push('clear_hell');
+    expect(deckSize(p)).toBe(7);
+  });
+
+  it('지옥 업적은 20웨이브를 지옥에서 깼을 때만 (무한 모드에서 20웨이브를 넘긴 것도 포함)', () => {
+    const run = (o: Partial<Parameters<typeof evaluate>[0]>) => ({ map: 'kitchen', difficulty: 'hell', endless: false, cleared: 20, placed: [], usedSkill: true, leaked: true, cards: 1, ...o });
+    const ids = (o: Partial<Parameters<typeof evaluate>[0]>) => evaluate(run(o), emptyProgress()).map((a) => a.id);
+    expect(ids({})).toContain('clear_hell');
+    expect(ids({ cleared: 19 })).not.toContain('clear_hell');
+    expect(ids({ difficulty: 'hard' })).not.toContain('clear_hell');
+    expect(ids({ endless: true, cleared: 25 })).toContain('clear_hell');
   });
 });
