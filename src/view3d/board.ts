@@ -10,6 +10,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { Game } from '../core/game';
 import type { Enemy, Grid, MapDef, Unit } from '../core/types';
 import { face, group, at, plastic, rbox, cyl } from './kit';
+import { mergeModel } from './merge';
 import { MODELS } from './models';
 import { DECOR, OUTER } from './props';
 import { THEMES } from './themes';
@@ -354,7 +355,8 @@ export class Board3D {
     const build = lite ? undefined : MODELS[key];
     let base: number;
     if (build) {
-      obj = build();
+      // 부품을 재질별로 합쳐 그리기 횟수를 줄인다 (적이 수백 마리인 후반 렉)
+      obj = mergeModel(key, build());
       base = radius * scale;
       obj.scale.setScalar(base);
       obj.traverse((m) => {
@@ -560,6 +562,8 @@ export class Board3D {
     QUALITY.level++;
     p.warm = 0;
     for (const a of this.enemies.values()) this.setShadow(a, QUALITY.level === 0);
+    // 가장 낮은 단계: 이미 나와 있는 적도 다음 프레임에 그림 판으로 바꾼다 (후반엔 적이 오래 살아 있어서 새로 나오는 적만 바꾸면 늦다)
+    if (QUALITY.level >= 2) this.prune(this.enemies, new Set());
     if (this.sun && this.sun.shadow.mapSize.x > 1024) {
       this.sun.shadow.mapSize.set(1024, 1024);
       this.sun.shadow.map?.dispose();

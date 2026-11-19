@@ -29,6 +29,14 @@ const PANEL_W = 240;
 const SPEEDS = [1, 2, 3];
 /** 투사체가 날아가는 속도(px/초). 피해는 즉시 들어가므로 너무 느리면 어색하다. */
 const PROJECTILE_SPEED = 1400;
+/**
+ * 한 프레임에 만들 이펙트·떠오르는 글자 수 한도. 넘는 것은 겉모습만 건너뛴다.
+ * 평소(적 수십 마리)에는 거의 닿지 않고, 적이 수백 마리인 무한 모드 후반에 렉을 막는다
+ */
+const FX_PER_FRAME = 24;
+const TEXT_PER_FRAME = 3;
+/** 한도에 걸리면 건너뛰는 겉모습 이벤트 */
+const COSMETIC = new Set<GameEvent['type']>(['shot', 'blast', 'pulse', 'shieldHit', 'bolt', 'heal']);
 const PROJECTILE: Partial<Record<UnitId, { key: string; emoji: string }>> = {
   toaster: { key: 'proj_toast', emoji: '🍞' },
   microwave: { key: 'proj_fire', emoji: '🔥' },
@@ -123,6 +131,12 @@ export class GameScene extends Phaser.Scene {
   private chipG!: Phaser.GameObjects.Graphics;
   /** 맞은 적을 잠깐 물들이는 남은 시간 */
   private flashes = new Map<number, number>();
+  /**
+   * 이번 프레임에 더 만들 수 있는 이펙트(섬광·궤적·폭발 등) 수와 떠오르는 글자 수.
+   * 적이 수백 마리인 후반에는 초당 수천 번 맞아서, 맞을 때마다 그림·글자를 새로 만들면 크게 끊긴다
+   */
+  private fxLeft = 0;
+  private textLeft = 0;
   private hpText!: Phaser.GameObjects.Text;
   private moneyText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
@@ -370,6 +384,8 @@ export class GameScene extends Phaser.Scene {
     const dt = Math.min(deltaMs / 1000, 0.25);
     this.clock += dt;
     this.sim.update(dt * this.speed);
+    this.fxLeft = FX_PER_FRAME;
+    this.textLeft = TEXT_PER_FRAME;
     for (const ev of this.sim.drainEvents()) this.playEvent(ev);
     this.checkNewEnemies();
     for (const [uid, v] of this.punch) {
@@ -1295,6 +1311,12 @@ export class GameScene extends Phaser.Scene {
 
   private playEvent(raw: GameEvent): void {
     if (raw.type === 'shot') this.board?.onShot(raw.unit, raw.to);
+    // 이번 프레임 이펙트 한도를 넘으면 겉모습만 건너뛴다 (가전 반동, 적 깜빡임, 기록은 그대로)
+    if (COSMETIC.has(raw.type) && --this.fxLeft < 0) {
+      if (raw.type === 'shot' || raw.type === 'pulse') this.recoil(raw.unit);
+      if (raw.type === 'shieldHit') this.punch.set(raw.enemy, Math.max(this.punch.get(raw.enemy) ?? 1, 1.1));
+      return;
+    }
     const ev = this.toScreen(raw);
     switch (ev.type) {
       case 'shot': {
@@ -1351,7 +1373,7 @@ export class GameScene extends Phaser.Scene {
       case 'hit':
         this.flashes.set(ev.enemy, 0.07);
         this.punch.set(ev.enemy, Math.max(this.punch.get(ev.enemy) ?? 1, ev.crit ? 1.25 : 1.1));
-        if (ev.crit) {
+        if (ev.crit && this.textLeft-- > 0) {
           const t = text(this, ev.x, ev.y - 16, STR.crit(ev.amount), 22, '#ffe14a').setOrigin(0.5).setDepth(12).setStroke('#7a2a00', 4).setScale(0.4);
           this.tweens.add({ targets: t, scale: 1.1, duration: 120, ease: 'Back.easeOut' });
           this.tweens.add({ targets: t, y: ev.y - 50, alpha: 0, delay: 250, duration: 450, onComplete: () => t.destroy() });
@@ -1365,11 +1387,12 @@ export class GameScene extends Phaser.Scene {
         this.progress.killsBy[ev.enemy] = (this.progress.killsBy[ev.enemy] ?? 0) + 1;
         if (ev.enemy === 'sixseven') this.progress.sixseven++;
         const def = this.sim.cfg.enemies[ev.enemy];
+        if (--this.fxLeft < 0) break;
         const ghost = icon(this, ev.x, ev.y, def.id, def.emoji, def.radius * 2.6).setDepth(8);
         const s0 = baseScale(ghost);
         this.tweens.add({ targets: ghost, scaleX: s0 * 1.6, scaleY: s0 * 0.4, alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => ghost.destroy() });
         this.fx.pop(ev.x, ev.y, def.color);
-        this.floatText(ev.x, ev.y, `+${ev.reward}`, THEME.gold);
+        if (this.textLeft-- > 0) this.floatText(ev.x, ev.y, `+${ev.reward}`, THEME.gold);
         sfx.play('pop');
         break;
       }
