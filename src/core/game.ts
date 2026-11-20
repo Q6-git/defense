@@ -828,9 +828,17 @@ export class Game {
 
   private burnZones(dt: number): void {
     if (!this.zones.length) return;
+    const opts = { silent: true, dot: true };
     for (const z of this.zones) {
       z.time -= dt;
-      for (const e of this.enemies) if (dist(e, z) <= z.r + e.def.radius) this.damage(e, z.dps * dt, { silent: true, dot: true });
+      // 장판 수 × 적 수만큼 돌아서 후반에 무겁다: 제곱 거리로 비교하고 옵션 객체를 재사용한다
+      const amount = z.dps * dt;
+      for (const e of this.enemies) {
+        const dx = e.x - z.x;
+        const dy = e.y - z.y;
+        const r = z.r + e.def.radius;
+        if (dx * dx + dy * dy <= r * r) this.damage(e, amount, opts);
+      }
     }
     this.zones = this.zones.filter((z) => z.time > 0);
     this.removeDead();
@@ -871,7 +879,7 @@ export class Game {
       if (u.tauntTime > 0) u.tauntTime -= dt;
       u.cooldown -= dt * u.buffMul * taunted * (this.overloadTime > 0 ? (this.cfg.abilities.overload.speedMul ?? 1) : 1);
       if (u.cooldown > 0) continue;
-      const inRange = this.enemies.filter((e) => e.hp > 0 && dist(u, e) <= lv.range + e.def.radius);
+      const inRange = this.inRange(u, lv.range);
       // 투명한 유령은 조준할 수 없다. 범위형(선풍기, 흡입)은 조준이 필요 없어서 그대로 맞힌다
       const area = u.def.kind === 'slow' || !!lv.hitAll;
       const targets = area ? inRange : inRange.filter((e) => !e.hidden);
@@ -977,6 +985,19 @@ export class Game {
       }
     }
     this.removeDead();
+  }
+
+  /** 사거리 안의 살아 있는 적 (제곱 거리로 비교: 가전 수 × 적 수만큼 불려서 후반에 무겁다) */
+  private inRange(from: Vec, range: number): Enemy[] {
+    const out: Enemy[] = [];
+    for (const e of this.enemies) {
+      if (e.hp <= 0) continue;
+      const dx = e.x - from.x;
+      const dy = e.y - from.y;
+      const r = range + e.def.radius;
+      if (dx * dx + dy * dy <= r * r) out.push(e);
+    }
+    return out;
   }
 
   /** 발화 카드: 크리티컬로 맞은 적에게 화상을 붙인다 (더 센 화상이 있으면 그대로 둔다) */
@@ -1146,5 +1167,7 @@ function distToSegment(p: Vec, a: Vec, b: Vec): number {
   const dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
   const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
-  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+  const ex = p.x - (a.x + dx * t);
+  const ey = p.y - (a.y + dy * t);
+  return Math.sqrt(ex * ex + ey * ey);
 }

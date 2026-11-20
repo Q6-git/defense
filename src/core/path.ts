@@ -37,7 +37,10 @@ export class Path {
 }
 
 export function dist(a: Vec, b: Vec): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+  // Math.hypot보다 몇 배 빠르다 (적이 수백 마리인 후반에 매 프레임 수십만 번 부른다)
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function distToSegment(p: Vec, a: Vec, b: Vec): number {
@@ -45,5 +48,7 @@ function distToSegment(p: Vec, a: Vec, b: Vec): number {
   const dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
   const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
-  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+  const ex = p.x - (a.x + dx * t);
+  const ey = p.y - (a.y + dy * t);
+  return Math.sqrt(ex * ex + ey * ey);
 }
